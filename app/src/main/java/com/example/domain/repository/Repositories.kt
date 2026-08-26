@@ -8,7 +8,23 @@ interface CourseRepository {
     suspend fun getCourseById(courseId: String): Course?
     suspend fun insertCourse(course: Course)
     suspend fun deleteCourse(courseId: String)
+    suspend fun replaceCourseContentAtomically(
+        course: Course,
+        material: StudyMaterial,
+        flashcards: List<Flashcard>,
+        quizQuestions: List<QuizQuestion>
+    )
 }
+
+interface CalendarEventRepository {
+    fun getEventsForCourse(courseId: String): Flow<List<CalendarEvent>>
+    fun getAllCalendarEvents(): Flow<List<CalendarEvent>>
+    suspend fun insertEvent(event: CalendarEvent)
+    suspend fun insertEvents(events: List<CalendarEvent>)
+    suspend fun deleteEvent(id: String)
+    suspend fun deleteEventsForCourse(courseId: String)
+}
+
 
 interface StudyMaterialRepository {
     fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>>

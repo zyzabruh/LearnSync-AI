@@ -19,19 +19,29 @@ import java.util.UUID
 
 class LearnSyncViewModel(application: Application) : AndroidViewModel(application) {
     private val db = LearnSyncDatabase.getDatabase(application)
-    private val courseRepo = CourseRepositoryImpl(db.courseDao())
+    private val courseRepo = CourseRepositoryImpl(db.courseDao(), db)
     private val studyMaterialRepo = StudyMaterialRepositoryImpl(db.studyMaterialDao())
     private val flashcardRepo = FlashcardRepositoryImpl(db.flashcardDao())
     private val quizRepo = QuizRepositoryImpl(db.quizQuestionDao())
     private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao())
     private val prefsRepo = PreferencesRepositoryImpl(db.userPreferencesDao())
+    private val calendarRepo = CalendarEventRepositoryImpl(db.calendarEventDao())
     private val aiRepo = AiRepositoryImpl()
     private val documentParser = DocumentParser(application)
     private val firestoreSyncManager = FirestoreSyncManager()
 
     init {
         // Initialize daily background reminder if enabled
-        ReviewNotificationWorker.scheduleDailyReminder(application)
+        viewModelScope.launch {
+            try {
+                val prefs = prefsRepo.getPreferences().firstOrNull()
+                if (prefs != null && prefs.notificationsEnabled) {
+                    ReviewNotificationWorker.scheduleDailyReminder(application, prefs.reminderTime)
+                }
+            } catch (_: Throwable) {
+                // Gracefully ignore if WorkManager is not ready or constrained
+            }
+        }
     }
 
     val courses: StateFlow<List<Course>> = courseRepo.getAllCourses()
@@ -68,8 +78,14 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     fun getFlashcardsForCourse(courseId: String): Flow<List<Flashcard>> =
         flashcardRepo.getFlashcardsForCourse(courseId)
 
+    fun getDueFlashcardsForCourse(courseId: String): Flow<List<Flashcard>> =
+        flashcardRepo.getDueFlashcardsForCourse(courseId)
+
     fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestion>> =
         quizRepo.getQuizQuestionsForCourse(courseId)
+
+    fun getCalendarEventsForCourse(courseId: String): Flow<List<CalendarEvent>> =
+        calendarRepo.getEventsForCourse(courseId)
 
     fun importCourse(uri: Uri, fileName: String) {
         viewModelScope.launch {
@@ -91,6 +107,14 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     generationStatus = "NONE"
                 )
                 courseRepo.insertCourse(course)
+
+                // Optional cloud file upload in background
+                launch {
+                    try {
+                        firestoreSyncManager.uploadCourseDocument(uri, courseId, fileName, getApplication())
+                    } catch (_: Exception) {}
+                }
+
                 _uiState.value = UiState.Success("Cours importé avec succès (${parseResult.pageCount} pages)")
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Erreur d'import : ${e.localizedMessage}")
@@ -104,12 +128,11 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             _generationProgress.value = "Démarrage de l'analyse IA..."
             
             // Mark course as GENERATING
-            courseRepo.insertCourse(
-                course.copy(
-                    generationStatus = "GENERATING",
-                    updatedAt = System.currentTimeMillis()
-                )
+            val updatedCourseGenerating = course.copy(
+                generationStatus = "GENERATING",
+                updatedAt = System.currentTimeMillis()
             )
+            courseRepo.insertCourse(updatedCourseGenerating)
 
             val result = aiRepo.generateStudyMaterial(
                 courseTitle = course.title,
@@ -121,12 +144,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
 
             result.fold(
                 onSuccess = { genResult ->
-                    // Atomic replacement: Delete old generated materials, flashcards, and quizzes for this course
-                    studyMaterialRepo.deleteMaterialsForCourse(course.id)
-                    flashcardRepo.deleteFlashcardsForCourse(course.id)
-                    quizRepo.deleteQuizQuestionsForCourse(course.id)
-
-                    // Insert study material
+                    // Study material
                     val materialId = UUID.randomUUID().toString()
                     val material = StudyMaterial(
                         id = materialId,
@@ -137,9 +155,8 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                         generatedAt = System.currentTimeMillis(),
                         version = 1
                     )
-                    studyMaterialRepo.insertMaterial(material)
 
-                    // Insert flashcards
+                    // Flashcards with FSRS defaults
                     val flashcards = genResult.flashcards.map {
                         Flashcard(
                             id = UUID.randomUUID().toString(),
@@ -147,20 +164,19 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                             question = it.question,
                             answer = it.answer,
                             explanation = it.explanation,
-                            difficulty = 2.5f,
+                            difficulty = 5.0f,
                             box = 1,
                             dueDate = System.currentTimeMillis(),
                             interval = 0,
-                            easeFactor = 2.5f,
+                            easeFactor = 1.0f,
                             repetitions = 0,
                             lapses = 0,
                             lastReviewedAt = null,
                             createdAt = System.currentTimeMillis()
                         )
                     }
-                    flashcardRepo.insertFlashcards(flashcards)
 
-                    // Insert quiz questions
+                    // Quiz questions
                     val quizQuestions = genResult.quizQuestions.map {
                         QuizQuestion(
                             id = UUID.randomUUID().toString(),
@@ -172,15 +188,19 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                             difficulty = "medium"
                         )
                     }
-                    quizRepo.insertQuizQuestions(quizQuestions)
 
-                    // Update course status to COMPLETED
-                    courseRepo.insertCourse(
-                        course.copy(
-                            generationStatus = "COMPLETED",
-                            progress = 100f,
-                            updatedAt = System.currentTimeMillis()
-                        )
+                    val completedCourse = course.copy(
+                        generationStatus = "COMPLETED",
+                        progress = 100f,
+                        updatedAt = System.currentTimeMillis()
+                    )
+
+                    // Atomic replacement in a single Room transaction
+                    courseRepo.replaceCourseContentAtomically(
+                        course = completedCourse,
+                        material = material,
+                        flashcards = flashcards,
+                        quizQuestions = quizQuestions
                     )
 
                     _uiState.value = UiState.Success("Matériel généré : ${flashcards.size} flashcards et ${quizQuestions.size} QCM créés !")
@@ -221,6 +241,10 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 // Cascading delete handles sub-entities in Room
                 courseRepo.deleteCourse(courseId)
+                // Clean up in cloud replica
+                launch {
+                    firestoreSyncManager.deleteCourseInCloud(courseId)
+                }
                 _uiState.value = UiState.Success("Cours supprimé avec succès.")
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Erreur lors de la suppression : ${e.localizedMessage}")
@@ -231,6 +255,11 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     fun updatePreferences(prefs: UserPreferences) {
         viewModelScope.launch {
             prefsRepo.updatePreferences(prefs)
+            if (prefs.notificationsEnabled) {
+                ReviewNotificationWorker.scheduleDailyReminder(getApplication(), prefs.reminderTime)
+            } else {
+                ReviewNotificationWorker.cancelDailyReminder(getApplication())
+            }
         }
     }
 
@@ -240,9 +269,10 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 val currentCourses = courses.value
                 val due = dueFlashcards.value
                 val count = CalendarHelper.syncReviewsToCalendar(
-                    getApplication(),
-                    currentCourses,
-                    due
+                    context = getApplication(),
+                    courses = currentCourses,
+                    dueCards = due,
+                    calendarEventDao = db.calendarEventDao()
                 )
                 if (count > 0) {
                     _uiState.value = UiState.Success("$count sessions de révision synchronisées avec votre calendrier !")
@@ -263,12 +293,36 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 val currentFlashcards = allFlashcards.value
                 val currentLogs = reviewLogs.value
 
+                // 1. Sync Up local data
                 val res1 = firestoreSyncManager.syncUpCourses(currentCourses)
                 val res2 = firestoreSyncManager.syncUpFlashcards(currentFlashcards)
                 val res3 = firestoreSyncManager.syncUpReviewLogs(currentLogs)
 
+                // 2. Sync Down remote data if any
+                val remoteCoursesResult = firestoreSyncManager.fetchRemoteCourses()
+                if (remoteCoursesResult.isSuccess) {
+                    val remoteCourses = remoteCoursesResult.getOrNull() ?: emptyList()
+                    val localCourseIds = currentCourses.map { it.id }.toSet()
+                    for (remoteCourse in remoteCourses) {
+                        if (!localCourseIds.contains(remoteCourse.id)) {
+                            courseRepo.insertCourse(remoteCourse)
+                        }
+                    }
+                }
+
+                val remoteCardsResult = firestoreSyncManager.fetchRemoteFlashcards()
+                if (remoteCardsResult.isSuccess) {
+                    val remoteCards = remoteCardsResult.getOrNull() ?: emptyList()
+                    val localCardIds = currentFlashcards.map { it.id }.toSet()
+                    for (remoteCard in remoteCards) {
+                        if (!localCardIds.contains(remoteCard.id)) {
+                            flashcardRepo.insertFlashcard(remoteCard)
+                        }
+                    }
+                }
+
                 if (res1.isSuccess && res2.isSuccess && res3.isSuccess) {
-                    _uiState.value = UiState.Success("Synchronisation cloud terminée avec succès !")
+                    _uiState.value = UiState.Success("Synchronisation cloud bidirectionnelle terminée !")
                 } else {
                     val error = res1.exceptionOrNull() ?: res2.exceptionOrNull() ?: res3.exceptionOrNull()
                     _uiState.value = UiState.Error("Erreur Cloud : ${error?.localizedMessage ?: "Vérifiez votre connexion"}")
@@ -283,3 +337,4 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value = UiState.Idle
     }
 }
+

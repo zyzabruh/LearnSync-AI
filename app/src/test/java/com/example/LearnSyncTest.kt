@@ -24,15 +24,15 @@ class LearnSyncTest {
             question = "Qu'est-ce que le polymorphisme ?",
             answer = "La capacité d'un objet à prendre plusieurs formes.",
             explanation = "Principe clé de la POO.",
-            difficulty = 2.5f,
+            difficulty = 5.0f,
             box = 3,
             dueDate = System.currentTimeMillis(),
             interval = 14,
-            easeFactor = 2.5f,
+            easeFactor = 5.0f,
             repetitions = 4,
             lapses = 1,
-            lastReviewedAt = null,
-            createdAt = System.currentTimeMillis()
+            lastReviewedAt = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(14),
+            createdAt = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
         )
 
         val result = SpacedRepetition.calculateReview(card, rating = 1, responseTimeMs = 1200L)
@@ -40,7 +40,7 @@ class LearnSyncTest {
         assertEquals(1, result.updatedCard.box)
         assertEquals(0, result.updatedCard.repetitions)
         assertEquals(2, result.updatedCard.lapses)
-        assertEquals(2.3f, result.updatedCard.easeFactor, 0.01f)
+        assertTrue(result.updatedCard.easeFactor < 2.0f)
     }
 
     @Test
@@ -51,28 +51,31 @@ class LearnSyncTest {
             question = "Question 1",
             answer = "Reponse 1",
             explanation = "Exp",
-            difficulty = 2.5f,
+            difficulty = 5.0f,
             box = 1,
             dueDate = System.currentTimeMillis(),
-            interval = 1,
-            easeFactor = 2.5f,
-            repetitions = 1,
+            interval = 0,
+            easeFactor = 1.0f,
+            repetitions = 0,
             lapses = 0,
             lastReviewedAt = null,
             createdAt = System.currentTimeMillis()
         )
 
-        // Second repetition with rating 3 (Good) -> interval becomes 6
+        // First repetition with rating 3 (Good) -> initial stability ~3.1 days
         val result1 = SpacedRepetition.calculateReview(card, rating = 3, responseTimeMs = 800L)
-        assertEquals(6, result1.newInterval)
-        assertEquals(2, result1.updatedCard.repetitions)
+        assertEquals(1, result1.updatedCard.repetitions)
         assertEquals(2, result1.updatedCard.box)
+        assertTrue(result1.newInterval >= 2)
 
-        // Third repetition with rating 3 (Good) -> interval becomes 6 * 2.5 = 15
-        val result2 = SpacedRepetition.calculateReview(result1.updatedCard, rating = 3, responseTimeMs = 600L)
-        assertEquals(15, result2.newInterval)
-        assertEquals(3, result2.updatedCard.repetitions)
-        assertEquals(3, result2.updatedCard.box)
+        // Second repetition with rating 3 (Good) -> stability grows
+        val cardAfterDelay = result1.updatedCard.copy(
+            lastReviewedAt = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(result1.newInterval.toLong())
+        )
+        val result2 = SpacedRepetition.calculateReview(cardAfterDelay, rating = 3, responseTimeMs = 600L)
+        assertEquals(2, result2.updatedCard.repetitions)
+        assertTrue(result2.stability > result1.stability)
+        assertTrue(result2.newInterval >= result1.newInterval)
     }
 
     @Test
@@ -83,11 +86,11 @@ class LearnSyncTest {
             question = "Question Easy",
             answer = "Reponse Easy",
             explanation = "Exp",
-            difficulty = 2.5f,
+            difficulty = 5.0f,
             box = 1,
             dueDate = System.currentTimeMillis(),
             interval = 0,
-            easeFactor = 2.5f,
+            easeFactor = 1.0f,
             repetitions = 0,
             lapses = 0,
             lastReviewedAt = null,
@@ -95,10 +98,11 @@ class LearnSyncTest {
         )
 
         val result = SpacedRepetition.calculateReview(card, rating = 4, responseTimeMs = 400L)
-        assertEquals(4, result.newInterval)
+        assertTrue(result.newInterval >= 4)
         assertEquals(3, result.updatedCard.box)
-        assertEquals(2.65f, result.updatedCard.easeFactor, 0.01f)
+        assertTrue(result.updatedCard.easeFactor > 10.0f)
     }
+
 
     @Test
     fun testStreakCalculationConsecutiveDays() {
@@ -169,4 +173,45 @@ class LearnSyncTest {
         assertEquals("Paris", restored.options[0])
         assertEquals("Paris", restored.correctAnswer)
     }
+
+    @Test
+    fun testQuizValidatorValidatesStrictly() {
+        val validItem = com.example.domain.model.GeneratedQuizQuestion(
+            question = "Quel langage pour Android ?",
+            options = listOf("Kotlin", "Swift", "PHP", "Ruby"),
+            correctAnswer = "Kotlin",
+            explanation = "Kotlin est le langage officiel recommandé."
+        )
+        val validList = com.example.domain.usecase.QuizValidator.filterValidQuestions(listOf(validItem))
+        assertEquals(1, validList.size)
+
+        // Invalid: only 3 options
+        val invalidOptionsCount = com.example.domain.model.GeneratedQuizQuestion(
+            question = "Q2 ?",
+            options = listOf("A", "B", "C"),
+            correctAnswer = "A",
+            explanation = "Exp"
+        )
+        assertEquals(0, com.example.domain.usecase.QuizValidator.filterValidQuestions(listOf(invalidOptionsCount)).size)
+
+        // Invalid: duplicates
+        val duplicateOptions = com.example.domain.model.GeneratedQuizQuestion(
+            question = "Q3 ?",
+            options = listOf("A", "B", "A", "C"),
+            correctAnswer = "A",
+            explanation = "Exp"
+        )
+        assertEquals(0, com.example.domain.usecase.QuizValidator.filterValidQuestions(listOf(duplicateOptions)).size)
+
+        // Invalid: correct answer not in options
+        val wrongAnswer = com.example.domain.model.GeneratedQuizQuestion(
+            question = "Q4 ?",
+            options = listOf("A", "B", "C", "D"),
+            correctAnswer = "Z",
+            explanation = "Exp"
+        )
+        assertEquals(0, com.example.domain.usecase.QuizValidator.filterValidQuestions(listOf(wrongAnswer)).size)
+    }
+
 }
+

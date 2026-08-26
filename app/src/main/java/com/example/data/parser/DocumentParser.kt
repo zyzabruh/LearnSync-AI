@@ -43,29 +43,29 @@ class DocumentParser(private val context: Context) {
             ?: throw IllegalArgumentException("Impossible d'ouvrir le fichier PDF : $fileName")
 
         return inputStream.use { stream ->
-            val document = PDDocument.load(stream)
-            val pageCount = document.numberOfPages
-            val stripper = PDFTextStripper()
-            stripper.sortByPosition = true
-            val extractedText = stripper.getText(document).trim()
-            document.close()
+            PDDocument.load(stream).use { document ->
+                val pageCount = document.numberOfPages
+                val stripper = PDFTextStripper()
+                stripper.sortByPosition = true
+                val extractedText = stripper.getText(document).trim()
 
-            val title = fileName.substringBeforeLast('.')
-            
-            // Validate if text is genuinely present (not just whitespace or unparseable chars)
-            val alphanumericCount = extractedText.count { it.isLetterOrDigit() }
-            if (alphanumericCount < 20) {
-                throw IllegalStateException(
-                    "Ce document PDF ne contient aucun texte sélectionnable. Il semble s'agir d'un scan ou d'images scannées sans couche de texte. Veuillez importer un document textuel ou appliquer un OCR."
+                val title = fileName.substringBeforeLast('.')
+                
+                // Validate if text is genuinely present (not just whitespace or unparseable chars)
+                val alphanumericCount = extractedText.count { it.isLetterOrDigit() }
+                if (alphanumericCount < 20) {
+                    throw IllegalStateException(
+                        "Ce document PDF ne contient aucun texte sélectionnable. Il semble s'agir d'un scan ou d'images scannées sans couche de texte. Veuillez importer un document textuel ou appliquer un OCR."
+                    )
+                }
+
+                ParseResult(
+                    title = title,
+                    text = extractedText,
+                    pageCount = if (pageCount > 0) pageCount else 1,
+                    isScanOrEmpty = false
                 )
             }
-
-            ParseResult(
-                title = title,
-                text = extractedText,
-                pageCount = if (pageCount > 0) pageCount else 1,
-                isScanOrEmpty = false
-            )
         }
     }
 
@@ -98,16 +98,40 @@ class DocumentParser(private val context: Context) {
             ?: throw IllegalArgumentException("Impossible d'ouvrir le fichier DOCX : $fileName")
 
         val stringBuilder = StringBuilder()
+        val maxEntries = 1000
+        val maxTotalBytes = 50 * 1024 * 1024L // 50MB protection against zip bombs
+        var totalBytesRead = 0L
+        var entryCount = 0
+
         ZipInputStream(inputStream).use { zipStream ->
             var entry = zipStream.nextEntry
             while (entry != null) {
+                entryCount++
+                if (entryCount > maxEntries) {
+                    throw SecurityException("Fichier DOCX corrompu ou suspect (dépassement du nombre maximal d'entrées).")
+                }
+
                 if (entry.name == "word/document.xml") {
-                    val factory = DocumentBuilderFactory.newInstance()
-                    // Disable external entity resolution for security
+                    val factory = DocumentBuilderFactory.newInstance().apply {
+                        isNamespaceAware = true
+                        isXIncludeAware = false
+                        isExpandEntityReferences = false
+                    }
+
+                    // Security: Disable external DTDs and entities against XXE injection
                     try {
                         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
                     } catch (_: Exception) {}
-                    
+                    try {
+                        factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
+                    } catch (_: Exception) {}
+                    try {
+                        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+                    } catch (_: Exception) {}
+                    try {
+                        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+                    } catch (_: Exception) {}
+
                     val builder = factory.newDocumentBuilder()
                     val doc = builder.parse(zipStream)
                     val nodeList = doc.getElementsByTagName("w:t")

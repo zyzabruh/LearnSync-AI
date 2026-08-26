@@ -7,7 +7,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 
-class CourseRepositoryImpl(private val courseDao: CourseDao) : CourseRepository {
+class CourseRepositoryImpl(
+    private val courseDao: CourseDao,
+    private val db: LearnSyncDatabase? = null
+) : CourseRepository {
     override fun getAllCourses(): Flow<List<Course>> =
         courseDao.getAllCourses().map { list -> list.map { it.toDomain() } }
 
@@ -19,7 +22,47 @@ class CourseRepositoryImpl(private val courseDao: CourseDao) : CourseRepository 
 
     override suspend fun deleteCourse(courseId: String) =
         courseDao.deleteCourseById(courseId)
+
+    override suspend fun replaceCourseContentAtomically(
+        course: Course,
+        material: StudyMaterial,
+        flashcards: List<Flashcard>,
+        quizQuestions: List<QuizQuestion>
+    ) {
+        if (db != null) {
+            db.replaceCourseContentAtomically(
+                course = course.toEntity(),
+                material = material.toEntity(),
+                flashcards = flashcards.map { it.toEntity() },
+                quizQuestions = quizQuestions.map { it.toEntity() }
+            )
+        } else {
+            // Fallback for isolated DAO tests
+            courseDao.insertCourse(course.toEntity())
+        }
+    }
 }
+
+class CalendarEventRepositoryImpl(private val calendarEventDao: CalendarEventDao) : CalendarEventRepository {
+    override fun getEventsForCourse(courseId: String): Flow<List<CalendarEvent>> =
+        calendarEventDao.getEventsForCourse(courseId).map { list -> list.map { it.toDomain() } }
+
+    override fun getAllCalendarEvents(): Flow<List<CalendarEvent>> =
+        calendarEventDao.getAllCalendarEvents().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun insertEvent(event: CalendarEvent) =
+        calendarEventDao.insertEvent(event.toEntity())
+
+    override suspend fun insertEvents(events: List<CalendarEvent>) =
+        calendarEventDao.insertEvents(events.map { it.toEntity() })
+
+    override suspend fun deleteEvent(id: String) =
+        calendarEventDao.deleteEvent(id)
+
+    override suspend fun deleteEventsForCourse(courseId: String) =
+        calendarEventDao.deleteEventsForCourse(courseId)
+}
+
 
 class StudyMaterialRepositoryImpl(private val studyMaterialDao: StudyMaterialDao) : StudyMaterialRepository {
     override fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>> =
@@ -116,21 +159,23 @@ fun Flashcard.toEntity() = FlashcardEntity(id, courseId, question, answer, expla
 
 fun QuizQuestionEntity.toDomain(): QuizQuestion {
     val optList = mutableListOf<String>()
-    try {
-        val jsonArray = JSONArray(options)
-        for (i in 0 until jsonArray.length()) {
-            optList.add(jsonArray.getString(i))
-        }
-    } catch (_: Exception) {
+    if (options.contains("\u001F")) {
+        optList.addAll(options.split("\u001F").filter { it.isNotBlank() })
+    } else if (options.contains("||")) {
         optList.addAll(options.split("||").filter { it.isNotBlank() })
+    } else if (options.startsWith("[") && options.endsWith("]")) {
+        val trimmed = options.substring(1, options.length - 1)
+        if (trimmed.isNotBlank()) {
+            optList.addAll(trimmed.split(",").map { it.trim().trim('"', '\'') })
+        }
+    } else if (options.isNotBlank()) {
+        optList.add(options)
     }
     return QuizQuestion(id, courseId, question, optList, correctAnswer, explanation, difficulty)
 }
 
 fun QuizQuestion.toEntity(): QuizQuestionEntity {
-    val jsonArray = JSONArray()
-    options.forEach { jsonArray.put(it) }
-    return QuizQuestionEntity(id, courseId, question, jsonArray.toString(), correctAnswer, explanation, difficulty)
+    return QuizQuestionEntity(id, courseId, question, options.joinToString("\u001F"), correctAnswer, explanation, difficulty)
 }
 
 fun ReviewLogEntity.toDomain() = ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
@@ -138,3 +183,7 @@ fun ReviewLog.toEntity() = ReviewLogEntity(id, flashcardId, reviewedAt, rating, 
 
 fun UserPreferencesEntity.toDomain() = UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language)
 fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, dailyGoal, reminderTime, theme, language)
+
+fun CalendarEventEntity.toDomain() = CalendarEvent(id, courseId, title, scheduledDate, androidEventId, updatedAt)
+fun CalendarEvent.toEntity() = CalendarEventEntity(id, courseId, title, scheduledDate, androidEventId, updatedAt)
+

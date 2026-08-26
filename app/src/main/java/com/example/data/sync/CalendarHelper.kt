@@ -8,9 +8,12 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
+import com.example.data.database.CalendarEventDao
+import com.example.data.database.CalendarEventEntity
 import com.example.domain.model.Course
 import com.example.domain.model.Flashcard
 import java.util.TimeZone
+import java.util.UUID
 
 object CalendarHelper {
 
@@ -26,7 +29,8 @@ object CalendarHelper {
         val projection = arrayOf(
             CalendarContract.Calendars._ID,
             CalendarContract.Calendars.IS_PRIMARY,
-            CalendarContract.Calendars.VISIBLE
+            CalendarContract.Calendars.VISIBLE,
+            CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL
         )
 
         var cursor: Cursor? = null
@@ -38,9 +42,28 @@ object CalendarHelper {
                 null,
                 null
             )
-            if (cursor != null && cursor.moveToFirst()) {
-                val idCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars._ID)
-                return cursor.getLong(idCol)
+            if (cursor != null) {
+                var fallbackId: Long? = null
+                while (cursor.moveToNext()) {
+                    val idCol = cursor.getColumnIndexOrThrow(CalendarContract.Calendars._ID)
+                    val isPrimaryCol = cursor.getColumnIndex(CalendarContract.Calendars.IS_PRIMARY)
+                    val accessCol = cursor.getColumnIndex(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
+
+                    val id = cursor.getLong(idCol)
+                    val isPrimary = if (isPrimaryCol != -1) cursor.getInt(isPrimaryCol) == 1 else false
+                    val accessLevel = if (accessCol != -1) cursor.getInt(accessCol) else CalendarContract.Calendars.CAL_ACCESS_OWNER
+
+                    // Ensure write permission on the calendar
+                    if (accessLevel >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) {
+                        if (isPrimary) {
+                            return id
+                        }
+                        if (fallbackId == null) {
+                            fallbackId = id
+                        }
+                    }
+                }
+                return fallbackId
             }
         } catch (_: Exception) {
             // Fallback or permission denial
@@ -52,11 +75,13 @@ object CalendarHelper {
 
     /**
      * Sync review sessions to system calendar without creating duplicates.
+     * Also records the event in Room via CalendarEventDao if provided.
      */
-    fun syncReviewsToCalendar(
+    suspend fun syncReviewsToCalendar(
         context: Context,
         courses: List<Course>,
-        dueCards: List<Flashcard>
+        dueCards: List<Flashcard>,
+        calendarEventDao: CalendarEventDao? = null
     ): Int {
         if (!hasCalendarPermission(context)) return 0
         val calId = getPrimaryCalendarId(context) ?: return 0
@@ -87,12 +112,34 @@ object CalendarHelper {
                     endTime = eventTime + (30 * 60 * 1000) // 30 minutes
                 )
                 if (eventUri != null) {
+                    val androidId = ContentUris.parseId(eventUri)
+                    calendarEventDao?.insertEvent(
+                        CalendarEventEntity(
+                            id = UUID.randomUUID().toString(),
+                            courseId = courseId,
+                            title = title,
+                            scheduledDate = eventTime,
+                            androidEventId = androidId,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
                     eventsCreated++
                 }
             }
         }
 
         return eventsCreated
+    }
+
+    fun deleteCalendarEvent(context: Context, androidEventId: Long): Boolean {
+        if (!hasCalendarPermission(context)) return false
+        return try {
+            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, androidEventId)
+            val rows = context.contentResolver.delete(uri, null, null)
+            rows > 0
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun isEventAlreadyScheduled(
@@ -162,3 +209,4 @@ object CalendarHelper {
         }
     }
 }
+

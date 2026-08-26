@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,7 +21,7 @@ import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Accueil", Icons.Default.Home)
-    object Courses : Screen("courses", "Cours", Icons.Default.MenuBook)
+    object Courses : Screen("courses", "Cours", Icons.AutoMirrored.Filled.MenuBook)
     object Review : Screen("review", "Réviser", Icons.Default.School)
     object Calendar : Screen("calendar", "Calendrier", Icons.Default.CalendarMonth)
     object Stats : Screen("stats", "Stats", Icons.Default.BarChart)
@@ -161,14 +162,15 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                 arguments = listOf(navArgument("courseId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
-                val courseFlashcards by viewModel.getFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
+                val courseDueFlashcards by viewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
 
                 ReviewScreen(
-                    dueCards = courseFlashcards,
+                    dueCards = courseDueFlashcards,
                     onReviewCard = { card, rating, time -> viewModel.reviewCard(card, rating, time) },
                     onFinishReview = { navController.popBackStack() }
                 )
             }
+
 
             composable(
                 route = "course_quiz/{courseId}",

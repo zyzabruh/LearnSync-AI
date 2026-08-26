@@ -4,6 +4,7 @@ import com.example.domain.model.GeneratedFlashcard
 import com.example.domain.model.GeneratedQuizQuestion
 import com.example.domain.model.StudyGenerationResult
 import com.example.domain.repository.AiRepository
+import com.example.domain.usecase.QuizValidator
 import com.google.firebase.Firebase
 import com.google.firebase.ai.*
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,7 @@ class AiRepositoryImpl : AiRepository {
             if (chunks.size == 1) {
                 onProgress("Génération du résumé, flashcards et QCM avec l'IA...")
                 val result = generateForChunk(courseTitle, chunks[0], isFullDoc = true)
+                QuizValidator.validateAllOrThrow(result.quizQuestions)
                 return@withContext Result.success(result)
             } else {
                 // Multi-chunk processing
@@ -44,7 +46,7 @@ class AiRepositoryImpl : AiRepository {
                 chunks.forEachIndexed { index, chunk ->
                     onProgress("Analyse de la section ${index + 1} sur ${chunks.size}...")
                     val chunkResult = generateForChunk(
-                        courseTitle = "$courseTitle (Section ${index + 1})",
+                        courseTitle = "$courseTitle (Section ${index + 1}/${chunks.size})",
                         courseText = chunk,
                         isFullDoc = false
                     )
@@ -55,22 +57,27 @@ class AiRepositoryImpl : AiRepository {
                     allQuizQuestions.addAll(chunkResult.quizQuestions)
                 }
 
-                onProgress("Finalisation et consolidation du matériel...")
-                val combinedSummary = chunkSummaries.filter { it.isNotBlank() }.joinToString("\n\n")
-                
-                // Deduplicate flashcards by normalized question
-                val distinctFlashcards = allFlashcards.distinctBy { it.question.trim().lowercase() }
-                val distinctQuizQuestions = allQuizQuestions.distinctBy { it.question.trim().lowercase() }
-                val distinctKeyPoints = allKeyPoints.distinctBy { it.trim().lowercase() }
-                val distinctMnemonicTips = allMnemonicTips.distinctBy { it.trim().lowercase() }
+                onProgress("Consolidation et synthèse globale par l'IA...")
+                val consolidatedSynthesis = consolidateSectionsWithAi(
+                    courseTitle = courseTitle,
+                    sectionSummaries = chunkSummaries,
+                    allKeyPoints = allKeyPoints,
+                    allMnemonicTips = allMnemonicTips
+                )
+
+                // Intelligent deduplication of flashcards and quiz questions
+                val distinctFlashcards = deduplicateFlashcards(allFlashcards)
+                val distinctValidQuizQuestions = deduplicateAndValidateQuiz(allQuizQuestions)
+
+                QuizValidator.validateAllOrThrow(distinctValidQuizQuestions)
 
                 return@withContext Result.success(
                     StudyGenerationResult(
-                        summary = combinedSummary,
-                        keyPoints = distinctKeyPoints,
+                        summary = consolidatedSynthesis.first,
+                        keyPoints = consolidatedSynthesis.second,
                         flashcards = distinctFlashcards,
-                        quizQuestions = distinctQuizQuestions,
-                        mnemonicTips = distinctMnemonicTips
+                        quizQuestions = distinctValidQuizQuestions,
+                        mnemonicTips = consolidatedSynthesis.third
                     )
                 )
             }
@@ -125,7 +132,7 @@ class AiRepositoryImpl : AiRepository {
             1. Base-toi EXCLUSIVEMENT sur les informations fournies dans le texte du cours ci-dessous.
             2. N'invente aucun fait, date, formule ou nom non présent dans le texte.
             3. Génère $targetFlashcardsCount flashcards atomiques et pertinentes.
-            4. Génère $targetQuizCount questions de QCM avec exactement 4 options distinctes et 1 seule bonne réponse (qui doit être présente dans les options).
+            4. Génère $targetQuizCount questions de QCM avec exactement 4 options distinctes et 1 seule bonne réponse (qui doit être rigoureusement identique à l'une des 4 options).
             5. Si une notion est ambiguë dans le document, privilégie ce qui est textuellement écrit.
 
             TEXTE DU COURS :
@@ -138,23 +145,89 @@ class AiRepositoryImpl : AiRepository {
         return parseJsonResponse(rawText)
     }
 
-    private fun parseJsonResponse(rawText: String): StudyGenerationResult {
-        val cleanedJson = rawText.trim()
-            .removePrefix("```json")
-            .removePrefix("```JSON")
-            .removePrefix("```")
-            .removeSuffix("```")
-            .trim()
+    /**
+     * Second-pass AI consolidation to synthesize multiple section summaries into a single executive summary.
+     */
+    private suspend fun consolidateSectionsWithAi(
+        courseTitle: String,
+        sectionSummaries: List<String>,
+        allKeyPoints: List<String>,
+        allMnemonicTips: List<String>
+    ): Triple<String, List<String>, List<String>> {
+        val model = Firebase.ai.generativeModel("gemini-2.5-flash")
 
-        // Extract JSON substring if surrounded by extra text
-        val jsonStartIndex = cleanedJson.indexOf('{')
-        val jsonEndIndex = cleanedJson.lastIndexOf('}')
-        val finalJsonString = if (jsonStartIndex != -1 && jsonEndIndex != -1 && jsonEndIndex > jsonStartIndex) {
-            cleanedJson.substring(jsonStartIndex, jsonEndIndex + 1)
-        } else {
-            cleanedJson
+        val prompt = """
+            Tu es un expert pédagogique. Tu as analysé plusieurs sections d'un cours intitulé "$courseTitle".
+            Voici les résumés et points clés intermédiaires extraits de chaque section :
+
+            RÉSUMÉS DES SECTIONS :
+            ${sectionSummaries.joinToString("\n\n---\n\n")}
+
+            POINTS CLÉS EXTRAITS :
+            ${allKeyPoints.joinToString("\n• ")}
+
+            ASTUCES MNÉMOTECHNIQUES :
+            ${allMnemonicTips.joinToString("\n• ")}
+
+            TÂCHE :
+            Produis une synthèse globale unifiée et harmonieuse en JSON STRICT :
+            {
+              "summary": "Synthèse globale rédigée et structurée couvrant l'ensemble du cours",
+              "keyPoints": ["Top 5 à 10 points clés consolidés et non redondants"],
+              "mnemonicTips": ["Top 3 à 5 meilleures astuces mnémotechniques uniques"]
+            }
+        """.trimIndent()
+
+        return try {
+            val response = model.generateContent(prompt)
+            val rawText = response.text ?: ""
+            val cleaned = cleanJsonString(rawText)
+            val json = JSONObject(cleaned)
+
+            val summary = json.optString("summary", sectionSummaries.joinToString("\n\n"))
+            val keyPoints = json.optJSONArray("keyPoints")?.toStringList() ?: allKeyPoints.distinct()
+            val mnemonicTips = json.optJSONArray("mnemonicTips")?.toStringList() ?: allMnemonicTips.distinct()
+
+            Triple(summary, keyPoints, mnemonicTips)
+        } catch (_: Exception) {
+            // Fallback gracefully to non-redundant merge
+            Triple(
+                sectionSummaries.filter { it.isNotBlank() }.joinToString("\n\n"),
+                allKeyPoints.distinctBy { it.trim().lowercase() },
+                allMnemonicTips.distinctBy { it.trim().lowercase() }
+            )
         }
+    }
 
+    private fun deduplicateFlashcards(cards: List<GeneratedFlashcard>): List<GeneratedFlashcard> {
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<GeneratedFlashcard>()
+        for (card in cards) {
+            val key = card.question.trim().lowercase()
+            if (key.length > 5 && seen.add(key)) {
+                result.add(card)
+            }
+        }
+        return result
+    }
+
+    private fun deduplicateAndValidateQuiz(questions: List<GeneratedQuizQuestion>): List<GeneratedQuizQuestion> {
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<GeneratedQuizQuestion>()
+        for (q in questions) {
+            val key = q.question.trim().lowercase()
+            if (key.length > 5 && seen.add(key)) {
+                val validation = QuizValidator.validateQuestion(q)
+                if (validation.isValid) {
+                    result.add(q)
+                }
+            }
+        }
+        return result
+    }
+
+    private fun parseJsonResponse(rawText: String): StudyGenerationResult {
+        val finalJsonString = cleanJsonString(rawText)
         val jsonObject = JSONObject(finalJsonString)
         val summary = jsonObject.optString("summary", "Résumé non disponible.")
 
@@ -187,13 +260,18 @@ class AiRepositoryImpl : AiRepository {
                 val explanation = obj.optString("explanation").trim()
 
                 if (question.isNotBlank() && options.isNotEmpty() && correctAnswer.isNotBlank()) {
-                    // Ensure correctAnswer is in options list
                     val finalOptions = if (options.contains(correctAnswer)) {
                         options
-                    } else {
+                    } else if (options.size < 4) {
                         options + correctAnswer
+                    } else {
+                        // replace last option with correct answer to keep 4 options
+                        options.take(3) + correctAnswer
                     }
-                    quizQuestions.add(GeneratedQuizQuestion(question, finalOptions, correctAnswer, explanation))
+                    val quizCandidate = GeneratedQuizQuestion(question, finalOptions.distinct(), correctAnswer, explanation)
+                    if (QuizValidator.validateQuestion(quizCandidate).isValid) {
+                        quizQuestions.add(quizCandidate)
+                    }
                 }
             }
         }
@@ -205,6 +283,23 @@ class AiRepositoryImpl : AiRepository {
             quizQuestions = quizQuestions,
             mnemonicTips = mnemonicTips
         )
+    }
+
+    private fun cleanJsonString(rawText: String): String {
+        val cleanedJson = rawText.trim()
+            .removePrefix("```json")
+            .removePrefix("```JSON")
+            .removePrefix("```")
+            .removeSuffix("```")
+            .trim()
+
+        val jsonStartIndex = cleanedJson.indexOf('{')
+        val jsonEndIndex = cleanedJson.lastIndexOf('}')
+        return if (jsonStartIndex != -1 && jsonEndIndex != -1 && jsonEndIndex > jsonStartIndex) {
+            cleanedJson.substring(jsonStartIndex, jsonEndIndex + 1)
+        } else {
+            cleanedJson
+        }
     }
 
     private fun splitIntoChunks(text: String, maxChunkSize: Int): List<String> {
@@ -220,7 +315,6 @@ class AiRepositoryImpl : AiRepository {
                 currentChunk = StringBuilder()
             }
             if (paragraph.length > maxChunkSize) {
-                // Slicing long single paragraph by sentences
                 val sentences = paragraph.split(". ")
                 for (sentence in sentences) {
                     if (currentChunk.length + sentence.length + 2 > maxChunkSize && currentChunk.isNotEmpty()) {
@@ -252,3 +346,4 @@ class AiRepositoryImpl : AiRepository {
         return list
     }
 }
+

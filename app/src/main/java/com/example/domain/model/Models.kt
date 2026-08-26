@@ -89,3 +89,13 @@ data class GeneratedQuizQuestion(
     val correctAnswer: String,
     val explanation: String
 )
+
+data class CalendarEvent(
+    val id: String,
+    val courseId: String,
+    val title: String,
+    val scheduledDate: Long,
+    val androidEventId: Long?,
+    val updatedAt: Long
+)
+

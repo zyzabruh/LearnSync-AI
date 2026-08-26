@@ -92,3 +92,25 @@ interface UserPreferencesDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPreferences(preferences: UserPreferencesEntity)
 }
+
+@Dao
+interface CalendarEventDao {
+    @Query("SELECT * FROM calendar_events WHERE courseId = :courseId ORDER BY scheduledDate ASC")
+    fun getEventsForCourse(courseId: String): Flow<List<CalendarEventEntity>>
+
+    @Query("SELECT * FROM calendar_events ORDER BY scheduledDate ASC")
+    fun getAllCalendarEvents(): Flow<List<CalendarEventEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvent(event: CalendarEventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvents(events: List<CalendarEventEntity>)
+
+    @Query("DELETE FROM calendar_events WHERE id = :id")
+    suspend fun deleteEvent(id: String)
+
+    @Query("DELETE FROM calendar_events WHERE courseId = :courseId")
+    suspend fun deleteEventsForCourse(courseId: String)
+}
+

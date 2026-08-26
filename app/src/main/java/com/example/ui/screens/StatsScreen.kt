@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -74,7 +75,7 @@ fun StatsScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     StatCard(modifier = Modifier.weight(1f), title = "Streak actuel", value = "$streak j", icon = Icons.Default.LocalFireDepartment)
-                    StatCard(modifier = Modifier.weight(1f), title = "Taux de rétention", value = "$accuracyPercentage%", icon = Icons.Default.TrendingUp)
+                    StatCard(modifier = Modifier.weight(1f), title = "Taux de rétention", value = "$accuracyPercentage%", icon = Icons.AutoMirrored.Filled.TrendingUp)
                 }
             }
 
@@ -186,8 +187,9 @@ fun MasteryBar(title: String, count: Int, total: Int, color: Color) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            val percentage = (fraction * 100).toInt()
             Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text("$count ($fraction".take(6) + "%)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+            Text("$count ($percentage%)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
         }
         LinearProgressIndicator(
             progress = { fraction },

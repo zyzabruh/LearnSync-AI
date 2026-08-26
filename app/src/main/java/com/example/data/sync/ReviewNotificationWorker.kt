@@ -74,34 +74,49 @@ class ReviewNotificationWorker(
     companion object {
         const val WORK_NAME = "LearnSyncDailyReviewReminder"
 
-        fun scheduleDailyReminder(context: Context, hourOfDay: Int = 8, minute: Int = 0) {
-            val currentDate = Calendar.getInstance()
-            val dueDate = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, hourOfDay)
-                set(Calendar.MINUTE, minute)
-                set(Calendar.SECOND, 0)
-            }
+        fun scheduleDailyReminder(context: Context, reminderTimeString: String = "08:00") {
+            try {
+                val parts = reminderTimeString.split(":")
+                val hourOfDay = parts.getOrNull(0)?.toIntOrNull() ?: 8
+                val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
 
-            if (dueDate.before(currentDate)) {
-                dueDate.add(Calendar.HOUR_OF_DAY, 24)
-            }
+                val currentDate = Calendar.getInstance()
+                val dueDate = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, hourOfDay)
+                    set(Calendar.MINUTE, minute)
+                    set(Calendar.SECOND, 0)
+                }
 
-            val timeDiff = dueDate.timeInMillis - currentDate.timeInMillis
+                if (dueDate.before(currentDate)) {
+                    dueDate.add(Calendar.HOUR_OF_DAY, 24)
+                }
 
-            val dailyWorkRequest = PeriodicWorkRequestBuilder<ReviewNotificationWorker>(24, TimeUnit.HOURS)
-                .setInitialDelay(timeDiff, TimeUnit.MILLISECONDS)
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiresBatteryNotLow(false)
-                        .build()
+                val timeDiff = (dueDate.timeInMillis - currentDate.timeInMillis).coerceAtLeast(0L)
+
+                val dailyWorkRequest = PeriodicWorkRequestBuilder<ReviewNotificationWorker>(24, TimeUnit.HOURS)
+                    .setInitialDelay(timeDiff, TimeUnit.MILLISECONDS)
+                    .setConstraints(
+                        Constraints.Builder()
+                            .setRequiresBatteryNotLow(false)
+                            .build()
+                    )
+                    .build()
+
+                WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                    WORK_NAME,
+                    ExistingPeriodicWorkPolicy.UPDATE,
+                    dailyWorkRequest
                 )
-                .build()
-
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE,
-                dailyWorkRequest
-            )
+            } catch (_: Throwable) {
+                // Ignore background scheduling exceptions if WorkManager is not initialized
+            }
         }
+
+        fun cancelDailyReminder(context: Context) {
+            try {
+                WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            } catch (_: Throwable) {}
+        }
+
     }
 }

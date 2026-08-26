@@ -124,3 +124,25 @@ data class UserPreferencesEntity(
     val theme: String,
     val language: String
 )
+
+@Entity(
+    tableName = "calendar_events",
+    foreignKeys = [
+        ForeignKey(
+            entity = CourseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["courseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["courseId"])]
+)
+data class CalendarEventEntity(
+    @PrimaryKey val id: String,
+    val courseId: String,
+    val title: String,
+    val scheduledDate: Long,
+    val androidEventId: Long?,
+    val updatedAt: Long
+)
+
