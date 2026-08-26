@@ -1,0 +1,7 @@
+{
+  "name": "LearnSync AI",
+  "description": "Smart study assistant with AI course generation and spaced repetition.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
