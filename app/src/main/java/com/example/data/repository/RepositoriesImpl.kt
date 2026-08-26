@@ -5,6 +5,7 @@ import com.example.domain.model.*
 import com.example.domain.repository.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
 
 class CourseRepositoryImpl(private val courseDao: CourseDao) : CourseRepository {
     override fun getAllCourses(): Flow<List<Course>> =
@@ -26,6 +27,9 @@ class StudyMaterialRepositoryImpl(private val studyMaterialDao: StudyMaterialDao
 
     override suspend fun insertMaterial(material: StudyMaterial) =
         studyMaterialDao.insertMaterial(material.toEntity())
+
+    override suspend fun deleteMaterialsForCourse(courseId: String) =
+        studyMaterialDao.deleteMaterialsForCourse(courseId)
 }
 
 class FlashcardRepositoryImpl(private val flashcardDao: FlashcardDao) : FlashcardRepository {
@@ -49,6 +53,20 @@ class FlashcardRepositoryImpl(private val flashcardDao: FlashcardDao) : Flashcar
 
     override suspend fun updateFlashcard(flashcard: Flashcard) =
         flashcardDao.updateFlashcard(flashcard.toEntity())
+
+    override suspend fun deleteFlashcardsForCourse(courseId: String) =
+        flashcardDao.deleteFlashcardsForCourse(courseId)
+}
+
+class QuizRepositoryImpl(private val quizQuestionDao: QuizQuestionDao) : QuizRepository {
+    override fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestion>> =
+        quizQuestionDao.getQuizQuestionsForCourse(courseId).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun insertQuizQuestions(questions: List<QuizQuestion>) =
+        quizQuestionDao.insertQuizQuestions(questions.map { it.toEntity() })
+
+    override suspend fun deleteQuizQuestionsForCourse(courseId: String) =
+        quizQuestionDao.deleteQuizQuestionsForCourse(courseId)
 }
 
 class ReviewRepositoryImpl(private val reviewLogDao: ReviewLogDao) : ReviewRepository {
@@ -74,11 +92,46 @@ class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : Pref
 fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, extractedText, createdAt, updatedAt, progress, color, generationStatus)
 fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, extractedText, createdAt, updatedAt, progress, color, generationStatus)
 
-fun StudyMaterialEntity.toDomain() = StudyMaterial(id, courseId, summary, keyPoints.split("||"), mnemonicTips.split("||"), generatedAt, version)
-fun StudyMaterial.toEntity() = StudyMaterialEntity(id, courseId, summary, keyPoints.joinToString("||"), mnemonicTips.joinToString("||"), generatedAt, version)
+fun StudyMaterialEntity.toDomain() = StudyMaterial(
+    id = id,
+    courseId = courseId,
+    summary = summary,
+    keyPoints = if (keyPoints.isBlank()) emptyList() else keyPoints.split("||").filter { it.isNotBlank() },
+    mnemonicTips = if (mnemonicTips.isBlank()) emptyList() else mnemonicTips.split("||").filter { it.isNotBlank() },
+    generatedAt = generatedAt,
+    version = version
+)
+fun StudyMaterial.toEntity() = StudyMaterialEntity(
+    id = id,
+    courseId = courseId,
+    summary = summary,
+    keyPoints = keyPoints.joinToString("||"),
+    mnemonicTips = mnemonicTips.joinToString("||"),
+    generatedAt = generatedAt,
+    version = version
+)
 
 fun FlashcardEntity.toDomain() = Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt)
 fun Flashcard.toEntity() = FlashcardEntity(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt)
+
+fun QuizQuestionEntity.toDomain(): QuizQuestion {
+    val optList = mutableListOf<String>()
+    try {
+        val jsonArray = JSONArray(options)
+        for (i in 0 until jsonArray.length()) {
+            optList.add(jsonArray.getString(i))
+        }
+    } catch (_: Exception) {
+        optList.addAll(options.split("||").filter { it.isNotBlank() })
+    }
+    return QuizQuestion(id, courseId, question, optList, correctAnswer, explanation, difficulty)
+}
+
+fun QuizQuestion.toEntity(): QuizQuestionEntity {
+    val jsonArray = JSONArray()
+    options.forEach { jsonArray.put(it) }
+    return QuizQuestionEntity(id, courseId, question, jsonArray.toString(), correctAnswer, explanation, difficulty)
+}
 
 fun ReviewLogEntity.toDomain() = ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
 fun ReviewLog.toEntity() = ReviewLogEntity(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)

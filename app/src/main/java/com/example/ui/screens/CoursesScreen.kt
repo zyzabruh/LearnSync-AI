@@ -6,9 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,20 +23,22 @@ import com.example.domain.model.Course
 @Composable
 fun CoursesScreen(
     courses: List<Course>,
+    generationProgress: String,
     onImportCourse: (Uri, String) -> Unit,
     onGenerateMaterial: (Course) -> Unit,
+    onSelectCourse: (Course) -> Unit,
     onDeleteCourse: (String) -> Unit
 ) {
-    var selectedCourseForDetail by remember { mutableStateOf<Course?>(null) }
-
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            val fileName = uri.lastPathSegment ?: "document.txt"
+            val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "document.pdf"
             onImportCourse(uri, fileName)
         }
     }
+
+    var courseToDelete by remember { mutableStateOf<Course?>(null) }
 
     Scaffold(
         topBar = {
@@ -48,12 +48,12 @@ fun CoursesScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) },
-                modifier = Modifier.testTag("fab_import_course")
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Importer un cours")
-            }
+                modifier = Modifier.testTag("fab_import_course"),
+                icon = { Icon(Icons.Default.Add, contentDescription = "Importer") },
+                text = { Text("Importer un cours") }
+            )
         }
     ) { innerPadding ->
         if (courses.isEmpty()) {
@@ -63,11 +63,18 @@ fun CoursesScreen(
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(32.dp)
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
-                    Text("Aucun cours importé", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Appuyez sur + pour importer un PDF ou TXT", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Aucun cours pour le moment", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Importez vos cours en PDF, DOCX ou TXT pour que l'IA génère automatiquement vos résumés, flashcards et QCMs.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = { filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")) }) {
+                        Icon(Icons.Default.UploadFile, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Choisir un document")
+                    }
                 }
             }
         } else {
@@ -79,11 +86,11 @@ fun CoursesScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
-                        onClick = { selectedCourseForDetail = course }
+                        onClick = { onSelectCourse(course) }
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -91,34 +98,55 @@ fun CoursesScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(course.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { onDeleteCourse(course.id) }) {
+                                IconButton(onClick = { courseToDelete = course }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Supprimer", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
+                            
                             Text(course.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             
+                            if (course.generationStatus == "GENERATING" && generationProgress.isNotBlank()) {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                Text(generationProgress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            }
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 BadgeContainer(
-                                    icon = if (course.generationStatus == "COMPLETED") Icons.Default.CheckCircle else Icons.Default.HourglassEmpty,
+                                    icon = when(course.generationStatus) {
+                                        "COMPLETED" -> Icons.Default.CheckCircle
+                                        "GENERATING" -> Icons.Default.HourglassEmpty
+                                        "ERROR" -> Icons.Default.Error
+                                        else -> Icons.Default.Pending
+                                    },
                                     label = when(course.generationStatus) {
-                                        "COMPLETED" -> "Matériel généré"
-                                        "GENERATING" -> "Analyse en cours..."
+                                        "COMPLETED" -> "Prêt pour révision"
+                                        "GENERATING" -> "Génération IA..."
                                         "ERROR" -> "Erreur de génération"
-                                        else -> "Non généré"
+                                        else -> "Non analysé"
                                     }
                                 )
-                                if (course.generationStatus != "COMPLETED" && course.generationStatus != "GENERATING") {
+                                if (course.generationStatus != "GENERATING") {
                                     Button(
-                                        onClick = { onGenerateMaterial(course) },
+                                        onClick = {
+                                            if (course.generationStatus == "COMPLETED") {
+                                                onSelectCourse(course)
+                                            } else {
+                                                onGenerateMaterial(course)
+                                            }
+                                        },
                                         modifier = Modifier.testTag("generate_material_button")
                                     ) {
-                                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Icon(
+                                            if (course.generationStatus == "COMPLETED") Icons.Default.Visibility else Icons.Default.AutoAwesome,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Générer l'IA")
+                                        Text(if (course.generationStatus == "COMPLETED") "Ouvrir" else "Générer l'IA")
                                     }
                                 }
                             }
@@ -128,35 +156,27 @@ fun CoursesScreen(
             }
         }
 
-        selectedCourseForDetail?.let { course ->
+        // Delete confirmation dialog
+        courseToDelete?.let { course ->
             AlertDialog(
-                onDismissRequest = { selectedCourseForDetail = null },
-                title = { Text(course.title) },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.verticalScroll(rememberScrollState())
-                    ) {
-                        Text("Fichier source : ${course.sourceFileName}", fontWeight = FontWeight.Bold)
-                        Text("Description : ${course.description}")
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Extrait du texte :", fontWeight = FontWeight.Bold)
-                        Text(course.extractedText.take(500) + if (course.extractedText.length > 500) "..." else "", style = MaterialTheme.typography.bodySmall)
-                    }
-                },
+                onDismissRequest = { courseToDelete = null },
+                icon = { Icon(Icons.Default.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                title = { Text("Supprimer ce cours ?") },
+                text = { Text("La suppression de « ${course.title} » effacera définitivement tout le matériel associé (résumé, flashcards, QCMs et historique de révision).") },
                 confirmButton = {
-                    TextButton(onClick = { selectedCourseForDetail = null }) {
-                        Text("Fermer")
+                    Button(
+                        onClick = {
+                            onDeleteCourse(course.id)
+                            courseToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Supprimer")
                     }
                 },
                 dismissButton = {
-                    if (course.generationStatus != "COMPLETED") {
-                        Button(onClick = {
-                            onGenerateMaterial(course)
-                            selectedCourseForDetail = null
-                        }) {
-                            Text("Générer avec l'IA")
-                        }
+                    TextButton(onClick = { courseToDelete = null }) {
+                        Text("Annuler")
                     }
                 }
             )

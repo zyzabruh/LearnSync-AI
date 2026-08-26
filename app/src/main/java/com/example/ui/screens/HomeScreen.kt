@@ -21,6 +21,9 @@ import com.example.domain.model.Course
 import com.example.domain.model.Flashcard
 import com.example.domain.model.ReviewLog
 import com.example.domain.usecase.SpacedRepetition
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,20 +33,24 @@ fun HomeScreen(
     reviewLogs: List<ReviewLog>,
     onNavigateToReview: () -> Unit,
     onNavigateToCourses: () -> Unit,
-    onImportClick: () -> Unit
+    onSelectCourse: (Course) -> Unit,
+    onSyncCalendar: () -> Unit
 ) {
     val streak = SpacedRepetition.calculateStreak(reviewLogs)
-    val todayReviewsCount = reviewLogs.count { 
-        val cal = java.util.Calendar.getInstance()
-        val todayDay = cal.get(java.util.Calendar.DAY_OF_YEAR)
-        cal.timeInMillis = it.reviewedAt
-        cal.get(java.util.Calendar.DAY_OF_YEAR) == todayDay
+    val today = LocalDate.now()
+    val todayReviewsCount = reviewLogs.count {
+        Instant.ofEpochMilli(it.reviewedAt).atZone(ZoneId.systemDefault()).toLocalDate() == today
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("LearnSync AI", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = onSyncCalendar) {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = "Sync Calendrier")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             )
         }
@@ -72,18 +79,21 @@ fun HomeScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "Prêt pour vos révisions ?",
+                                    text = "Session du jour",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                                 Text(
-                                    text = "${dueCards.size} cartes dues aujourd'hui",
+                                    text = if (dueCards.isEmpty()) "Aucune carte due !" else "${dueCards.size} cartes à réviser",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
-                            BadgeContainer(icon = Icons.Default.LocalFireDepartment, label = "$streak j streak")
+                            BadgeContainer(
+                                icon = Icons.Default.LocalFireDepartment,
+                                label = if (streak > 0) "$streak j streak" else "0 j streak"
+                            )
                         }
 
                         Row(
@@ -92,20 +102,21 @@ fun HomeScreen(
                         ) {
                             Button(
                                 onClick = onNavigateToReview,
+                                enabled = dueCards.isNotEmpty(),
                                 modifier = Modifier.weight(1f).testTag("review_now_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Réviser maintenant")
+                                Text("Réviser")
                             }
                             OutlinedButton(
-                                onClick = onImportClick,
+                                onClick = onNavigateToCourses,
                                 modifier = Modifier.weight(1f).testTag("import_course_button")
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Importer")
+                                Text("Mes cours")
                             }
                         }
                     }
@@ -119,7 +130,7 @@ fun HomeScreen(
                 ) {
                     StatCard(
                         modifier = Modifier.weight(1f),
-                        title = "Révisées du jour",
+                        title = "Révisées aujourd'hui",
                         value = "$todayReviewsCount",
                         icon = Icons.Default.CheckCircle
                     )
@@ -162,15 +173,16 @@ fun HomeScreen(
                         ) {
                             Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
                             Text("Aucun cours pour le moment", fontWeight = FontWeight.SemiBold)
-                            Text("Importez un PDF ou TXT pour commencer.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Importez un PDF, DOCX ou TXT pour commencer.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             } else {
-                items(courses.take(3)) { course ->
+                items(courses.take(4)) { course ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        onClick = { onSelectCourse(course) }
                     ) {
                         Row(
                             modifier = Modifier.padding(16.dp).fillMaxWidth(),

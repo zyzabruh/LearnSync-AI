@@ -13,6 +13,7 @@ interface CourseRepository {
 interface StudyMaterialRepository {
     fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>>
     suspend fun insertMaterial(material: StudyMaterial)
+    suspend fun deleteMaterialsForCourse(courseId: String)
 }
 
 interface FlashcardRepository {
@@ -23,6 +24,13 @@ interface FlashcardRepository {
     suspend fun insertFlashcard(flashcard: Flashcard)
     suspend fun insertFlashcards(flashcards: List<Flashcard>)
     suspend fun updateFlashcard(flashcard: Flashcard)
+    suspend fun deleteFlashcardsForCourse(courseId: String)
+}
+
+interface QuizRepository {
+    fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestion>>
+    suspend fun insertQuizQuestions(questions: List<QuizQuestion>)
+    suspend fun deleteQuizQuestionsForCourse(courseId: String)
 }
 
 interface ReviewRepository {
@@ -32,7 +40,11 @@ interface ReviewRepository {
 }
 
 interface AiRepository {
-    suspend fun generateStudyMaterial(courseTitle: String, courseText: String): Result<StudyGenerationResult>
+    suspend fun generateStudyMaterial(
+        courseTitle: String,
+        courseText: String,
+        onProgress: (String) -> Unit = {}
+    ): Result<StudyGenerationResult>
 }
 
 interface PreferencesRepository {

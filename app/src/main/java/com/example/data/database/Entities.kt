@@ -1,6 +1,8 @@
 package com.example.data.database
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "courses")
@@ -18,7 +20,18 @@ data class CourseEntity(
     val generationStatus: String // "NONE", "GENERATING", "COMPLETED", "ERROR"
 )
 
-@Entity(tableName = "study_materials")
+@Entity(
+    tableName = "study_materials",
+    foreignKeys = [
+        ForeignKey(
+            entity = CourseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["courseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["courseId"])]
+)
 data class StudyMaterialEntity(
     @PrimaryKey val id: String,
     val courseId: String,
@@ -29,7 +42,18 @@ data class StudyMaterialEntity(
     val version: Int
 )
 
-@Entity(tableName = "flashcards")
+@Entity(
+    tableName = "flashcards",
+    foreignKeys = [
+        ForeignKey(
+            entity = CourseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["courseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["courseId"])]
+)
 data class FlashcardEntity(
     @PrimaryKey val id: String,
     val courseId: String,
@@ -47,7 +71,18 @@ data class FlashcardEntity(
     val createdAt: Long
 )
 
-@Entity(tableName = "quiz_questions")
+@Entity(
+    tableName = "quiz_questions",
+    foreignKeys = [
+        ForeignKey(
+            entity = CourseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["courseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["courseId"])]
+)
 data class QuizQuestionEntity(
     @PrimaryKey val id: String,
     val courseId: String,
@@ -58,7 +93,18 @@ data class QuizQuestionEntity(
     val difficulty: String
 )
 
-@Entity(tableName = "review_logs")
+@Entity(
+    tableName = "review_logs",
+    foreignKeys = [
+        ForeignKey(
+            entity = FlashcardEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["flashcardId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["flashcardId"])]
+)
 data class ReviewLogEntity(
     @PrimaryKey val id: String,
     val flashcardId: String,
