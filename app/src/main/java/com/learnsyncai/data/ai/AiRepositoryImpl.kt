@@ -94,7 +94,7 @@ class AiRepositoryImpl : AiRepository {
         }
     }
 
-    private suspend fun <T> executeWithRetry(
+    internal suspend fun <T> executeWithRetry(
         maxAttempts: Int = 3,
         initialDelayMs: Long = 1000L,
         block: suspend () -> T
@@ -121,7 +121,7 @@ class AiRepositoryImpl : AiRepository {
         throw lastException ?: Exception("Erreur inconnue lors de l'appel IA")
     }
 
-    private fun isTransientError(throwable: Throwable): Boolean {
+    internal fun isTransientError(throwable: Throwable): Boolean {
         val msg = throwable.message?.lowercase() ?: ""
         return throwable is IOException ||
                 msg.contains("429") ||
@@ -132,7 +132,7 @@ class AiRepositoryImpl : AiRepository {
                 msg.contains("deadline")
     }
 
-    private fun mapUserFacingException(throwable: Throwable): Throwable {
+    internal fun mapUserFacingException(throwable: Throwable): Throwable {
         val msg = throwable.message?.lowercase() ?: ""
         return when {
             msg.contains("429") || msg.contains("quota") || msg.contains("resource_exhausted") ->
