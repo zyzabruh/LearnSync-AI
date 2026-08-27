@@ -1,7 +1,12 @@
 package com.learnsyncai.ui.screens
 
+import android.Manifest
 import android.app.Activity
 import android.app.TimePickerDialog
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.learnsyncai.data.sync.AuthManager
 import com.learnsyncai.data.sync.FirebaseHelper
@@ -45,6 +51,47 @@ fun ProfileScreen(
     var currentUser by remember { mutableStateOf(auth?.currentUser) }
     var isSigningIn by remember { mutableStateOf(false) }
     var authError by remember { mutableStateOf<String?>(null) }
+    var showNotificationRationaleDialog by remember { mutableStateOf(false) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            onUpdatePreferences(preferences.copy(notificationsEnabled = true))
+        } else {
+            onUpdatePreferences(preferences.copy(notificationsEnabled = false))
+        }
+    }
+
+    if (showNotificationRationaleDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotificationRationaleDialog = false },
+            icon = { Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Activer les rappels quotidiens") },
+            text = {
+                Text("LearnSync AI utilise les notifications pour vous rappeler chaque matin les flashcards dont l'intervalle de répétition espacée (FSRS) arrive à échéance.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showNotificationRationaleDialog = false
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            onUpdatePreferences(preferences.copy(notificationsEnabled = true))
+                        }
+                    }
+                ) {
+                    Text("Autoriser")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNotificationRationaleDialog = false }) {
+                    Text("Plus tard")
+                }
+            }
+        )
+    }
 
     DisposableEffect(Unit) {
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -222,7 +269,24 @@ fun ProfileScreen(
                             Switch(
                                 checked = preferences.notificationsEnabled,
                                 onCheckedChange = { isEnabled ->
-                                    onUpdatePreferences(preferences.copy(notificationsEnabled = isEnabled))
+                                    if (isEnabled) {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            val hasPermission = ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.POST_NOTIFICATIONS
+                                            ) == PackageManager.PERMISSION_GRANTED
+
+                                            if (hasPermission) {
+                                                onUpdatePreferences(preferences.copy(notificationsEnabled = true))
+                                            } else {
+                                                showNotificationRationaleDialog = true
+                                            }
+                                        } else {
+                                            onUpdatePreferences(preferences.copy(notificationsEnabled = true))
+                                        }
+                                    } else {
+                                        onUpdatePreferences(preferences.copy(notificationsEnabled = false))
+                                    }
                                 }
                             )
                         }

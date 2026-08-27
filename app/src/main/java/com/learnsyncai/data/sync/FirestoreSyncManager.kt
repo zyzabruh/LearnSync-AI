@@ -391,7 +391,33 @@ class FirestoreSyncManager {
         val fs = firestore ?: return Result.success(Unit)
         val uid = getCurrentUserId() ?: return Result.success(Unit)
         return try {
-            fs.collection("users").document(uid).collection("courses").document(courseId).delete().await()
+            val batch = fs.batch()
+            val userDoc = fs.collection("users").document(uid)
+
+            // 1. Supprimer le cours
+            batch.delete(userDoc.collection("courses").document(courseId))
+
+            // 2. Trouver et supprimer en cascade toutes les flashcards du cours
+            val flashcardsSnapshot = userDoc.collection("flashcards")
+                .whereEqualTo("courseId", courseId)
+                .get()
+                .await()
+
+            for (doc in flashcardsSnapshot.documents) {
+                batch.delete(doc.reference)
+            }
+
+            // 3. Trouver et supprimer en cascade tous les quiz du cours
+            val quizSnapshot = userDoc.collection("quiz_questions")
+                .whereEqualTo("courseId", courseId)
+                .get()
+                .await()
+
+            for (doc in quizSnapshot.documents) {
+                batch.delete(doc.reference)
+            }
+
+            batch.commit().await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

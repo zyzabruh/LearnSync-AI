@@ -8,9 +8,11 @@ import com.learnsyncai.domain.usecase.QuizValidator
 import com.google.firebase.Firebase
 import com.google.firebase.ai.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 
 class AiRepositoryImpl : AiRepository {
 
@@ -32,7 +34,9 @@ class AiRepositoryImpl : AiRepository {
 
             if (chunks.size == 1) {
                 onProgress("Génération du résumé, flashcards et QCM avec l'IA...")
-                val result = generateForChunk(courseTitle, chunks[0], isFullDoc = true)
+                val result = executeWithRetry(maxAttempts = 3) {
+                    generateForChunk(courseTitle, chunks[0], isFullDoc = true)
+                }
                 QuizValidator.validateAllOrThrow(result.quizQuestions)
                 return@withContext Result.success(result)
             } else {
@@ -45,11 +49,13 @@ class AiRepositoryImpl : AiRepository {
 
                 chunks.forEachIndexed { index, chunk ->
                     onProgress("Analyse de la section ${index + 1} sur ${chunks.size}...")
-                    val chunkResult = generateForChunk(
-                        courseTitle = "$courseTitle (Section ${index + 1}/${chunks.size})",
-                        courseText = chunk,
-                        isFullDoc = false
-                    )
+                    val chunkResult = executeWithRetry(maxAttempts = 3) {
+                        generateForChunk(
+                            courseTitle = "$courseTitle (Section ${index + 1}/${chunks.size})",
+                            courseText = chunk,
+                            isFullDoc = false
+                        )
+                    }
                     chunkSummaries.add(chunkResult.summary)
                     allKeyPoints.addAll(chunkResult.keyPoints)
                     allMnemonicTips.addAll(chunkResult.mnemonicTips)
@@ -58,12 +64,14 @@ class AiRepositoryImpl : AiRepository {
                 }
 
                 onProgress("Consolidation et synthèse globale par l'IA...")
-                val consolidatedSynthesis = consolidateSectionsWithAi(
-                    courseTitle = courseTitle,
-                    sectionSummaries = chunkSummaries,
-                    allKeyPoints = allKeyPoints,
-                    allMnemonicTips = allMnemonicTips
-                )
+                val consolidatedSynthesis = executeWithRetry(maxAttempts = 2) {
+                    consolidateSectionsWithAi(
+                        courseTitle = courseTitle,
+                        sectionSummaries = chunkSummaries,
+                        allKeyPoints = allKeyPoints,
+                        allMnemonicTips = allMnemonicTips
+                    )
+                }
 
                 // Intelligent deduplication of flashcards and quiz questions
                 val distinctFlashcards = deduplicateFlashcards(allFlashcards)
@@ -82,7 +90,58 @@ class AiRepositoryImpl : AiRepository {
                 )
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(mapUserFacingException(e))
+        }
+    }
+
+    private suspend fun <T> executeWithRetry(
+        maxAttempts: Int = 3,
+        initialDelayMs: Long = 1000L,
+        block: suspend () -> T
+    ): T {
+        var currentDelay = initialDelayMs
+        var lastException: Throwable? = null
+
+        for (attempt in 1..maxAttempts) {
+            try {
+                return block()
+            } catch (e: Throwable) {
+                lastException = e
+                val isTransient = isTransientError(e)
+
+                if (attempt < maxAttempts && isTransient) {
+                    delay(currentDelay)
+                    currentDelay = (currentDelay * 2).coerceAtMost(6000L)
+                } else {
+                    break
+                }
+            }
+        }
+
+        throw lastException ?: Exception("Erreur inconnue lors de l'appel IA")
+    }
+
+    private fun isTransientError(throwable: Throwable): Boolean {
+        val msg = throwable.message?.lowercase() ?: ""
+        return throwable is IOException ||
+                msg.contains("429") ||
+                msg.contains("quota") ||
+                msg.contains("resource_exhausted") ||
+                msg.contains("unavailable") ||
+                msg.contains("timeout") ||
+                msg.contains("deadline")
+    }
+
+    private fun mapUserFacingException(throwable: Throwable): Throwable {
+        val msg = throwable.message?.lowercase() ?: ""
+        return when {
+            msg.contains("429") || msg.contains("quota") || msg.contains("resource_exhausted") ->
+                IllegalStateException("Quota d'IA temporairement atteint. Veuillez patienter une minute avant de réessayer.", throwable)
+            throwable is IOException || msg.contains("network") || msg.contains("timeout") || msg.contains("unavailable") ->
+                IllegalStateException("Problème de connexion avec le service IA. Vérifiez votre accès Internet.", throwable)
+            msg.contains("json") || msg.contains("parsing") ->
+                IllegalStateException("Le document n'a pas pu être structuré par l'IA. Essayez avec un document plus concis.", throwable)
+            else -> throwable
         }
     }
 
