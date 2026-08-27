@@ -23,8 +23,13 @@ class CourseRepositoryImpl(
     override suspend fun insertCourses(courses: List<Course>) =
         courseDao.insertCourses(courses.map { it.toEntity() })
 
-    override suspend fun deleteCourse(courseId: String) =
-        courseDao.deleteCourseById(courseId)
+    override suspend fun deleteCourse(courseId: String) {
+        if (db != null) {
+            db.deleteCourseAtomically(courseId)
+        } else {
+            courseDao.deleteCourseById(courseId)
+        }
+    }
 
     override suspend fun replaceCourseContentAtomically(
         course: Course,

@@ -3,8 +3,13 @@ package com.learnsyncai.ui.screens
 import android.Manifest
 import android.app.Activity
 import android.app.TimePickerDialog
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -26,6 +31,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.learnsyncai.data.sync.AuthManager
@@ -34,6 +40,12 @@ import com.learnsyncai.domain.model.UserPreferences
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
 import kotlinx.coroutines.launch
+
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +64,8 @@ fun ProfileScreen(
     var isSigningIn by remember { mutableStateOf(false) }
     var authError by remember { mutableStateOf<String?>(null) }
     var showNotificationRationaleDialog by remember { mutableStateOf(false) }
+    var showNotificationSettingsDialog by remember { mutableStateOf(false) }
+    var notificationDeniedCount by remember { mutableStateOf(0) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -60,6 +74,7 @@ fun ProfileScreen(
             onUpdatePreferences(preferences.copy(notificationsEnabled = true))
         } else {
             onUpdatePreferences(preferences.copy(notificationsEnabled = false))
+            notificationDeniedCount++
         }
     }
 
@@ -88,6 +103,35 @@ fun ProfileScreen(
             dismissButton = {
                 TextButton(onClick = { showNotificationRationaleDialog = false }) {
                     Text("Plus tard")
+                }
+            }
+        )
+    }
+
+    if (showNotificationSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotificationSettingsDialog = false },
+            icon = { Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Permission requise") },
+            text = {
+                Text("L'accès aux notifications a été refusé de façon permanente. Veuillez l'autoriser dans les paramètres de l'application.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showNotificationSettingsDialog = false
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("Ouvrir les paramètres")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNotificationSettingsDialog = false }) {
+                    Text("Annuler")
                 }
             }
         )
@@ -279,7 +323,16 @@ fun ProfileScreen(
                                             if (hasPermission) {
                                                 onUpdatePreferences(preferences.copy(notificationsEnabled = true))
                                             } else {
-                                                showNotificationRationaleDialog = true
+                                                val activity = context.findActivity()
+                                                val showRationale = activity?.let { 
+                                                    ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.POST_NOTIFICATIONS) 
+                                                } ?: false
+
+                                                if (notificationDeniedCount >= 1 && !showRationale) {
+                                                    showNotificationSettingsDialog = true
+                                                } else {
+                                                    showNotificationRationaleDialog = true
+                                                }
                                             }
                                         } else {
                                             onUpdatePreferences(preferences.copy(notificationsEnabled = true))

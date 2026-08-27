@@ -1,7 +1,13 @@
 package com.learnsyncai.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -22,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.learnsyncai.domain.model.Course
 import com.learnsyncai.domain.model.Flashcard
@@ -29,6 +36,12 @@ import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
+
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +58,8 @@ fun CalendarScreen(
         )
     }
     var showCalendarRationaleDialog by remember { mutableStateOf(false) }
+    var showCalendarSettingsDialog by remember { mutableStateOf(false) }
+    var calendarDeniedCount by remember { mutableStateOf(0) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -52,6 +67,8 @@ fun CalendarScreen(
         hasCalendarPermission = permissions[Manifest.permission.WRITE_CALENDAR] == true
         if (hasCalendarPermission) {
             onSyncCalendar()
+        } else {
+            calendarDeniedCount++
         }
     }
 
@@ -80,6 +97,35 @@ fun CalendarScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCalendarRationaleDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    if (showCalendarSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showCalendarSettingsDialog = false },
+            icon = { Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Permission requise") },
+            text = {
+                Text("L'accès au calendrier a été refusé de façon permanente. Veuillez l'autoriser dans les paramètres de l'application.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCalendarSettingsDialog = false
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("Ouvrir les paramètres")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCalendarSettingsDialog = false }) {
                     Text("Annuler")
                 }
             }
@@ -198,7 +244,16 @@ fun CalendarScreen(
                                 if (hasCalendarPermission) {
                                     onSyncCalendar()
                                 } else {
-                                    showCalendarRationaleDialog = true
+                                    val activity = context.findActivity()
+                                    val showRationale = activity?.let { 
+                                        ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.WRITE_CALENDAR) 
+                                    } ?: false
+
+                                    if (calendarDeniedCount >= 1 && !showRationale) {
+                                        showCalendarSettingsDialog = true
+                                    } else {
+                                        showCalendarRationaleDialog = true
+                                    }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()

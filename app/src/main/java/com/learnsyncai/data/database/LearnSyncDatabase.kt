@@ -47,6 +47,15 @@ abstract class LearnSyncDatabase : RoomDatabase() {
         courseDao().insertCourse(course)
     }
 
+    @Transaction
+    open suspend fun deleteCourseAtomically(courseId: String) {
+        studyMaterialDao().deleteMaterialsForCourse(courseId)
+        flashcardDao().deleteFlashcardsForCourse(courseId)
+        quizQuestionDao().deleteQuizQuestionsForCourse(courseId)
+        calendarEventDao().deleteEventsForCourse(courseId)
+        courseDao().deleteCourseById(courseId)
+    }
+
     companion object {
         @Volatile
         private var INSTANCE: LearnSyncDatabase? = null

@@ -10,13 +10,16 @@ import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 
-class FirestoreSyncManager {
+class FirestoreSyncManager(
+    private val customFirestore: FirebaseFirestore? = null,
+    private val customAuth: FirebaseAuth? = null
+) {
 
     private val firestore: FirebaseFirestore?
-        get() = FirebaseHelper.getFirestore()
+        get() = customFirestore ?: FirebaseHelper.getFirestore()
 
     private val auth: FirebaseAuth?
-        get() = FirebaseHelper.getAuth()
+        get() = customAuth ?: FirebaseHelper.getAuth()
 
     private val storage: FirebaseStorage?
         get() = FirebaseHelper.getStorage()
@@ -388,6 +391,8 @@ class FirestoreSyncManager {
     }
 
     suspend fun deleteCourseInCloud(courseId: String): Result<Unit> {
+        // Note: calendar_events are intentionally NOT synchronized to Firestore,
+        // as they are managed exclusively locally via CalendarHelper and the Android system calendar contract.
         val fs = firestore ?: return Result.success(Unit)
         val uid = getCurrentUserId() ?: return Result.success(Unit)
         return try {
@@ -397,17 +402,17 @@ class FirestoreSyncManager {
             // 1. Supprimer le cours
             batch.delete(userDoc.collection("courses").document(courseId))
 
-            // 2. Trouver et supprimer en cascade toutes les flashcards du cours
-            val flashcardsSnapshot = userDoc.collection("flashcards")
+            // 2. Supprimer les study_materials du cours
+            val studyMaterialsSnapshot = userDoc.collection("study_materials")
                 .whereEqualTo("courseId", courseId)
                 .get()
                 .await()
 
-            for (doc in flashcardsSnapshot.documents) {
+            for (doc in studyMaterialsSnapshot.documents) {
                 batch.delete(doc.reference)
             }
 
-            // 3. Trouver et supprimer en cascade tous les quiz du cours
+            // 3. Supprimer les quiz_questions du cours
             val quizSnapshot = userDoc.collection("quiz_questions")
                 .whereEqualTo("courseId", courseId)
                 .get()
@@ -415,6 +420,32 @@ class FirestoreSyncManager {
 
             for (doc in quizSnapshot.documents) {
                 batch.delete(doc.reference)
+            }
+
+            // 4. Récupérer et supprimer les flashcards du cours
+            val flashcardsSnapshot = userDoc.collection("flashcards")
+                .whereEqualTo("courseId", courseId)
+                .get()
+                .await()
+
+            val flashcardIds = mutableListOf<String>()
+            for (doc in flashcardsSnapshot.documents) {
+                batch.delete(doc.reference)
+                val fid = doc.getString("id") ?: doc.id
+                flashcardIds.add(fid)
+            }
+
+            // 5. Supprimer les review_logs liés aux flashcards (par chunks de 10 pour whereIn)
+            if (flashcardIds.isNotEmpty()) {
+                for (chunk in flashcardIds.chunked(10)) {
+                    val reviewLogsSnapshot = userDoc.collection("review_logs")
+                        .whereIn("flashcardId", chunk)
+                        .get()
+                        .await()
+                    for (doc in reviewLogsSnapshot.documents) {
+                        batch.delete(doc.reference)
+                    }
+                }
             }
 
             batch.commit().await()
