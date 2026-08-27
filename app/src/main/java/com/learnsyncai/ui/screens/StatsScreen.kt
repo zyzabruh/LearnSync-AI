@@ -253,6 +253,102 @@ fun StatsScreen(
                 }
             }
 
+            // 28-Day Consistency Heatmap Card
+            item {
+                val last28DaysData = remember(reviewLogs) {
+                    val today = LocalDate.now()
+                    (27 downTo 0).map { daysAgo ->
+                        val targetDate = today.minusDays(daysAgo.toLong())
+                        val count = reviewLogs.count { log ->
+                            Instant.ofEpochMilli(log.reviewedAt).atZone(ZoneId.systemDefault()).toLocalDate() == targetDate
+                        }
+                        targetDate to count
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = LearnSyncShapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(LearnSyncSpacing.large),
+                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Heatmap de régularité",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Activité des 4 dernières semaines",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Surface(
+                                shape = LearnSyncShapes.pill,
+                                color = EmeraldSoftBg
+                            ) {
+                                Text(
+                                    text = "${last28DaysData.count { it.second > 0 }} / 28 jours actifs",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = EmeraldDark,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        // Grid of 4 weeks (7 days each)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            last28DaysData.chunked(7).forEach { weekDays ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    weekDays.forEach { (_, count) ->
+                                        val boxColor = when {
+                                            count >= 5 -> IndigoPrimary
+                                            count >= 3 -> IndigoLight
+                                            count >= 1 -> IndigoSoftBg
+                                            else -> MaterialTheme.colorScheme.surfaceVariant
+                                        }
+                                        val textColor = if (count >= 3) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(boxColor),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (count > 0) {
+                                                Text(
+                                                    text = "$count",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = textColor
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Retention & FSRS Algorithm Overview
             item {
                 Card(

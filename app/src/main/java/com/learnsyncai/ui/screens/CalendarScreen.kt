@@ -44,6 +44,7 @@ fun CalendarScreen(
             ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
         )
     }
+    var showCalendarRationaleDialog by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -52,6 +53,37 @@ fun CalendarScreen(
         if (hasCalendarPermission) {
             onSyncCalendar()
         }
+    }
+
+    if (showCalendarRationaleDialog) {
+        AlertDialog(
+            onDismissRequest = { showCalendarRationaleDialog = false },
+            icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Accès au Calendrier") },
+            text = {
+                Text("LearnSync AI a besoin de l'accès à votre agenda pour y inscrire automatiquement vos séances de révision FSRS et optimiser votre mémorisation.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCalendarRationaleDialog = false
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.READ_CALENDAR,
+                                Manifest.permission.WRITE_CALENDAR
+                            )
+                        )
+                    }
+                ) {
+                    Text("Continuer")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCalendarRationaleDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
     }
 
     // Group flashcards due dates
@@ -166,12 +198,7 @@ fun CalendarScreen(
                                 if (hasCalendarPermission) {
                                     onSyncCalendar()
                                 } else {
-                                    permissionLauncher.launch(
-                                        arrayOf(
-                                            Manifest.permission.READ_CALENDAR,
-                                            Manifest.permission.WRITE_CALENDAR
-                                        )
-                                    )
+                                    showCalendarRationaleDialog = true
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()

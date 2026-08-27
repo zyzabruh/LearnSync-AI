@@ -1,5 +1,7 @@
 package com.learnsyncai.ui.screens
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -112,7 +114,7 @@ fun ReviewScreen(
                             )
                         }
 
-                        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                         // Stats Summary Row
                         Row(
@@ -160,7 +162,7 @@ fun ReviewScreen(
                             }
                         }
 
-                        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -278,11 +280,60 @@ fun ReviewScreen(
                 trackColor = Slate200
             )
 
-            // Flashcard container with scrollable content
+            val rotation by animateFloatAsState(
+                targetValue = if (isAnswerRevealed) 180f else 0f,
+                animationSpec = tween(400, easing = FastOutSlowInEasing),
+                label = "cardFlipRotation"
+            )
+
+            // Flashcard container with scrollable content & 3D Flip + Swipe
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    .graphicsLayer {
+                        rotationY = rotation
+                        cameraDistance = 12f * density
+                    }
+                    .pointerInput(isAnswerRevealed) {
+                        var totalDrag = 0f
+                        detectHorizontalDragGestures(
+                            onHorizontalDrag = { _, dragAmount ->
+                                totalDrag += dragAmount
+                            },
+                            onDragEnd = {
+                                if (totalDrag > 80f) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (!isAnswerRevealed) {
+                                        isAnswerRevealed = true
+                                    } else {
+                                        // Swipe right -> Good rating
+                                        val reviewTime = System.currentTimeMillis() - cardStartTime
+                                        totalReviewedCount++
+                                        totalGoodOrEasyCount++
+                                        onReviewCard(currentCard, SpacedRepetition.RATING_GOOD, reviewTime)
+                                        isAnswerRevealed = false
+                                        cardStartTime = System.currentTimeMillis()
+                                        currentIndex++
+                                    }
+                                } else if (totalDrag < -80f) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (!isAnswerRevealed) {
+                                        isAnswerRevealed = true
+                                    } else {
+                                        // Swipe left -> Again rating
+                                        val reviewTime = System.currentTimeMillis() - cardStartTime
+                                        totalReviewedCount++
+                                        onReviewCard(currentCard, SpacedRepetition.RATING_AGAIN, reviewTime)
+                                        isAnswerRevealed = false
+                                        cardStartTime = System.currentTimeMillis()
+                                        currentIndex++
+                                    }
+                                }
+                                totalDrag = 0f
+                            }
+                        )
+                    }
                     .clickable {
                         if (!isAnswerRevealed) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -296,6 +347,12 @@ fun ReviewScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .graphicsLayer {
+                            // Prevent text mirroring past 90 degrees
+                            if (rotation > 90f) {
+                                rotationY = 180f
+                            }
+                        }
                         .padding(LearnSyncSpacing.xxl)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.Center,
@@ -332,7 +389,7 @@ fun ReviewScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(top = LearnSyncSpacing.xxl)
                         ) {
-                            Divider(
+                            HorizontalDivider(
                                 color = MaterialTheme.colorScheme.outlineVariant,
                                 modifier = Modifier.padding(vertical = LearnSyncSpacing.large)
                             )

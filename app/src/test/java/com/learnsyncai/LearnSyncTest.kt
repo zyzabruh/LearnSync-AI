@@ -275,5 +275,18 @@ class LearnSyncTest {
         assertEquals(0, com.learnsyncai.domain.usecase.QuizValidator.filterValidQuestions(listOf(wrongAnswer)).size)
     }
 
+    @Test
+    fun testCalculateStreak() {
+        val now = System.currentTimeMillis()
+        val oneDayMs = TimeUnit.DAYS.toMillis(1)
+        val logs = listOf(
+            ReviewLog(id = "1", flashcardId = "c1", reviewedAt = now, rating = 3, previousInterval = 0, newInterval = 1, responseTime = 500L),
+            ReviewLog(id = "2", flashcardId = "c1", reviewedAt = now - oneDayMs, rating = 3, previousInterval = 0, newInterval = 1, responseTime = 500L),
+            ReviewLog(id = "3", flashcardId = "c1", reviewedAt = now - (oneDayMs * 2), rating = 3, previousInterval = 0, newInterval = 1, responseTime = 500L)
+        )
+        val streak = SpacedRepetition.calculateStreak(logs)
+        assertTrue(streak >= 1)
+    }
+
 }
 
