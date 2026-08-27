@@ -1,0 +1,140 @@
+package com.learnsyncai.data.database
+
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface CourseDao {
+    @Query("SELECT * FROM courses ORDER BY updatedAt DESC")
+    fun getAllCourses(): Flow<List<CourseEntity>>
+
+    @Query("SELECT * FROM courses WHERE id = :courseId")
+    suspend fun getCourseById(courseId: String): CourseEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCourse(course: CourseEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCourses(courses: List<CourseEntity>)
+
+    @Delete
+    suspend fun deleteCourse(course: CourseEntity)
+
+    @Query("DELETE FROM courses WHERE id = :courseId")
+    suspend fun deleteCourseById(courseId: String)
+}
+
+@Dao
+interface StudyMaterialDao {
+    @Query("SELECT * FROM study_materials WHERE courseId = :courseId ORDER BY version DESC")
+    fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterialEntity>>
+
+    @Query("SELECT * FROM study_materials ORDER BY generatedAt DESC")
+    fun getAllMaterials(): Flow<List<StudyMaterialEntity>>
+
+    @Query("SELECT MAX(version) FROM study_materials WHERE courseId = :courseId")
+    suspend fun getLatestVersionForCourse(courseId: String): Int?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMaterial(material: StudyMaterialEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMaterials(materials: List<StudyMaterialEntity>)
+
+    @Query("DELETE FROM study_materials WHERE courseId = :courseId")
+    suspend fun deleteMaterialsForCourse(courseId: String)
+}
+
+@Dao
+interface FlashcardDao {
+    @Query("SELECT * FROM flashcards WHERE courseId = :courseId")
+    fun getFlashcardsForCourse(courseId: String): Flow<List<FlashcardEntity>>
+
+    @Query("SELECT * FROM flashcards WHERE dueDate <= :currentTime")
+    fun getDueFlashcards(currentTime: Long): Flow<List<FlashcardEntity>>
+
+    @Query("SELECT * FROM flashcards WHERE courseId = :courseId AND dueDate <= :currentTime")
+    fun getDueFlashcardsForCourse(courseId: String, currentTime: Long): Flow<List<FlashcardEntity>>
+
+    @Query("SELECT * FROM flashcards")
+    fun getAllFlashcards(): Flow<List<FlashcardEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFlashcard(flashcard: FlashcardEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFlashcards(flashcards: List<FlashcardEntity>)
+
+    @Update
+    suspend fun updateFlashcard(flashcard: FlashcardEntity)
+
+    @Query("DELETE FROM flashcards WHERE courseId = :courseId")
+    suspend fun deleteFlashcardsForCourse(courseId: String)
+}
+
+@Dao
+interface QuizQuestionDao {
+    @Query("SELECT * FROM quiz_questions WHERE courseId = :courseId")
+    fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestionEntity>>
+
+    @Query("SELECT * FROM quiz_questions")
+    fun getAllQuizQuestions(): Flow<List<QuizQuestionEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertQuizQuestions(questions: List<QuizQuestionEntity>)
+
+    @Query("DELETE FROM quiz_questions WHERE courseId = :courseId")
+    suspend fun deleteQuizQuestionsForCourse(courseId: String)
+}
+
+@Dao
+interface ReviewLogDao {
+    @Query("SELECT * FROM review_logs ORDER BY reviewedAt DESC")
+    fun getAllReviewLogs(): Flow<List<ReviewLogEntity>>
+
+    @Query("SELECT * FROM review_logs WHERE reviewedAt >= :startTime")
+    fun getReviewLogsSince(startTime: Long): Flow<List<ReviewLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReviewLog(log: ReviewLogEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReviewLogs(logs: List<ReviewLogEntity>)
+}
+
+@Dao
+interface UserPreferencesDao {
+    @Query("SELECT * FROM user_preferences WHERE id = 1")
+    fun getPreferences(): Flow<UserPreferencesEntity?>
+
+    @Query("SELECT * FROM user_preferences WHERE id = 1")
+    suspend fun getPreferencesSync(): UserPreferencesEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPreferences(preferences: UserPreferencesEntity)
+}
+
+@Dao
+interface CalendarEventDao {
+    @Query("SELECT * FROM calendar_events WHERE courseId = :courseId ORDER BY scheduledDate ASC")
+    fun getEventsForCourse(courseId: String): Flow<List<CalendarEventEntity>>
+
+    @Query("SELECT * FROM calendar_events ORDER BY scheduledDate ASC")
+    fun getAllCalendarEvents(): Flow<List<CalendarEventEntity>>
+
+    @Query("SELECT * FROM calendar_events WHERE courseId = :courseId AND scheduledDate = :scheduledDate LIMIT 1")
+    suspend fun getEventForCourseAndDate(courseId: String, scheduledDate: Long): CalendarEventEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvent(event: CalendarEventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvents(events: List<CalendarEventEntity>)
+
+    @Query("DELETE FROM calendar_events WHERE id = :id")
+    suspend fun deleteEvent(id: String)
+
+    @Query("DELETE FROM calendar_events WHERE courseId = :courseId")
+    suspend fun deleteEventsForCourse(courseId: String)
+}
+
