@@ -22,14 +22,13 @@ jobs:
       run: chmod +x gradlew
 
     - name: Create google-services.json
-      # Note: secrets.GOOGLE_SERVICES_JSON is empty on pull requests from external forks for security reasons.
       env:
         GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
       run: |
         if [ -n "$GOOGLE_SERVICES_JSON" ]; then
           echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
         else
-          echo "GOOGLE_SERVICES_JSON secret is empty or not available (e.g. PR from external fork). Skipping creation of app/google-services.json."
+          echo "::warning::Secret GOOGLE_SERVICES_JSON absent (normal sur une PR venant d'un fork) — le fichier ne sera pas créé."
         fi
 
     - name: Run Unit Tests
