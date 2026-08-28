@@ -56,7 +56,13 @@ class AuthManager {
                 Result.failure(IllegalStateException("Type d'identifiant non pris en charge."))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val friendlyMessage = if (e.message?.contains("No credentials available", ignoreCase = true) == true ||
+                e.message?.contains("No credential", ignoreCase = true) == true) {
+                "Aucun compte Google n'est connecté sur cet appareil ou les identifiants ne sont pas disponibles. Veuillez vous connecter à un compte Google dans les paramètres de l'émulateur."
+            } else {
+                e.message ?: "Erreur de connexion"
+            }
+            Result.failure(Exception(friendlyMessage))
         }
     }
 
