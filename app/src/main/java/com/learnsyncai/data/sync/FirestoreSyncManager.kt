@@ -10,6 +10,10 @@ import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 
+/**
+ * Note: calendar_events are intentionally excluded from cloud synchronization and remain
+ * local-only, managed exclusively via CalendarHelper and the Android system calendar contract.
+ */
 class FirestoreSyncManager(
     private val customFirestore: FirebaseFirestore? = null,
     private val customAuth: FirebaseAuth? = null
