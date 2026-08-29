@@ -6,7 +6,6 @@ data class Course(
     val description: String,
     val sourceFileName: String,
     val sourceFileUri: String,
-    val extractedText: String,
     val createdAt: Long,
     val updatedAt: Long,
     val progress: Float,

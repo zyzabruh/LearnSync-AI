@@ -53,7 +53,6 @@ class LearnSyncDatabaseRobolectricTest {
             description = "Structures de données",
             sourceFileName = "algo.pdf",
             sourceFileUri = "content://algo.pdf",
-            extractedText = "Arbres binaires et graphes",
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
             progress = 50f,
@@ -133,7 +132,7 @@ class LearnSyncDatabaseRobolectricTest {
     @Test
     fun testDueFlashcardsOnlyReturned() = runBlocking {
         val courseId = "course-due-test"
-        val course = CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", "txt", 0L, 0L, 0f, "#000", "COMPLETED")
+        val course = CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 0L, 0f, "#000", "COMPLETED")
         courseDao.insertCourse(course)
 
         val now = 1_000_000L
@@ -153,7 +152,7 @@ class LearnSyncDatabaseRobolectricTest {
     @Test
     fun testStudyMaterialVersionTracking() = runBlocking {
         val courseId = "course-ver-test"
-        val course = CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", "txt", 0L, 0L, 0f, "#000", "COMPLETED")
+        val course = CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 0L, 0f, "#000", "COMPLETED")
         courseDao.insertCourse(course)
 
         assertEquals(0, materialDao.getLatestVersionForCourse(courseId) ?: 0)

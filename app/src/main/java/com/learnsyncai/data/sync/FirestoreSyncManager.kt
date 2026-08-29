@@ -77,7 +77,6 @@ class FirestoreSyncManager(
                         "description" to course.description,
                         "sourceFileName" to course.sourceFileName,
                         "sourceFileUri" to course.sourceFileUri,
-                        "extractedText" to course.extractedText,
                         "createdAt" to course.createdAt,
                         "updatedAt" to course.updatedAt,
                         "progress" to course.progress,
@@ -262,14 +261,13 @@ class FirestoreSyncManager(
                 val description = doc.getString("description") ?: ""
                 val sourceFileName = doc.getString("sourceFileName") ?: ""
                 val sourceFileUri = doc.getString("sourceFileUri") ?: ""
-                val extractedText = doc.getString("extractedText") ?: ""
                 val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
                 val updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
                 val progress = doc.getDouble("progress")?.toFloat() ?: 0f
                 val color = doc.getString("color") ?: "#4F46E5"
                 val generationStatus = doc.getString("generationStatus") ?: "COMPLETED"
 
-                Course(id, title, description, sourceFileName, sourceFileUri, extractedText, createdAt, updatedAt, progress, color, generationStatus)
+                Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus)
             }
             Result.success(courses)
         } catch (e: Exception) {
@@ -389,6 +387,20 @@ class FirestoreSyncManager(
             val language = doc.getString("language") ?: "fr"
 
             Result.success(UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteCourseFiles(courseId: String): Result<Unit> {
+        val st = storage ?: return Result.success(Unit)
+        val uid = getCurrentUserId() ?: return Result.success(Unit)
+        return try {
+            val listResult = st.reference.child("users/$uid/courses/$courseId").listAll().await()
+            for (item in listResult.items) {
+                item.delete().await()
+            }
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }

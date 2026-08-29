@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserPreferencesEntity::class,
         CalendarEventEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
@@ -85,6 +85,47 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    val cursor = db.query("SELECT id, extractedText FROM courses")
+                    val filesDir = java.io.File("/data/data/com.learnsyncai/files/courses")
+                    filesDir.mkdirs()
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(0)
+                        val text = cursor.getString(1)
+                        if (!text.isNullOrEmpty()) {
+                            val sanitizedId = id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                            val file = java.io.File(filesDir, "$sanitizedId.txt")
+                            file.writeText(text, Charsets.UTF_8)
+                        }
+                    }
+                    cursor.close()
+                } catch (_: Exception) {}
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `courses_new` (
+                        `id` TEXT NOT NULL PRIMARY KEY,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `sourceFileName` TEXT NOT NULL,
+                        `sourceFileUri` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `progress` REAL NOT NULL,
+                        `color` TEXT NOT NULL,
+                        `generationStatus` TEXT NOT NULL
+                    )
+                """)
+                db.execSQL("""
+                    INSERT INTO courses_new (id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus)
+                    SELECT id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus FROM courses
+                """)
+                db.execSQL("DROP TABLE courses")
+                db.execSQL("ALTER TABLE courses_new RENAME TO courses")
+            }
+        }
+
         fun getDatabase(context: Context): LearnSyncDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -92,7 +133,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 INSTANCE = instance
                 instance

@@ -158,8 +158,8 @@ class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : Pref
 }
 
 // Mappers
-fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, extractedText, createdAt, updatedAt, progress, color, generationStatus)
-fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, extractedText, createdAt, updatedAt, progress, color, generationStatus)
+fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus)
+fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus)
 
 fun StudyMaterialEntity.toDomain() = StudyMaterial(
     id = id,

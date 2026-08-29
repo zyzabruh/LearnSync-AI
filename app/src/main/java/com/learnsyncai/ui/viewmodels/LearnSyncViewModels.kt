@@ -29,6 +29,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     private val aiRepo = AiRepositoryImpl()
     private val documentParser = DocumentParser(application)
     private val firestoreSyncManager = FirestoreSyncManager()
+    private val courseContentStorage = com.learnsyncai.data.storage.CourseContentStorage(application)
 
     init {
         // Initialize daily background reminder if enabled
@@ -93,13 +94,13 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 val parseResult = documentParser.parseDocument(uri, fileName)
                 val courseId = UUID.randomUUID().toString()
+                courseContentStorage.saveExtractedText(courseId, parseResult.text)
                 val course = Course(
                     id = courseId,
                     title = parseResult.title,
                     description = "Importé depuis $fileName (${parseResult.pageCount} pages)",
                     sourceFileName = fileName,
                     sourceFileUri = uri.toString(),
-                    extractedText = parseResult.text,
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis(),
                     progress = 0f,
@@ -134,9 +135,10 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             )
             courseRepo.insertCourse(updatedCourseGenerating)
 
+            val courseText = courseContentStorage.readExtractedText(course.id)
             val result = aiRepo.generateStudyMaterial(
                 courseTitle = course.title,
-                courseText = course.extractedText,
+                courseText = courseText,
                 onProgress = { progressText ->
                     _generationProgress.value = progressText
                 }
@@ -243,11 +245,14 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteCourse(courseId: String) {
         viewModelScope.launch {
             try {
-                // Cascading delete handles sub-entities in Room
+                // 1. Delete local extracted text file
+                courseContentStorage.deleteExtractedText(courseId)
+                // 2. Cascading delete handles sub-entities in Room
                 courseRepo.deleteCourse(courseId)
-                // Clean up in cloud replica
+                // 3. Clean up in cloud replica and storage
                 launch {
                     firestoreSyncManager.deleteCourseInCloud(courseId)
+                    firestoreSyncManager.deleteCourseFiles(courseId)
                 }
                 _uiState.value = UiState.Success("Cours supprimé avec succès.")
             } catch (e: Exception) {
