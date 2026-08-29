@@ -12,7 +12,11 @@ class CourseRepositoryImpl(
     private val db: LearnSyncDatabase? = null
 ) : CourseRepository {
     override fun getAllCourses(): Flow<List<Course>> =
-        courseDao.getAllCourses().map { list -> list.map { it.toDomain() } }
+        courseDao.getAllCourses().map { list ->
+            val domainList = list.map { it.toDomain() }
+            android.util.Log.d("LearnSyncAI", "données émises par les Flow: type=Course, count=${domainList.size}")
+            domainList
+        }
 
     override suspend fun getCourseById(courseId: String): Course? =
         courseDao.getCourseById(courseId)?.toDomain()
@@ -74,7 +78,11 @@ class CalendarEventRepositoryImpl(private val calendarEventDao: CalendarEventDao
 
 class StudyMaterialRepositoryImpl(private val studyMaterialDao: StudyMaterialDao) : StudyMaterialRepository {
     override fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>> =
-        studyMaterialDao.getMaterialsForCourse(courseId).map { list -> list.map { it.toDomain() } }
+        studyMaterialDao.getMaterialsForCourse(courseId).map { list ->
+            val domainList = list.map { it.toDomain() }
+            android.util.Log.d("LearnSyncAI", "données émises par les Flow: type=StudyMaterial, courseId=$courseId, count=${domainList.size}")
+            domainList
+        }
 
     override fun getAllMaterials(): Flow<List<StudyMaterial>> =
         studyMaterialDao.getAllMaterials().map { list -> list.map { it.toDomain() } }
@@ -97,7 +105,11 @@ class StudyMaterialRepositoryImpl(private val studyMaterialDao: StudyMaterialDao
 
 class FlashcardRepositoryImpl(private val flashcardDao: FlashcardDao) : FlashcardRepository {
     override fun getFlashcardsForCourse(courseId: String): Flow<List<Flashcard>> =
-        flashcardDao.getFlashcardsForCourse(courseId).map { list -> list.map { it.toDomain() } }
+        flashcardDao.getFlashcardsForCourse(courseId).map { list ->
+            val domainList = list.map { it.toDomain() }
+            android.util.Log.d("LearnSyncAI", "données émises par les Flow: type=Flashcard, courseId=$courseId, count=${domainList.size}")
+            domainList
+        }
 
     override fun getDueFlashcards(): Flow<List<Flashcard>> =
         flashcardDao.getDueFlashcards(System.currentTimeMillis()).map { list -> list.map { it.toDomain() } }
@@ -126,7 +138,11 @@ class FlashcardRepositoryImpl(private val flashcardDao: FlashcardDao) : Flashcar
 
 class QuizRepositoryImpl(private val quizQuestionDao: QuizQuestionDao) : QuizRepository {
     override fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestion>> =
-        quizQuestionDao.getQuizQuestionsForCourse(courseId).map { list -> list.map { it.toDomain() } }
+        quizQuestionDao.getQuizQuestionsForCourse(courseId).map { list ->
+            val domainList = list.map { it.toDomain() }
+            android.util.Log.d("LearnSyncAI", "données émises par les Flow: type=QuizQuestion, courseId=$courseId, count=${domainList.size}")
+            domainList
+        }
 
     override fun getAllQuizQuestions(): Flow<List<QuizQuestion>> =
         quizQuestionDao.getAllQuizQuestions().map { list -> list.map { it.toDomain() } }

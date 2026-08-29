@@ -47,6 +47,8 @@ abstract class LearnSyncDatabase : RoomDatabase() {
         flashcardDao().insertFlashcards(flashcards)
         quizQuestionDao().insertQuizQuestions(quizQuestions)
         courseDao().insertCourse(course)
+
+        android.util.Log.d("LearnSyncAI", "commit Room: courseId=${course.id}")
     }
 
     @Transaction

@@ -84,6 +84,7 @@ class OpenAiCompatibleClient(
         }
 
         val response = try {
+            android.util.Log.d("LearnSyncAI", "requête commencée: model=$modelName, promptLength=${prompt.length}")
             client.newCall(requestBuilder.build()).execute()
         } catch (e: IOException) {
             throw e
@@ -93,12 +94,15 @@ class OpenAiCompatibleClient(
 
         response.use { resp ->
             val responseBodyString = resp.body?.string() ?: ""
+            android.util.Log.d("LearnSyncAI", "réponse reçue: statusCode=${resp.code}, length=${responseBodyString.length}")
             if (!resp.isSuccessful) {
                 val errorMessage = extractErrorMessage(resp.code, responseBodyString)
                 throw IOException(errorMessage)
             }
 
-            extractContentFromResponse(responseBodyString)
+            val extractedContent = extractContentFromResponse(responseBodyString)
+            android.util.Log.d("LearnSyncAI", "longueur réponse: ${extractedContent.length}")
+            extractedContent
         }
     }
 

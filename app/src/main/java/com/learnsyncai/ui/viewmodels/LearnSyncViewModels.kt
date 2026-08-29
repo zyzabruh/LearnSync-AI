@@ -250,12 +250,23 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                         updatedAt = System.currentTimeMillis()
                     )
 
+                    android.util.Log.d("LearnSyncAI", "insertion Room: courseId=${course.id}, materialId=$materialId, flashcardsCount=${flashcards.size}, quizCount=${quizQuestions.size}")
+
                     // Atomic replacement in a single Room transaction
                     courseRepo.replaceCourseContentAtomically(
                         course = completedCourse,
                         material = material,
                         flashcards = flashcards,
                         quizQuestions = quizQuestions
+                    )
+
+                    // Immediate verification from Room
+                    val reloadedMaterial = studyMaterialRepo.getLatestMaterialForCourse(course.id)
+                    val reloadedFlashcards = flashcardRepo.getFlashcardsForCourse(course.id).firstOrNull() ?: emptyList()
+                    val reloadedQuiz = quizRepo.getQuizQuestionsForCourse(course.id).firstOrNull() ?: emptyList()
+                    android.util.Log.d(
+                        "LearnSyncAI",
+                        "données relues depuis Room: summaryLength=${reloadedMaterial?.summary?.length ?: 0}, keyPointsCount=${reloadedMaterial?.keyPoints?.size ?: 0}, flashcardsCount=${reloadedFlashcards.size}, quizCount=${reloadedQuiz.size}"
                     )
 
                     _uiState.value = UiState.Success("Matériel v$nextVersion généré : ${flashcards.size} flashcards et ${quizQuestions.size} QCM créés !")
