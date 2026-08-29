@@ -4,12 +4,18 @@ import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.tasks.await
+import java.security.MessageDigest
+import java.util.UUID
 
 class AuthManager {
 
@@ -23,20 +29,25 @@ class AuthManager {
             IllegalStateException("Firebase Auth n'est pas initialisé.")
         )
 
-        return try {
-            val credentialManager = CredentialManager.create(context)
+        val resolvedClientId = if (webClientId.isNotBlank()) {
+            webClientId
+        } else {
+            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+            if (resId != 0) context.getString(resId) else ""
+        }
 
+        val credentialManager = CredentialManager.create(context)
+        val rawNonce = UUID.randomUUID().toString()
+        val hashedNonce = hashNonce(rawNonce)
+
+        val credential = try {
+            // Step 1: Try GetGoogleIdOption for existing authorized accounts / auto-select
             val googleIdOptionBuilder = GetGoogleIdOption.Builder()
                 .setAutoSelectEnabled(false)
+                .setNonce(hashedNonce)
 
-            if (webClientId.isNotBlank()) {
-                googleIdOptionBuilder.setServerClientId(webClientId)
-            } else {
-                // Fallback default client id if available in resources
-                val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-                if (resId != 0) {
-                    googleIdOptionBuilder.setServerClientId(context.getString(resId))
-                }
+            if (resolvedClientId.isNotBlank()) {
+                googleIdOptionBuilder.setServerClientId(resolvedClientId)
             }
 
             val request = GetCredentialRequest.Builder()
@@ -44,11 +55,51 @@ class AuthManager {
                 .build()
 
             val result = credentialManager.getCredential(context = context, request = request)
-            val credential = result.credential
+            result.credential
+        } catch (e: NoCredentialException) {
+            // Step 2: Fallback to explicit GetSignInWithGoogleOption to show account picker
+            try {
+                val signInOptionBuilder = GetSignInWithGoogleOption.Builder(resolvedClientId.ifBlank { "" })
+                    .setNonce(hashedNonce)
 
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(signInOptionBuilder.build())
+                    .build()
+
+                val result = credentialManager.getCredential(context = context, request = request)
+                result.credential
+            } catch (fallbackEx: GetCredentialCancellationException) {
+                return Result.failure(Exception("Connexion annulée par l'utilisateur."))
+            } catch (fallbackEx: Exception) {
+                return Result.failure(fallbackEx)
+            }
+        } catch (e: GetCredentialCancellationException) {
+            return Result.failure(Exception("Connexion annulée par l'utilisateur."))
+        } catch (e: GetCredentialException) {
+            // If another GetCredentialException occurs, try fallback to GetSignInWithGoogleOption as well
+            try {
+                val signInOptionBuilder = GetSignInWithGoogleOption.Builder(resolvedClientId.ifBlank { "" })
+                    .setNonce(hashedNonce)
+
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(signInOptionBuilder.build())
+                    .build()
+
+                val result = credentialManager.getCredential(context = context, request = request)
+                result.credential
+            } catch (fallbackEx: GetCredentialCancellationException) {
+                return Result.failure(Exception("Connexion annulée par l'utilisateur."))
+            } catch (fallbackEx: Exception) {
+                return Result.failure(e)
+            }
+        } catch (e: Exception) {
+            return Result.failure(e)
+        }
+
+        return try {
             if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                val authCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
+                val authCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, rawNonce)
                 val authResult = currentAuth.signInWithCredential(authCredential).await()
                 val user = authResult.user ?: return Result.failure(IllegalStateException("Utilisateur introuvable après connexion."))
                 Result.success(user)
@@ -56,14 +107,15 @@ class AuthManager {
                 Result.failure(IllegalStateException("Type d'identifiant non pris en charge."))
             }
         } catch (e: Exception) {
-            val friendlyMessage = if (e.message?.contains("No credentials available", ignoreCase = true) == true ||
-                e.message?.contains("No credential", ignoreCase = true) == true) {
-                "Aucun compte Google n'est connecté sur cet appareil ou les identifiants ne sont pas disponibles. Veuillez vous connecter à un compte Google dans les paramètres de l'émulateur."
-            } else {
-                e.message ?: "Erreur de connexion"
-            }
-            Result.failure(Exception(friendlyMessage))
+            Result.failure(e)
         }
+    }
+
+    private fun hashNonce(nonce: String): String {
+        val bytes = nonce.toByteArray(Charsets.UTF_8)
+        val md = MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(bytes)
+        return digest.fold("") { str, it -> str + "%02x".format(it) }
     }
 
     fun signOut() {
