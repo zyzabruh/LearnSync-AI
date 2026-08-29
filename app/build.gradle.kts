@@ -102,7 +102,7 @@ dependencies {
   implementation(libs.googleid)
   implementation(libs.pdfbox.android)
   implementation("androidx.work:work-runtime-ktx:2.10.0")
-  implementation(libs.firebase.appcheck.recaptcha)
+  implementation("com.google.firebase:firebase-appcheck-playintegrity")
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
