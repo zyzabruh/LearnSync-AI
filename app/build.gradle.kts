@@ -103,6 +103,7 @@ dependencies {
   implementation(libs.pdfbox.android)
   implementation("androidx.work:work-runtime-ktx:2.10.0")
   implementation("com.google.firebase:firebase-appcheck-playintegrity")
+  implementation("com.google.firebase:firebase-appcheck-debug")
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
