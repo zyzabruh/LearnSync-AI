@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.ai.AiRepositoryImpl
+import com.learnsyncai.data.ai.QuizValidator
 import com.learnsyncai.data.database.LearnSyncDatabase
 import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.repository.*

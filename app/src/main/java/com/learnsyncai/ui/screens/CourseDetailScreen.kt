@@ -232,7 +232,9 @@ fun CourseDetailScreen(
                         }
                     }
                 }
-             // AI Status & Diagnostics Banner
+            }
+
+            // AI Status & Diagnostics Banner
             val isGenerating = course.generationStatus == "GENERATING"
             val isError = course.generationStatus == "ERROR"
 

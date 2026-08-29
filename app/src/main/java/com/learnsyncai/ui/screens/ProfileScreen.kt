@@ -899,13 +899,14 @@ private fun AiProfileEditDialog(
                     }
                 }
 
-                if (selectedPreset == AiProviderPreset.OPENCODE_ZEN && selectedPreset.note != null) {
+                val note = selectedPreset.note
+                if (selectedPreset == AiProviderPreset.OPENCODE_ZEN && note != null) {
                     Surface(
                         color = AmberFlame.copy(alpha = 0.1f),
                         shape = LearnSyncShapes.small
                     ) {
                         Text(
-                            text = selectedPreset.note,
+                            text = note,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(6.dp)
                         )
