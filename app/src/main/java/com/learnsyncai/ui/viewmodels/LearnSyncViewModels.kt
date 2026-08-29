@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.ai.AiRepositoryImpl
-import com.learnsyncai.data.ai.QuizValidator
 import com.learnsyncai.data.database.LearnSyncDatabase
 import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.repository.*
@@ -13,6 +12,7 @@ import com.learnsyncai.data.sync.CalendarHelper
 import com.learnsyncai.data.sync.FirestoreSyncManager
 import com.learnsyncai.data.sync.ReviewNotificationWorker
 import com.learnsyncai.domain.model.*
+import com.learnsyncai.domain.usecase.QuizValidator
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -592,7 +592,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             )
             val validation = QuizValidator.validateQuestion(candidate)
             if (!validation.isValid) {
-                _uiState.value = UiState.Error(validation.errorMessage ?: "Format de QCM invalide (4 options distinctes requises).")
+                _uiState.value = UiState.Error(validation.error ?: "Format de QCM invalide (4 options distinctes requises).")
                 return@launch
             }
             val quizQuestion = QuizQuestion(
