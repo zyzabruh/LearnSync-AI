@@ -148,10 +148,10 @@ class ReviewRepositoryImpl(private val reviewLogDao: ReviewLogDao) : ReviewRepos
 
 class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : PreferencesRepository {
     override fun getPreferences(): Flow<UserPreferences> =
-        prefsDao.getPreferences().map { it?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr") }
+        prefsDao.getPreferences().map { it?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.0-flash") }
 
     override suspend fun getPreferencesSync(): UserPreferences =
-        prefsDao.getPreferencesSync()?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr")
+        prefsDao.getPreferencesSync()?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.0-flash")
 
     override suspend fun updatePreferences(preferences: UserPreferences) =
         prefsDao.insertPreferences(preferences.toEntity())
@@ -207,8 +207,8 @@ fun QuizQuestion.toEntity(): QuizQuestionEntity {
 fun ReviewLogEntity.toDomain() = ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
 fun ReviewLog.toEntity() = ReviewLogEntity(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
 
-fun UserPreferencesEntity.toDomain() = UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language)
-fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, dailyGoal, reminderTime, theme, language)
+fun UserPreferencesEntity.toDomain() = UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName)
+fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName)
 
 fun CalendarEventEntity.toDomain() = CalendarEvent(id, courseId, title, scheduledDate, androidEventId, updatedAt)
 fun CalendarEvent.toEntity() = CalendarEventEntity(id, courseId, title, scheduledDate, androidEventId, updatedAt)

@@ -324,7 +324,10 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     onUpdatePreferences = { prefs -> viewModel.updatePreferences(prefs) },
                                     onSyncCloud = { viewModel.syncWithCloud() },
                                     onSyncCalendar = { viewModel.syncToCalendar() },
-                                    onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) }
+                                    onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
+                                    onTestAiConnection = { baseUrl, apiKey, modelName ->
+                                        viewModel.testAiConnection(baseUrl, apiKey, modelName)
+                                    }
                                 )
                             }
                         }

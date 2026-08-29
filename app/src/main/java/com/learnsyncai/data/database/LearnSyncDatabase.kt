@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserPreferencesEntity::class,
         CalendarEventEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
@@ -126,6 +126,15 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN aiProvider TEXT NOT NULL DEFAULT 'GEMINI'")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN aiBaseUrl TEXT NOT NULL DEFAULT 'https://generativelanguage.googleapis.com/v1beta/openai'")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN aiApiKey TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN aiModelName TEXT NOT NULL DEFAULT 'gemini-2.0-flash'")
+            }
+        }
+
         fun getDatabase(context: Context): LearnSyncDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -133,7 +142,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 INSTANCE = instance
                 instance

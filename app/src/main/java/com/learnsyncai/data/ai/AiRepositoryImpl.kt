@@ -5,8 +5,6 @@ import com.learnsyncai.domain.model.GeneratedQuizQuestion
 import com.learnsyncai.domain.model.StudyGenerationResult
 import com.learnsyncai.domain.repository.AiRepository
 import com.learnsyncai.domain.usecase.QuizValidator
-import com.google.firebase.Firebase
-import com.google.firebase.ai.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -14,7 +12,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
-class AiRepositoryImpl : AiRepository {
+data class AiConfig(
+    val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta/openai",
+    val apiKey: String = "",
+    val modelName: String = "gemini-2.0-flash"
+)
+
+class AiRepositoryImpl(
+    private val openAiClient: OpenAiCompatibleClient = OpenAiCompatibleClient(),
+    private val configProvider: (suspend () -> AiConfig)? = null
+) : AiRepository {
 
     override suspend fun generateStudyMaterial(
         courseTitle: String,
@@ -29,13 +36,15 @@ class AiRepositoryImpl : AiRepository {
                 )
             }
 
+            val config = configProvider?.invoke() ?: AiConfig()
+
             val chunkSize = 8000
             val chunks = splitIntoChunks(trimmedText, chunkSize)
 
             if (chunks.size == 1) {
                 onProgress("Génération du résumé, flashcards et QCM avec l'IA...")
                 val result = executeWithRetry(maxAttempts = 3) {
-                    generateForChunk(courseTitle, chunks[0], isFullDoc = true)
+                    generateForChunk(config, courseTitle, chunks[0], isFullDoc = true)
                 }
                 QuizValidator.validateAllOrThrow(result.quizQuestions)
                 return@withContext Result.success(result)
@@ -51,6 +60,7 @@ class AiRepositoryImpl : AiRepository {
                     onProgress("Analyse de la section ${index + 1} sur ${chunks.size}...")
                     val chunkResult = executeWithRetry(maxAttempts = 3) {
                         generateForChunk(
+                            config = config,
                             courseTitle = "$courseTitle (Section ${index + 1}/${chunks.size})",
                             courseText = chunk,
                             isFullDoc = false
@@ -66,6 +76,7 @@ class AiRepositoryImpl : AiRepository {
                 onProgress("Consolidation et synthèse globale par l'IA...")
                 val consolidatedSynthesis = executeWithRetry(maxAttempts = 2) {
                     consolidateSectionsWithAi(
+                        config = config,
                         courseTitle = courseTitle,
                         sectionSummaries = chunkSummaries,
                         allKeyPoints = allKeyPoints,
@@ -146,12 +157,11 @@ class AiRepositoryImpl : AiRepository {
     }
 
     private suspend fun generateForChunk(
+        config: AiConfig,
         courseTitle: String,
         courseText: String,
         isFullDoc: Boolean
     ): StudyGenerationResult {
-        val model = Firebase.ai.generativeModel("gemini-2.5-flash")
-
         val targetFlashcardsCount = if (isFullDoc) "6 à 12" else "3 à 5"
         val targetQuizCount = if (isFullDoc) "4 à 8" else "2 à 4"
 
@@ -198,8 +208,13 @@ class AiRepositoryImpl : AiRepository {
             $courseText
         """.trimIndent()
 
-        val response = model.generateContent(prompt)
-        val rawText = response.text ?: throw IllegalStateException("Réponse vide de l'IA.")
+        val rawText = openAiClient.generateChatCompletion(
+            baseUrl = config.baseUrl,
+            apiKey = config.apiKey,
+            modelName = config.modelName,
+            prompt = prompt,
+            temperature = 0.2
+        )
 
         return parseJsonResponse(rawText)
     }
@@ -208,13 +223,12 @@ class AiRepositoryImpl : AiRepository {
      * Second-pass AI consolidation to synthesize multiple section summaries into a single executive summary.
      */
     private suspend fun consolidateSectionsWithAi(
+        config: AiConfig,
         courseTitle: String,
         sectionSummaries: List<String>,
         allKeyPoints: List<String>,
         allMnemonicTips: List<String>
     ): Triple<String, List<String>, List<String>> {
-        val model = Firebase.ai.generativeModel("gemini-2.5-flash")
-
         val prompt = """
             Tu es un expert pédagogique. Tu as analysé plusieurs sections d'un cours intitulé "$courseTitle".
             Voici les résumés et points clés intermédiaires extraits de chaque section :
@@ -238,8 +252,13 @@ class AiRepositoryImpl : AiRepository {
         """.trimIndent()
 
         return try {
-            val response = model.generateContent(prompt)
-            val rawText = response.text ?: ""
+            val rawText = openAiClient.generateChatCompletion(
+                baseUrl = config.baseUrl,
+                apiKey = config.apiKey,
+                modelName = config.modelName,
+                prompt = prompt,
+                temperature = 0.2
+            )
             val cleaned = cleanJsonString(rawText)
             val json = JSONObject(cleaned)
 

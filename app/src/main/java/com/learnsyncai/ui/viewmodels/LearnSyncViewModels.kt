@@ -26,7 +26,18 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao())
     private val prefsRepo = PreferencesRepositoryImpl(db.userPreferencesDao())
     private val calendarRepo = CalendarEventRepositoryImpl(db.calendarEventDao())
-    private val aiRepo = AiRepositoryImpl()
+    private val openAiClient = com.learnsyncai.data.ai.OpenAiCompatibleClient()
+    private val aiRepo = AiRepositoryImpl(
+        openAiClient = openAiClient,
+        configProvider = {
+            val currentPrefs = prefsRepo.getPreferencesSync()
+            com.learnsyncai.data.ai.AiConfig(
+                baseUrl = currentPrefs.aiBaseUrl,
+                apiKey = currentPrefs.aiApiKey,
+                modelName = currentPrefs.aiModelName
+            )
+        }
+    )
     private val documentParser = DocumentParser(application)
     private val firestoreSyncManager = FirestoreSyncManager()
     private val courseContentStorage = com.learnsyncai.data.storage.CourseContentStorage(application)
@@ -398,11 +409,20 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                // 7. Reconcile User Preferences
+                // 7. Reconcile User Preferences (keeping local AI config intact!)
                 if (remotePrefsResult.isSuccess) {
                     val remotePrefs = remotePrefsResult.getOrNull()
                     if (remotePrefs != null) {
-                        prefsRepo.updatePreferences(remotePrefs)
+                        val currentLocalPrefs = prefsRepo.getPreferencesSync()
+                        prefsRepo.updatePreferences(
+                            currentLocalPrefs.copy(
+                                notificationsEnabled = remotePrefs.notificationsEnabled,
+                                dailyGoal = remotePrefs.dailyGoal,
+                                reminderTime = remotePrefs.reminderTime,
+                                theme = remotePrefs.theme,
+                                language = remotePrefs.language
+                            )
+                        )
                     }
                 }
 
@@ -430,6 +450,10 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.value = UiState.Error("Échec de la synchronisation : ${e.localizedMessage}")
             }
         }
+    }
+
+    suspend fun testAiConnection(baseUrl: String, apiKey: String, modelName: String): Result<String> {
+        return openAiClient.testConnection(baseUrl, apiKey, modelName)
     }
 
     fun clearState() {

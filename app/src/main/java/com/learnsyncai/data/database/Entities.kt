@@ -121,7 +121,11 @@ data class UserPreferencesEntity(
     val dailyGoal: Int,
     val reminderTime: String,
     val theme: String,
-    val language: String
+    val language: String,
+    val aiProvider: String = "GEMINI",
+    val aiBaseUrl: String = "https://generativelanguage.googleapis.com/v1beta/openai",
+    val aiApiKey: String = "",
+    val aiModelName: String = "gemini-2.0-flash"
 )
 
 @Entity(
