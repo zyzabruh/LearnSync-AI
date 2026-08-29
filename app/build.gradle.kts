@@ -23,17 +23,11 @@ android {
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      val keyFile = file(keystorePath)
-      if (keyFile.exists() && !System.getenv("STORE_PASSWORD").isNullOrEmpty()) {
-        storeFile = keyFile
-        storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
-        keyPassword = System.getenv("KEY_PASSWORD")
-      } else {
-        initWith(getByName("debug"))
-      }
+    create("custom") {
+      storeFile = file("keystore.jks")
+      storePassword = "android123"
+      keyAlias = "learnsynckey"
+      keyPassword = "android123"
     }
   }
 
@@ -42,10 +36,10 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      signingConfig = signingConfigs.getByName("custom")
     }
     debug {
-      signingConfig = signingConfigs.getByName("debug")
+      signingConfig = signingConfigs.getByName("custom")
     }
   }
   compileOptions {
