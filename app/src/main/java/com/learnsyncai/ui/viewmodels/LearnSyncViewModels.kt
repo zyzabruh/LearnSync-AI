@@ -174,6 +174,22 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun generateMaterial(course: Course) {
         viewModelScope.launch {
+            val activeProfile = aiProfileRepo.getActiveProfile()
+            val apiKey = activeProfile?.apiKey ?: prefsRepo.getPreferencesSync().aiApiKey
+            val baseUrl = activeProfile?.baseUrl ?: prefsRepo.getPreferencesSync().aiBaseUrl
+            val isLocal = baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1")
+
+            if (apiKey.isBlank() && !isLocal) {
+                courseRepo.insertCourse(
+                    course.copy(
+                        generationStatus = "ERROR",
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+                _uiState.value = UiState.Error("Aucune clé API configurée. Rendez-vous dans votre Profil pour renseigner votre clé IA.")
+                return@launch
+            }
+
             _uiState.value = UiState.Loading("Génération pédagogique en cours...")
             _generationProgress.value = "Démarrage de l'analyse IA..."
             

@@ -94,7 +94,7 @@ class AiResilienceTest {
         val jsonEx = Exception("Invalid json response")
         val mappedJson = repository.mapUserFacingException(jsonEx)
         assertTrue(mappedJson is IllegalStateException)
-        assertTrue(mappedJson.message?.contains("Le document n'a pas pu être structuré par l'IA") == true)
+        assertTrue(mappedJson.message?.contains("La réponse de l'IA n'a pas pu être structurée") == true)
 
         // Other family
         val otherEx = IllegalArgumentException("Custom error")

@@ -6,7 +6,12 @@ import com.learnsyncai.domain.model.StudyGenerationResult
 import com.learnsyncai.domain.repository.AiRepository
 import com.learnsyncai.domain.usecase.QuizValidator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -38,34 +43,45 @@ class AiRepositoryImpl(
 
             val config = configProvider?.invoke() ?: AiConfig()
 
-            val chunkSize = 8000
+            // High chunk size (150k chars / ~40k-60k words) handles up to 100 pages in 1-2 fast calls
+            val chunkSize = 150000
             val chunks = splitIntoChunks(trimmedText, chunkSize)
 
             if (chunks.size == 1) {
                 onProgress("Génération du résumé, flashcards et QCM avec l'IA...")
-                val result = executeWithRetry(maxAttempts = 3) {
+                val result = executeWithRetry(maxAttempts = 2) {
                     generateForChunk(config, courseTitle, chunks[0], isFullDoc = true)
                 }
                 QuizValidator.validateAllOrThrow(result.quizQuestions)
                 return@withContext Result.success(result)
             } else {
-                // Multi-chunk processing
+                // Multi-chunk processing in parallel with rate-limiting Semaphore
+                onProgress("Analyse de ${chunks.size} sections du document...")
+                val semaphore = kotlinx.coroutines.sync.Semaphore(2)
+                val chunkResults = coroutineScope {
+                    chunks.mapIndexed { index, chunk ->
+                        async(Dispatchers.IO) {
+                            semaphore.withPermit {
+                                executeWithRetry(maxAttempts = 2) {
+                                    generateForChunk(
+                                        config = config,
+                                        courseTitle = "$courseTitle (Partie ${index + 1}/${chunks.size})",
+                                        courseText = chunk,
+                                        isFullDoc = false
+                                    )
+                                }
+                            }
+                        }
+                    }.awaitAll()
+                }
+
                 val allFlashcards = mutableListOf<GeneratedFlashcard>()
                 val allQuizQuestions = mutableListOf<GeneratedQuizQuestion>()
                 val allKeyPoints = mutableListOf<String>()
                 val allMnemonicTips = mutableListOf<String>()
                 val chunkSummaries = mutableListOf<String>()
 
-                chunks.forEachIndexed { index, chunk ->
-                    onProgress("Analyse de la section ${index + 1} sur ${chunks.size}...")
-                    val chunkResult = executeWithRetry(maxAttempts = 3) {
-                        generateForChunk(
-                            config = config,
-                            courseTitle = "$courseTitle (Section ${index + 1}/${chunks.size})",
-                            courseText = chunk,
-                            isFullDoc = false
-                        )
-                    }
+                chunkResults.forEach { chunkResult ->
                     chunkSummaries.add(chunkResult.summary)
                     allKeyPoints.addAll(chunkResult.keyPoints)
                     allMnemonicTips.addAll(chunkResult.mnemonicTips)
@@ -73,7 +89,7 @@ class AiRepositoryImpl(
                     allQuizQuestions.addAll(chunkResult.quizQuestions)
                 }
 
-                onProgress("Consolidation et synthèse globale par l'IA...")
+                onProgress("Consolidation et synthèse globale...")
                 val consolidatedSynthesis = executeWithRetry(maxAttempts = 2) {
                     consolidateSectionsWithAi(
                         config = config,
@@ -106,8 +122,8 @@ class AiRepositoryImpl(
     }
 
     internal suspend fun <T> executeWithRetry(
-        maxAttempts: Int = 3,
-        initialDelayMs: Long = 1000L,
+        maxAttempts: Int = 2,
+        initialDelayMs: Long = 500L,
         block: suspend () -> T
     ): T {
         var currentDelay = initialDelayMs
@@ -122,7 +138,7 @@ class AiRepositoryImpl(
 
                 if (attempt < maxAttempts && isTransient) {
                     delay(currentDelay)
-                    currentDelay = (currentDelay * 2).coerceAtMost(6000L)
+                    currentDelay = (currentDelay * 2).coerceAtMost(3000L)
                 } else {
                     break
                 }
@@ -140,7 +156,10 @@ class AiRepositoryImpl(
                 msg.contains("resource_exhausted") ||
                 msg.contains("unavailable") ||
                 msg.contains("timeout") ||
-                msg.contains("deadline")
+                msg.contains("deadline") ||
+                msg.contains("503") ||
+                msg.contains("502") ||
+                msg.contains("500")
     }
 
     internal fun mapUserFacingException(throwable: Throwable): Throwable {
@@ -148,10 +167,12 @@ class AiRepositoryImpl(
         return when {
             msg.contains("429") || msg.contains("quota") || msg.contains("resource_exhausted") ->
                 IllegalStateException("Quota d'IA temporairement atteint. Veuillez patienter une minute avant de réessayer.", throwable)
-            throwable is IOException || msg.contains("network") || msg.contains("timeout") || msg.contains("unavailable") ->
+            msg.contains("401") || msg.contains("unauthorized") || msg.contains("invalid api key") || msg.contains("api_key") ->
+                IllegalStateException("Clé API invalide ou non configurée. Rendez-vous dans votre Profil pour vérifier votre clé.", throwable)
+            throwable is IOException || msg.contains("network") || msg.contains("timeout") || msg.contains("unavailable") || msg.contains("connect") ->
                 IllegalStateException("Problème de connexion avec le service IA. Vérifiez votre accès Internet.", throwable)
             msg.contains("json") || msg.contains("parsing") ->
-                IllegalStateException("Le document n'a pas pu être structuré par l'IA. Essayez avec un document plus concis.", throwable)
+                IllegalStateException("La réponse de l'IA n'a pas pu être structurée. Veuillez réessayer.", throwable)
             else -> throwable
         }
     }
@@ -162,8 +183,8 @@ class AiRepositoryImpl(
         courseText: String,
         isFullDoc: Boolean
     ): StudyGenerationResult {
-        val targetFlashcardsCount = if (isFullDoc) "6 à 12" else "3 à 5"
-        val targetQuizCount = if (isFullDoc) "4 à 8" else "2 à 4"
+        val targetFlashcardsCount = if (isFullDoc) "8 à 15" else "4 à 6"
+        val targetQuizCount = if (isFullDoc) "5 à 10" else "2 à 4"
 
         val prompt = """
             Tu es un ingénieur pédagogique de haut niveau et un tuteur universitaire bienveillant.
