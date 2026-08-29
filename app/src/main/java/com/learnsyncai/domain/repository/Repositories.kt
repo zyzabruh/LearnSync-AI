@@ -31,6 +31,7 @@ interface StudyMaterialRepository {
     fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>>
     fun getAllMaterials(): Flow<List<StudyMaterial>>
     suspend fun getLatestVersionForCourse(courseId: String): Int
+    suspend fun getLatestMaterialForCourse(courseId: String): StudyMaterial?
     suspend fun insertMaterial(material: StudyMaterial)
     suspend fun insertMaterials(materials: List<StudyMaterial>)
     suspend fun deleteMaterialsForCourse(courseId: String)
@@ -44,13 +45,16 @@ interface FlashcardRepository {
     suspend fun insertFlashcard(flashcard: Flashcard)
     suspend fun insertFlashcards(flashcards: List<Flashcard>)
     suspend fun updateFlashcard(flashcard: Flashcard)
+    suspend fun deleteFlashcard(cardId: String)
     suspend fun deleteFlashcardsForCourse(courseId: String)
 }
 
 interface QuizRepository {
     fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestion>>
     fun getAllQuizQuestions(): Flow<List<QuizQuestion>>
+    suspend fun insertQuizQuestion(question: QuizQuestion)
     suspend fun insertQuizQuestions(questions: List<QuizQuestion>)
+    suspend fun deleteQuizQuestion(questionId: String)
     suspend fun deleteQuizQuestionsForCourse(courseId: String)
 }
 
@@ -74,3 +78,13 @@ interface PreferencesRepository {
     suspend fun getPreferencesSync(): UserPreferences
     suspend fun updatePreferences(preferences: UserPreferences)
 }
+
+interface AiProfileRepository {
+    fun getAllProfiles(): Flow<List<AiProfile>>
+    suspend fun getActiveProfile(): AiProfile?
+    suspend fun insertProfile(profile: AiProfile)
+    suspend fun updateProfile(profile: AiProfile)
+    suspend fun deleteProfile(profileId: String)
+    suspend fun setActiveProfile(profileId: String)
+}
+

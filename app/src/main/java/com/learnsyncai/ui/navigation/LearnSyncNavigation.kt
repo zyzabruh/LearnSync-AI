@@ -40,6 +40,8 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
     val allFlashcards by viewModel.allFlashcards.collectAsState()
     val reviewLogs by viewModel.reviewLogs.collectAsState()
     val preferences by viewModel.preferences.collectAsState()
+    val aiProfiles by viewModel.aiProfiles.collectAsState()
+    val activeAiProfile by viewModel.activeAiProfile.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val generationProgress by viewModel.generationProgress.collectAsState()
 
@@ -252,6 +254,8 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                         materials = materials,
                                         flashcards = courseFlashcards,
                                         quizQuestions = courseQuiz,
+                                        generationProgress = generationProgress,
+                                        activeAiProfile = activeAiProfile,
                                         onBackClick = { navController.popBackStack() },
                                         onStartReview = { navController.navigate("course_review/${course.id}") },
                                         onStartQuiz = { navController.navigate("course_quiz/${course.id}") },
@@ -259,7 +263,15 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                         onDeleteCourse = {
                                             viewModel.deleteCourse(course.id)
                                             navController.popBackStack()
-                                        }
+                                        },
+                                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                                        onAddFlashcard = { q, a, exp -> viewModel.addCustomFlashcard(course.id, q, a, exp) },
+                                        onDeleteFlashcard = { cardId -> viewModel.deleteFlashcard(cardId) },
+                                        onAddQuizQuestion = { q, opts, ans, exp -> viewModel.addCustomQuizQuestion(course.id, q, opts, ans, exp) },
+                                        onDeleteQuizQuestion = { qId -> viewModel.deleteQuizQuestion(qId) },
+                                        onSaveSummary = { summary -> viewModel.saveCustomSummary(course.id, summary) },
+                                        onAddKeyPoint = { point -> viewModel.addCustomKeyPoint(course.id, point) },
+                                        onRemoveKeyPoint = { point -> viewModel.removeCustomKeyPoint(course.id, point) }
                                     )
                                 }
                             }
@@ -321,7 +333,15 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                             composable(Screen.Profile.route) {
                                 ProfileScreen(
                                     preferences = preferences,
+                                    aiProfiles = aiProfiles,
+                                    activeAiProfile = activeAiProfile,
                                     onUpdatePreferences = { prefs -> viewModel.updatePreferences(prefs) },
+                                    onAddAiProfile = { name, provider, baseUrl, apiKey, modelName ->
+                                        viewModel.addAiProfile(name, provider, baseUrl, apiKey, modelName)
+                                    },
+                                    onUpdateAiProfile = { profile -> viewModel.updateAiProfile(profile) },
+                                    onDeleteAiProfile = { profileId -> viewModel.deleteAiProfile(profileId) },
+                                    onSetActiveAiProfile = { profileId -> viewModel.setActiveAiProfile(profileId) },
                                     onSyncCloud = { viewModel.syncWithCloud() },
                                     onSyncCalendar = { viewModel.syncToCalendar() },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
@@ -337,3 +357,4 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
         }
     }
 }
+

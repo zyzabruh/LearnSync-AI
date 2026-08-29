@@ -26,16 +26,26 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao())
     private val prefsRepo = PreferencesRepositoryImpl(db.userPreferencesDao())
     private val calendarRepo = CalendarEventRepositoryImpl(db.calendarEventDao())
+    private val aiProfileRepo = AiProfileRepositoryImpl(db.aiProfileDao())
     private val openAiClient = com.learnsyncai.data.ai.OpenAiCompatibleClient()
     private val aiRepo = AiRepositoryImpl(
         openAiClient = openAiClient,
         configProvider = {
-            val currentPrefs = prefsRepo.getPreferencesSync()
-            com.learnsyncai.data.ai.AiConfig(
-                baseUrl = currentPrefs.aiBaseUrl,
-                apiKey = currentPrefs.aiApiKey,
-                modelName = currentPrefs.aiModelName
-            )
+            val active = aiProfileRepo.getActiveProfile()
+            if (active != null) {
+                com.learnsyncai.data.ai.AiConfig(
+                    baseUrl = active.baseUrl,
+                    apiKey = active.apiKey,
+                    modelName = active.modelName
+                )
+            } else {
+                val currentPrefs = prefsRepo.getPreferencesSync()
+                com.learnsyncai.data.ai.AiConfig(
+                    baseUrl = currentPrefs.aiBaseUrl,
+                    apiKey = currentPrefs.aiApiKey,
+                    modelName = currentPrefs.aiModelName
+                )
+            }
         }
     )
     private val documentParser = DocumentParser(application)
@@ -54,7 +64,34 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 // Gracefully ignore if WorkManager is not ready or constrained
             }
         }
+
+        // Seed initial AI profile if none exists
+        viewModelScope.launch {
+            try {
+                val existing = aiProfileRepo.getAllProfiles().firstOrNull() ?: emptyList()
+                if (existing.isEmpty()) {
+                    val currentPrefs = prefsRepo.getPreferencesSync()
+                    val defaultProfile = AiProfile(
+                        id = UUID.randomUUID().toString(),
+                        name = "Profil Principal",
+                        provider = currentPrefs.aiProvider,
+                        baseUrl = currentPrefs.aiBaseUrl,
+                        apiKey = currentPrefs.aiApiKey,
+                        modelName = currentPrefs.aiModelName,
+                        isActive = true
+                    )
+                    aiProfileRepo.insertProfile(defaultProfile)
+                }
+            } catch (_: Throwable) {}
+        }
     }
+
+    val aiProfiles: StateFlow<List<AiProfile>> = aiProfileRepo.getAllProfiles()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activeAiProfile: StateFlow<AiProfile?> = aiProfileRepo.getAllProfiles()
+        .map { list -> list.find { it.isActive } ?: list.firstOrNull() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val courses: StateFlow<List<Course>> = courseRepo.getAllCourses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -454,6 +491,185 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun testAiConnection(baseUrl: String, apiKey: String, modelName: String): Result<String> {
         return openAiClient.testConnection(baseUrl, apiKey, modelName)
+    }
+
+    // --- Gestion des Profils IA ---
+    fun addAiProfile(name: String, provider: String, baseUrl: String, apiKey: String, modelName: String, setAsActive: Boolean = true) {
+        viewModelScope.launch {
+            val newProfile = AiProfile(
+                id = UUID.randomUUID().toString(),
+                name = name.ifBlank { "Configuration IA" },
+                provider = provider,
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                modelName = modelName,
+                isActive = setAsActive,
+                createdAt = System.currentTimeMillis()
+            )
+            aiProfileRepo.insertProfile(newProfile)
+            if (setAsActive) {
+                aiProfileRepo.setActiveProfile(newProfile.id)
+            }
+            _uiState.value = UiState.Success("Profil IA « ${newProfile.name} » ajouté !")
+        }
+    }
+
+    fun updateAiProfile(profile: AiProfile) {
+        viewModelScope.launch {
+            aiProfileRepo.updateProfile(profile)
+            _uiState.value = UiState.Success("Profil IA mis à jour !")
+        }
+    }
+
+    fun deleteAiProfile(profileId: String) {
+        viewModelScope.launch {
+            aiProfileRepo.deleteProfile(profileId)
+            val remaining = aiProfileRepo.getAllProfiles().firstOrNull() ?: emptyList()
+            if (remaining.isNotEmpty() && remaining.none { it.isActive }) {
+                aiProfileRepo.setActiveProfile(remaining.first().id)
+            }
+            _uiState.value = UiState.Success("Profil IA supprimé.")
+        }
+    }
+
+    fun setActiveAiProfile(profileId: String) {
+        viewModelScope.launch {
+            aiProfileRepo.setActiveProfile(profileId)
+            _uiState.value = UiState.Success("Profil IA activé.")
+        }
+    }
+
+    // --- Création Manuelle de Contenu Pédagogique ---
+    fun addCustomFlashcard(courseId: String, question: String, answer: String, explanation: String = "") {
+        viewModelScope.launch {
+            if (question.isBlank() || answer.isBlank()) {
+                _uiState.value = UiState.Error("La question et la réponse ne peuvent pas être vides.")
+                return@launch
+            }
+            val card = Flashcard(
+                id = UUID.randomUUID().toString(),
+                courseId = courseId,
+                question = question.trim(),
+                answer = answer.trim(),
+                explanation = explanation.trim(),
+                difficulty = 5.0f,
+                box = 1,
+                dueDate = System.currentTimeMillis(),
+                interval = 0,
+                easeFactor = 1.0f,
+                repetitions = 0,
+                lapses = 0,
+                lastReviewedAt = null,
+                createdAt = System.currentTimeMillis()
+            )
+            flashcardRepo.insertFlashcard(card)
+            _uiState.value = UiState.Success("Flashcard ajoutée avec succès !")
+        }
+    }
+
+    fun deleteFlashcard(flashcardId: String) {
+        viewModelScope.launch {
+            flashcardRepo.deleteFlashcard(flashcardId)
+            _uiState.value = UiState.Success("Flashcard supprimée.")
+        }
+    }
+
+    fun addCustomQuizQuestion(
+        courseId: String,
+        question: String,
+        options: List<String>,
+        correctAnswer: String,
+        explanation: String = ""
+    ) {
+        viewModelScope.launch {
+            val cleanOptions = options.map { it.trim() }.filter { it.isNotBlank() }
+            val candidate = GeneratedQuizQuestion(
+                question = question.trim(),
+                options = cleanOptions,
+                correctAnswer = correctAnswer.trim(),
+                explanation = explanation.trim()
+            )
+            val validation = QuizValidator.validateQuestion(candidate)
+            if (!validation.isValid) {
+                _uiState.value = UiState.Error(validation.errorMessage ?: "Format de QCM invalide (4 options distinctes requises).")
+                return@launch
+            }
+            val quizQuestion = QuizQuestion(
+                id = UUID.randomUUID().toString(),
+                courseId = courseId,
+                question = candidate.question,
+                options = candidate.options,
+                correctAnswer = candidate.correctAnswer,
+                explanation = candidate.explanation,
+                difficulty = "medium"
+            )
+            quizRepo.insertQuizQuestion(quizQuestion)
+            _uiState.value = UiState.Success("Question de QCM ajoutée avec succès !")
+        }
+    }
+
+    fun deleteQuizQuestion(quizQuestionId: String) {
+        viewModelScope.launch {
+            quizRepo.deleteQuizQuestion(quizQuestionId)
+            _uiState.value = UiState.Success("QCM supprimé.")
+        }
+    }
+
+    fun saveCustomSummary(courseId: String, summary: String) {
+        viewModelScope.launch {
+            val existing = studyMaterialRepo.getLatestMaterialForCourse(courseId)
+            val updated = if (existing != null) {
+                existing.copy(
+                    summary = summary.trim(),
+                    generatedAt = System.currentTimeMillis()
+                )
+            } else {
+                StudyMaterial(
+                    id = UUID.randomUUID().toString(),
+                    courseId = courseId,
+                    summary = summary.trim(),
+                    keyPoints = emptyList(),
+                    mnemonicTips = emptyList(),
+                    generatedAt = System.currentTimeMillis(),
+                    version = 1
+                )
+            }
+            studyMaterialRepo.insertMaterial(updated)
+            _uiState.value = UiState.Success("Résumé mis à jour !")
+        }
+    }
+
+    fun addCustomKeyPoint(courseId: String, point: String) {
+        viewModelScope.launch {
+            if (point.isBlank()) return@launch
+            val existing = studyMaterialRepo.getLatestMaterialForCourse(courseId)
+            val currentKeyPoints = existing?.keyPoints?.toMutableList() ?: mutableListOf()
+            currentKeyPoints.add(point.trim())
+            val updated = if (existing != null) {
+                existing.copy(keyPoints = currentKeyPoints.distinct())
+            } else {
+                StudyMaterial(
+                    id = UUID.randomUUID().toString(),
+                    courseId = courseId,
+                    summary = "",
+                    keyPoints = listOf(point.trim()),
+                    mnemonicTips = emptyList(),
+                    generatedAt = System.currentTimeMillis(),
+                    version = 1
+                )
+            }
+            studyMaterialRepo.insertMaterial(updated)
+            _uiState.value = UiState.Success("Notion clé ajoutée !")
+        }
+    }
+
+    fun removeCustomKeyPoint(courseId: String, point: String) {
+        viewModelScope.launch {
+            val existing = studyMaterialRepo.getLatestMaterialForCourse(courseId) ?: return@launch
+            val updatedPoints = existing.keyPoints.filter { it != point }
+            studyMaterialRepo.insertMaterial(existing.copy(keyPoints = updatedPoints))
+            _uiState.value = UiState.Success("Notion clé supprimée.")
+        }
     }
 
     fun clearState() {

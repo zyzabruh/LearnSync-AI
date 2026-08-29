@@ -16,9 +16,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         QuizQuestionEntity::class,
         ReviewLogEntity::class,
         UserPreferencesEntity::class,
-        CalendarEventEntity::class
+        CalendarEventEntity::class,
+        AiProfileEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
     abstract fun reviewLogDao(): ReviewLogDao
     abstract fun userPreferencesDao(): UserPreferencesDao
     abstract fun calendarEventDao(): CalendarEventDao
+    abstract fun aiProfileDao(): AiProfileDao
 
     @Transaction
     open suspend fun replaceCourseContentAtomically(
@@ -135,6 +137,25 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ai_profiles` (
+                        `id` TEXT NOT NULL PRIMARY KEY,
+                        `name` TEXT NOT NULL,
+                        `provider` TEXT NOT NULL,
+                        `baseUrl` TEXT NOT NULL,
+                        `apiKey` TEXT NOT NULL,
+                        `modelName` TEXT NOT NULL,
+                        `isActive` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): LearnSyncDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -142,7 +163,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
                 INSTANCE = instance
                 instance

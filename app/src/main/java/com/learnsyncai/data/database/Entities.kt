@@ -149,3 +149,16 @@ data class CalendarEventEntity(
     val updatedAt: Long
 )
 
+@Entity(tableName = "ai_profiles")
+data class AiProfileEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val provider: String,
+    val baseUrl: String,
+    val apiKey: String,
+    val modelName: String,
+    val isActive: Boolean,
+    val createdAt: Long
+)
+
+

@@ -102,3 +102,15 @@ data class CalendarEvent(
     val updatedAt: Long
 )
 
+data class AiProfile(
+    val id: String,
+    val name: String,
+    val provider: String, // "GEMINI", "OPENROUTER", "NVIDIA_NIM", "OPENCODE_ZEN", "CUSTOM"
+    val baseUrl: String,
+    val apiKey: String,
+    val modelName: String,
+    val isActive: Boolean,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+

@@ -82,6 +82,9 @@ class StudyMaterialRepositoryImpl(private val studyMaterialDao: StudyMaterialDao
     override suspend fun getLatestVersionForCourse(courseId: String): Int =
         studyMaterialDao.getLatestVersionForCourse(courseId) ?: 0
 
+    override suspend fun getLatestMaterialForCourse(courseId: String): StudyMaterial? =
+        studyMaterialDao.getLatestMaterialForCourse(courseId)?.toDomain()
+
     override suspend fun insertMaterial(material: StudyMaterial) =
         studyMaterialDao.insertMaterial(material.toEntity())
 
@@ -114,6 +117,9 @@ class FlashcardRepositoryImpl(private val flashcardDao: FlashcardDao) : Flashcar
     override suspend fun updateFlashcard(flashcard: Flashcard) =
         flashcardDao.updateFlashcard(flashcard.toEntity())
 
+    override suspend fun deleteFlashcard(cardId: String) =
+        flashcardDao.deleteFlashcardById(cardId)
+
     override suspend fun deleteFlashcardsForCourse(courseId: String) =
         flashcardDao.deleteFlashcardsForCourse(courseId)
 }
@@ -125,8 +131,14 @@ class QuizRepositoryImpl(private val quizQuestionDao: QuizQuestionDao) : QuizRep
     override fun getAllQuizQuestions(): Flow<List<QuizQuestion>> =
         quizQuestionDao.getAllQuizQuestions().map { list -> list.map { it.toDomain() } }
 
+    override suspend fun insertQuizQuestion(question: QuizQuestion) =
+        quizQuestionDao.insertQuizQuestion(question.toEntity())
+
     override suspend fun insertQuizQuestions(questions: List<QuizQuestion>) =
         quizQuestionDao.insertQuizQuestions(questions.map { it.toEntity() })
+
+    override suspend fun deleteQuizQuestion(questionId: String) =
+        quizQuestionDao.deleteQuizQuestionById(questionId)
 
     override suspend fun deleteQuizQuestionsForCourse(courseId: String) =
         quizQuestionDao.deleteQuizQuestionsForCourse(courseId)
@@ -155,6 +167,26 @@ class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : Pref
 
     override suspend fun updatePreferences(preferences: UserPreferences) =
         prefsDao.insertPreferences(preferences.toEntity())
+}
+
+class AiProfileRepositoryImpl(private val aiProfileDao: AiProfileDao) : AiProfileRepository {
+    override fun getAllProfiles(): Flow<List<AiProfile>> =
+        aiProfileDao.getAllProfiles().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun getActiveProfile(): AiProfile? =
+        aiProfileDao.getActiveProfile()?.toDomain()
+
+    override suspend fun insertProfile(profile: AiProfile) =
+        aiProfileDao.insertProfile(profile.toEntity())
+
+    override suspend fun updateProfile(profile: AiProfile) =
+        aiProfileDao.updateProfile(profile.toEntity())
+
+    override suspend fun deleteProfile(profileId: String) =
+        aiProfileDao.deleteProfile(profileId)
+
+    override suspend fun setActiveProfile(profileId: String) =
+        aiProfileDao.setActiveProfile(profileId)
 }
 
 // Mappers
@@ -212,4 +244,8 @@ fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, 
 
 fun CalendarEventEntity.toDomain() = CalendarEvent(id, courseId, title, scheduledDate, androidEventId, updatedAt)
 fun CalendarEvent.toEntity() = CalendarEventEntity(id, courseId, title, scheduledDate, androidEventId, updatedAt)
+
+fun AiProfileEntity.toDomain() = AiProfile(id, name, provider, baseUrl, apiKey, modelName, isActive, createdAt)
+fun AiProfile.toEntity() = AiProfileEntity(id, name, provider, baseUrl, apiKey, modelName, isActive, createdAt)
+
 

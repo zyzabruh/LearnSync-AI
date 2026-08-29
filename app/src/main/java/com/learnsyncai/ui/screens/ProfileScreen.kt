@@ -36,6 +36,7 @@ import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.learnsyncai.data.sync.AuthManager
 import com.learnsyncai.data.sync.FirebaseHelper
+import com.learnsyncai.domain.model.AiProfile
 import com.learnsyncai.domain.model.UserPreferences
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
@@ -96,7 +97,13 @@ enum class AiProviderPreset(
 @Composable
 fun ProfileScreen(
     preferences: UserPreferences,
+    aiProfiles: List<AiProfile> = emptyList(),
+    activeAiProfile: AiProfile? = null,
     onUpdatePreferences: (UserPreferences) -> Unit,
+    onAddAiProfile: (name: String, provider: String, baseUrl: String, apiKey: String, modelName: String) -> Unit = { _, _, _, _, _ -> },
+    onUpdateAiProfile: (AiProfile) -> Unit = {},
+    onDeleteAiProfile: (profileId: String) -> Unit = {},
+    onSetActiveAiProfile: (profileId: String) -> Unit = {},
     onSyncCloud: () -> Unit,
     onSyncCalendar: () -> Unit,
     onNavigateToCalendar: () -> Unit = {},
@@ -112,9 +119,12 @@ fun ProfileScreen(
     var showNotificationRationaleDialog by remember { mutableStateOf(false) }
     var showNotificationSettingsDialog by remember { mutableStateOf(false) }
     var notificationDeniedCount by remember { mutableStateOf(0) }
-    var isApiKeyVisible by remember { mutableStateOf(false) }
-    var isTestingAi by remember { mutableStateOf(false) }
-    var aiTestResult by remember { mutableStateOf<Result<String>?>(null) }
+
+    // Multi-API profile dialogs
+    var showAddProfileDialog by remember { mutableStateOf(false) }
+    var profileToEdit by remember { mutableStateOf<AiProfile?>(null) }
+    var testingProfileId by remember { mutableStateOf<String?>(null) }
+    var profileTestResults by remember { mutableStateOf<Map<String, Result<String>>>(emptyMap()) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -328,7 +338,7 @@ fun ProfileScreen(
                 }
             }
 
-            // SECTION 2: Fournisseur IA (Génération)
+            // SECTION 2: Fournisseurs & Profils IA (Multi-API)
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -340,230 +350,208 @@ fun ProfileScreen(
                         modifier = Modifier.padding(LearnSyncSpacing.large),
                         verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
                     ) {
-                        ProfileSectionTitle(icon = Icons.Default.SmartToy, title = "Fournisseur IA")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ProfileSectionTitle(icon = Icons.Default.SmartToy, title = "Fournisseurs IA (${aiProfiles.size})")
+                            FilledTonalButton(
+                                onClick = { showAddProfileDialog = true },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Ajouter")
+                            }
+                        }
 
                         Text(
-                            text = "Choisissez et personnalisez votre service d'intelligence artificielle compatible OpenAI pour la génération de résumés, flashcards et QCM.",
+                            text = "Configurez plusieurs clés et modèles en parallèle (Gemini, OpenRouter, NVIDIA, OpenCode Zen, Ollama/Local) et sélectionnez celui utilisé pour vos cours.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        // Sélecteur de préréglage
-                        Text(
-                            text = "Préréglage",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        val currentPreset = AiProviderPreset.entries.find { it.id == preferences.aiProvider } ?: AiProviderPreset.GEMINI
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
-                        ) {
-                            AiProviderPreset.entries.forEach { preset ->
-                                val isSelected = preset == currentPreset
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        if (!isSelected) {
-                                            aiTestResult = null
-                                            if (preset == AiProviderPreset.CUSTOM) {
-                                                onUpdatePreferences(
-                                                    preferences.copy(
-                                                        aiProvider = preset.id
-                                                    )
-                                                )
-                                            } else {
-                                                onUpdatePreferences(
-                                                    preferences.copy(
-                                                        aiProvider = preset.id,
-                                                        aiBaseUrl = preset.defaultBaseUrl,
-                                                        aiModelName = preset.defaultModel
-                                                    )
-                                                )
-                                            }
-                                        }
-                                    },
-                                    label = { Text(preset.displayName) },
-                                    leadingIcon = if (isSelected) {
-                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null
-                                )
-                            }
-                        }
-
-                        // Note informative pour OpenCode Zen
-                        if (currentPreset == AiProviderPreset.OPENCODE_ZEN && currentPreset.note != null) {
+                        if (aiProfiles.isEmpty()) {
                             Surface(
-                                color = AmberFlame.copy(alpha = 0.12f),
-                                shape = LearnSyncShapes.small,
-                                border = BorderStroke(1.dp, AmberFlame.copy(alpha = 0.35f))
+                                color = AmberFlame.copy(alpha = 0.08f),
+                                shape = LearnSyncShapes.medium,
+                                border = BorderStroke(1.dp, AmberFlame.copy(alpha = 0.3f))
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(LearnSyncSpacing.medium),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = null,
-                                        tint = AmberFlame,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = AmberFlame)
                                     Text(
-                                        text = currentPreset.note,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        text = "Aucun profil IA configuré. Cliquez sur « Ajouter » pour configurer votre premier modèle.",
+                                        style = MaterialTheme.typography.bodySmall
                                     )
                                 }
                             }
-                        }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)) {
+                                aiProfiles.forEach { profile ->
+                                    val isActive = profile.isActive || (activeAiProfile?.id == profile.id)
+                                    val isTesting = testingProfileId == profile.id
+                                    val testResult = profileTestResults[profile.id]
 
-                        // Champ Base URL
-                        OutlinedTextField(
-                            value = preferences.aiBaseUrl,
-                            onValueChange = { newUrl ->
-                                onUpdatePreferences(preferences.copy(aiBaseUrl = newUrl))
-                            },
-                            label = { Text("URL de base (Base URL)") },
-                            placeholder = { Text("https://...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = LearnSyncShapes.medium
-                        )
-
-                        // Champ Nom du modèle
-                        OutlinedTextField(
-                            value = preferences.aiModelName,
-                            onValueChange = { newModel ->
-                                onUpdatePreferences(preferences.copy(aiModelName = newModel))
-                            },
-                            label = { Text("Nom du modèle") },
-                            placeholder = { Text("ex: gemini-2.0-flash, gpt-4o-mini...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = LearnSyncShapes.medium
-                        )
-
-                        // Champ Clé API (masqué avec toggle)
-                        OutlinedTextField(
-                            value = preferences.aiApiKey,
-                            onValueChange = { newKey ->
-                                onUpdatePreferences(preferences.copy(aiApiKey = newKey))
-                            },
-                            label = { Text("Clé API") },
-                            placeholder = { Text("Clé API secrète (stockée en local uniquement)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = LearnSyncShapes.medium,
-                            visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
-                                    Icon(
-                                        imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = if (isApiKeyVisible) "Masquer la clé" else "Afficher la clé"
-                                    )
-                                }
-                            }
-                        )
-
-                        // Bouton de test de connexion
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    isTestingAi = true
-                                    aiTestResult = null
-                                    val res = onTestAiConnection(
-                                        preferences.aiBaseUrl,
-                                        preferences.aiApiKey,
-                                        preferences.aiModelName
-                                    )
-                                    aiTestResult = res
-                                    isTestingAi = false
-                                }
-                            },
-                            enabled = !isTestingAi && preferences.aiBaseUrl.isNotBlank() && preferences.aiModelName.isNotBlank(),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = LearnSyncShapes.medium
-                        ) {
-                            if (isTestingAi) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Test en cours...")
-                            } else {
-                                Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Tester la connexion")
-                            }
-                        }
-
-                        // Résultat du test de connexion
-                        aiTestResult?.let { result ->
-                            result.fold(
-                                onSuccess = { successMessage ->
-                                    Surface(
-                                        color = EmeraldDark.copy(alpha = 0.12f),
-                                        shape = LearnSyncShapes.small,
-                                        border = BorderStroke(1.dp, EmeraldDark.copy(alpha = 0.4f))
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = LearnSyncShapes.medium,
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isActive) IndigoSoftBg.copy(alpha = 0.6f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                        ),
+                                        border = BorderStroke(
+                                            width = if (isActive) 1.5.dp else 1.dp,
+                                            color = if (isActive) IndigoPrimary else MaterialTheme.colorScheme.outlineVariant
+                                        )
                                     ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(LearnSyncSpacing.medium),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                                        Column(
+                                            modifier = Modifier.padding(LearnSyncSpacing.medium),
+                                            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.CheckCircle,
-                                                contentDescription = null,
-                                                tint = EmeraldDark,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small),
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    RadioButton(
+                                                        selected = isActive,
+                                                        onClick = { onSetActiveAiProfile(profile.id) }
+                                                    )
+                                                    Column {
+                                                        Text(
+                                                            text = profile.name,
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isActive) IndigoPrimary else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        Text(
+                                                            text = "Modèle : ${profile.modelName.ifBlank { "Non spécifié" }}",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+
+                                                if (isActive) {
+                                                    Surface(
+                                                        shape = LearnSyncShapes.pill,
+                                                        color = EmeraldSoftBg
+                                                    ) {
+                                                        Text(
+                                                            text = "Actif",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = EmeraldDark,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+
                                             Text(
-                                                text = successMessage,
+                                                text = "URL : ${profile.baseUrl.ifBlank { "https://..." }}",
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = EmeraldDark,
-                                                fontWeight = FontWeight.SemiBold
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1
                                             )
+
+                                            // Action buttons row
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                TextButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            testingProfileId = profile.id
+                                                            val res = onTestAiConnection(
+                                                                profile.baseUrl,
+                                                                profile.apiKey,
+                                                                profile.modelName
+                                                            )
+                                                            profileTestResults = profileTestResults + (profile.id to res)
+                                                            testingProfileId = null
+                                                        }
+                                                    },
+                                                    enabled = !isTesting && profile.baseUrl.isNotBlank() && profile.modelName.isNotBlank()
+                                                ) {
+                                                    if (isTesting) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                    }
+                                                    Text("Tester", style = MaterialTheme.typography.labelMedium)
+                                                }
+
+                                                TextButton(onClick = { profileToEdit = profile }) {
+                                                    Text("Modifier", style = MaterialTheme.typography.labelMedium)
+                                                }
+
+                                                if (aiProfiles.size > 1) {
+                                                    IconButton(
+                                                        onClick = { onDeleteAiProfile(profile.id) },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.DeleteOutline,
+                                                            contentDescription = "Supprimer",
+                                                            tint = RoseError.copy(alpha = 0.8f),
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            // Result banner if tested
+                                            testResult?.let { res ->
+                                                res.fold(
+                                                    onSuccess = { msg ->
+                                                        Surface(
+                                                            color = EmeraldDark.copy(alpha = 0.1f),
+                                                            shape = LearnSyncShapes.small
+                                                        ) {
+                                                            Text(
+                                                                text = "✓ $msg",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = EmeraldDark,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                            )
+                                                        }
+                                                    },
+                                                    onFailure = { err ->
+                                                        Surface(
+                                                            color = RoseError.copy(alpha = 0.1f),
+                                                            shape = LearnSyncShapes.small
+                                                        ) {
+                                                            Text(
+                                                                text = "✗ ${err.localizedMessage ?: "Erreur de connexion"}",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = RoseError,
+                                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                )
+                                            }
                                         }
                                     }
-                                },
-                                onFailure = { error ->
-                                    Surface(
-                                        color = RoseError.copy(alpha = 0.12f),
-                                        shape = LearnSyncShapes.small,
-                                        border = BorderStroke(1.dp, RoseError.copy(alpha = 0.4f))
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(LearnSyncSpacing.medium),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.ErrorOutline,
-                                                contentDescription = null,
-                                                tint = RoseError,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Text(
-                                                text = error.localizedMessage ?: "Échec du test de connexion",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = RoseError
-                                            )
-                                        }
-                                    }
                                 }
-                            )
+                            }
                         }
                     }
                 }
             }
+
 
             // SECTION 3: Notifications & Rappels
             item {
@@ -808,6 +796,239 @@ fun ProfileScreen(
             }
         }
     }
+
+    // Dialog: Ajouter un profil IA
+    if (showAddProfileDialog) {
+        AiProfileEditDialog(
+            initialProfile = null,
+            onDismiss = { showAddProfileDialog = false },
+            onConfirm = { name, provider, baseUrl, apiKey, modelName ->
+                onAddAiProfile(name, provider, baseUrl, apiKey, modelName)
+                showAddProfileDialog = false
+            },
+            onTestConnection = onTestAiConnection
+        )
+    }
+
+    // Dialog: Modifier un profil IA existant
+    profileToEdit?.let { profile ->
+        AiProfileEditDialog(
+            initialProfile = profile,
+            onDismiss = { profileToEdit = null },
+            onConfirm = { name, provider, baseUrl, apiKey, modelName ->
+                onUpdateAiProfile(
+                    profile.copy(
+                        name = name,
+                        provider = provider,
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        modelName = modelName
+                    )
+                )
+                profileToEdit = null
+            },
+            onTestConnection = onTestAiConnection
+        )
+    }
+}
+
+@Composable
+private fun AiProfileEditDialog(
+    initialProfile: AiProfile?,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, provider: String, baseUrl: String, apiKey: String, modelName: String) -> Unit,
+    onTestConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String>
+) {
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf(initialProfile?.name ?: "") }
+    var selectedPreset by remember {
+        mutableStateOf(
+            AiProviderPreset.entries.find { it.id == initialProfile?.provider } ?: AiProviderPreset.GEMINI
+        )
+    }
+    var baseUrl by remember { mutableStateOf(initialProfile?.baseUrl ?: selectedPreset.defaultBaseUrl) }
+    var modelName by remember { mutableStateOf(initialProfile?.modelName ?: selectedPreset.defaultModel) }
+    var apiKey by remember { mutableStateOf(initialProfile?.apiKey ?: "") }
+    var isApiKeyVisible by remember { mutableStateOf(false) }
+
+    var isTesting by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<Result<String>?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (initialProfile == null) "Ajouter un Fournisseur IA" else "Modifier le Fournisseur IA",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+            ) {
+                // Preset chips
+                Text(
+                    text = "Préréglage",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                ) {
+                    AiProviderPreset.entries.forEach { preset ->
+                        val isSelected = preset == selectedPreset
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                selectedPreset = preset
+                                testResult = null
+                                if (preset != AiProviderPreset.CUSTOM) {
+                                    baseUrl = preset.defaultBaseUrl
+                                    modelName = preset.defaultModel
+                                    if (name.isBlank() || AiProviderPreset.entries.any { it.displayName == name }) {
+                                        name = preset.displayName
+                                    }
+                                }
+                            },
+                            label = { Text(preset.displayName, style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+
+                if (selectedPreset == AiProviderPreset.OPENCODE_ZEN && selectedPreset.note != null) {
+                    Surface(
+                        color = AmberFlame.copy(alpha = 0.1f),
+                        shape = LearnSyncShapes.small
+                    ) {
+                        Text(
+                            text = selectedPreset.note,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(6.dp)
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nom du profil *") },
+                    placeholder = { Text("ex: Mon Gemini Pro, OpenRouter...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = { Text("URL de base *") },
+                    placeholder = { Text("https://...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    label = { Text("Nom du modèle *") },
+                    placeholder = { Text("ex: gemini-2.0-flash, gpt-4o-mini...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text("Clé API") },
+                    placeholder = { Text("Clé API (laisser vide si Ollama/Local)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
+                            Icon(
+                                imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (isApiKeyVisible) "Masquer la clé" else "Afficher la clé"
+                            )
+                        }
+                    }
+                )
+
+                // Test connection inside dialog
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isTesting = true
+                            testResult = null
+                            val res = onTestConnection(baseUrl, apiKey, modelName)
+                            testResult = res
+                            isTesting = false
+                        }
+                    },
+                    enabled = !isTesting && baseUrl.isNotBlank() && modelName.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isTesting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Test en cours...")
+                    } else {
+                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Tester la connexion")
+                    }
+                }
+
+                testResult?.let { res ->
+                    res.fold(
+                        onSuccess = { msg ->
+                            Surface(color = EmeraldDark.copy(alpha = 0.12f), shape = LearnSyncShapes.small) {
+                                Text(
+                                    text = "✓ $msg",
+                                    color = EmeraldDark,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(6.dp)
+                                )
+                            }
+                        },
+                        onFailure = { err ->
+                            Surface(color = RoseError.copy(alpha = 0.12f), shape = LearnSyncShapes.small) {
+                                Text(
+                                    text = "✗ ${err.localizedMessage ?: "Échec de connexion"}",
+                                    color = RoseError,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(6.dp)
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (baseUrl.isNotBlank() && modelName.isNotBlank()) {
+                        val finalName = name.ifBlank { selectedPreset.displayName }
+                        onConfirm(finalName, selectedPreset.id, baseUrl, apiKey, modelName)
+                    }
+                },
+                enabled = baseUrl.isNotBlank() && modelName.isNotBlank()
+            ) {
+                Text("Enregistrer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        },
+        shape = LearnSyncShapes.large
+    )
 }
 
 @Composable
@@ -833,3 +1054,4 @@ private fun ProfileSectionTitle(
         )
     }
 }
+

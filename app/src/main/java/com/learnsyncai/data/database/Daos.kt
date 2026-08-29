@@ -35,6 +35,9 @@ interface StudyMaterialDao {
     @Query("SELECT MAX(version) FROM study_materials WHERE courseId = :courseId")
     suspend fun getLatestVersionForCourse(courseId: String): Int?
 
+    @Query("SELECT * FROM study_materials WHERE courseId = :courseId ORDER BY version DESC LIMIT 1")
+    suspend fun getLatestMaterialForCourse(courseId: String): StudyMaterialEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMaterial(material: StudyMaterialEntity)
 
@@ -68,6 +71,9 @@ interface FlashcardDao {
     @Update
     suspend fun updateFlashcard(flashcard: FlashcardEntity)
 
+    @Query("DELETE FROM flashcards WHERE id = :id")
+    suspend fun deleteFlashcardById(id: String)
+
     @Query("DELETE FROM flashcards WHERE courseId = :courseId")
     suspend fun deleteFlashcardsForCourse(courseId: String)
 }
@@ -81,7 +87,13 @@ interface QuizQuestionDao {
     fun getAllQuizQuestions(): Flow<List<QuizQuestionEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertQuizQuestion(question: QuizQuestionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertQuizQuestions(questions: List<QuizQuestionEntity>)
+
+    @Query("DELETE FROM quiz_questions WHERE id = :id")
+    suspend fun deleteQuizQuestionById(id: String)
 
     @Query("DELETE FROM quiz_questions WHERE courseId = :courseId")
     suspend fun deleteQuizQuestionsForCourse(courseId: String)
@@ -137,4 +149,26 @@ interface CalendarEventDao {
     @Query("DELETE FROM calendar_events WHERE courseId = :courseId")
     suspend fun deleteEventsForCourse(courseId: String)
 }
+
+@Dao
+interface AiProfileDao {
+    @Query("SELECT * FROM ai_profiles ORDER BY createdAt ASC")
+    fun getAllProfiles(): Flow<List<AiProfileEntity>>
+
+    @Query("SELECT * FROM ai_profiles WHERE isActive = 1 LIMIT 1")
+    suspend fun getActiveProfile(): AiProfileEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProfile(profile: AiProfileEntity)
+
+    @Update
+    suspend fun updateProfile(profile: AiProfileEntity)
+
+    @Query("DELETE FROM ai_profiles WHERE id = :profileId")
+    suspend fun deleteProfile(profileId: String)
+
+    @Query("UPDATE ai_profiles SET isActive = CASE WHEN id = :profileId THEN 1 ELSE 0 END")
+    suspend fun setActiveProfile(profileId: String)
+}
+
 

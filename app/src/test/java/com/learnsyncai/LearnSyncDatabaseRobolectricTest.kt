@@ -168,5 +168,59 @@ class LearnSyncDatabaseRobolectricTest {
         val v3 = StudyMaterialEntity("m3", courseId, "Summary v3", "[]", "[]", 3000L, 3)
         materialDao.insertMaterial(v3)
         assertEquals(3, materialDao.getLatestVersionForCourse(courseId))
+
+        val latest = materialDao.getLatestMaterialForCourse(courseId)
+        assertEquals("m3", latest?.id)
+        assertEquals("Summary v3", latest?.summary)
+    }
+
+    @Test
+    fun testAiProfileDaoOperations() = runBlocking {
+        val aiProfileDao = db.aiProfileDao()
+        val p1 = AiProfileEntity("p1", "Gemini Direct", "GEMINI", "https://api.gemini", "key1", "gemini-2.0-flash", true, 100L)
+        val p2 = AiProfileEntity("p2", "OpenRouter", "OPENROUTER", "https://openrouter.ai", "key2", "gpt-4o", false, 200L)
+
+        aiProfileDao.insertProfile(p1)
+        aiProfileDao.insertProfile(p2)
+
+        val profiles = aiProfileDao.getAllProfiles().first()
+        assertEquals(2, profiles.size)
+
+        val active = aiProfileDao.getActiveProfile()
+        assertNotNull(active)
+        assertEquals("p1", active?.id)
+
+        // Switch active
+        aiProfileDao.setActiveProfile("p2")
+        val newActive = aiProfileDao.getActiveProfile()
+        assertEquals("p2", newActive?.id)
+
+        // Delete profile
+        aiProfileDao.deleteProfile("p1")
+        val remaining = aiProfileDao.getAllProfiles().first()
+        assertEquals(1, remaining.size)
+        assertEquals("p2", remaining.first().id)
+    }
+
+    @Test
+    fun testIndividualFlashcardAndQuizDeletion() = runBlocking {
+        val courseId = "course-delete-test"
+        val course = CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 0L, 0f, "#000", "COMPLETED")
+        courseDao.insertCourse(course)
+
+        val card = FlashcardEntity("c-to-delete", courseId, "Q", "A", "E", 5f, 1, 0L, 1, 2.5f, 0, 0, null, 0L)
+        flashcardDao.insertFlashcard(card)
+        assertEquals(1, flashcardDao.getFlashcardsForCourse(courseId).first().size)
+
+        flashcardDao.deleteFlashcardById("c-to-delete")
+        assertEquals(0, flashcardDao.getFlashcardsForCourse(courseId).first().size)
+
+        val quiz = QuizQuestionEntity("q-to-delete", courseId, "Question ?", "A\u001FB\u001FC\u001FD", "A", "Expl", "easy")
+        quizDao.insertQuizQuestion(quiz)
+        assertEquals(1, quizDao.getQuizQuestionsForCourse(courseId).first().size)
+
+        quizDao.deleteQuizQuestionById("q-to-delete")
+        assertEquals(0, quizDao.getQuizQuestionsForCourse(courseId).first().size)
     }
 }
+
