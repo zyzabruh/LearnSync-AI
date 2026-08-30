@@ -103,11 +103,9 @@ class AiRepositoryImpl(
                                         )
                                     }
                                 }
-                                val (sumRes, pracRes) = awaitAll(summaryJob, practiceJob)
-                                Pair(
-                                    sumRes as Triple<String, List<String>, List<String>>,
-                                    pracRes as Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>
-                                )
+                                val sumRes = summaryJob.await()
+                                val pracRes = practiceJob.await()
+                                Pair(sumRes, pracRes)
                             }
                         }
                     }.awaitAll()
@@ -361,23 +359,41 @@ class AiRepositoryImpl(
     }
 
     internal fun parseSummarySection(rawText: String): Triple<String, List<String>, List<String>> {
-        val jsonObject = JSONObject(extractJson(rawText))
+        val jsonObject = try {
+            JSONObject(extractJson(rawText))
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
+        }
         val summary = extractSummary(jsonObject)
+        if (summary.isBlank()) {
+            throw IllegalArgumentException("La réponse de l'IA ne contient pas de résumé valide.")
+        }
         val keyPoints = extractKeyPoints(jsonObject)
         val mnemonicTips = extractMnemonicTips(jsonObject)
         return Triple(summary, keyPoints, mnemonicTips)
     }
 
     internal fun parsePracticeSection(rawText: String): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
-        val jsonObject = JSONObject(extractJson(rawText))
+        val jsonObject = try {
+            JSONObject(extractJson(rawText))
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
+        }
         val flashcards = extractFlashcards(jsonObject)
         val quizQuestions = extractQuizQuestions(jsonObject)
         return Pair(flashcards, quizQuestions)
     }
 
     internal fun parseJsonResponse(rawText: String): StudyGenerationResult {
-        val jsonObject = JSONObject(extractJson(rawText))
+        val jsonObject = try {
+            JSONObject(extractJson(rawText))
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
+        }
         val summary = extractSummary(jsonObject)
+        if (summary.isBlank()) {
+            throw IllegalArgumentException("La réponse de l'IA ne contient pas de résumé valide.")
+        }
         val keyPoints = extractKeyPoints(jsonObject)
         val mnemonicTips = extractMnemonicTips(jsonObject)
         val flashcards = extractFlashcards(jsonObject)
