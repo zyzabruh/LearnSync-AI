@@ -20,7 +20,7 @@ import java.io.IOException
 data class AiConfig(
     val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta/openai",
     val apiKey: String = "",
-    val modelName: String = "gemini-2.0-flash"
+    val modelName: String = "gemini-2.5-flash"
 )
 
 class AiRepositoryImpl(
@@ -43,8 +43,8 @@ class AiRepositoryImpl(
 
             val config = configProvider?.invoke() ?: AiConfig()
 
-            // High chunk size (150k chars / ~40k-60k words) handles up to 100 pages in 1-2 fast calls
-            val chunkSize = 150000
+            // Optimized chunk size for fast single-call analysis (up to ~35k chars / 7k words)
+            val chunkSize = 35000
             val chunks = splitIntoChunks(trimmedText, chunkSize)
 
             if (chunks.size == 1) {
@@ -52,12 +52,13 @@ class AiRepositoryImpl(
                 val result = executeWithRetry(maxAttempts = 2) {
                     generateForChunk(config, courseTitle, chunks[0], isFullDoc = true)
                 }
-                QuizValidator.validateAllOrThrow(result.quizQuestions)
-                return@withContext Result.success(result)
+                val validQuiz = QuizValidator.filterValidQuestions(result.quizQuestions)
+                val finalResult = result.copy(quizQuestions = validQuiz)
+                return@withContext Result.success(finalResult)
             } else {
                 // Multi-chunk processing in parallel with rate-limiting Semaphore
-                onProgress("Analyse de ${chunks.size} sections du document...")
-                val semaphore = kotlinx.coroutines.sync.Semaphore(2)
+                onProgress("Analyse accélérée de ${chunks.size} sections du document...")
+                val semaphore = Semaphore(2)
                 val chunkResults = coroutineScope {
                     chunks.mapIndexed { index, chunk ->
                         async(Dispatchers.IO) {
@@ -81,38 +82,29 @@ class AiRepositoryImpl(
                 val allMnemonicTips = mutableListOf<String>()
                 val chunkSummaries = mutableListOf<String>()
 
-                chunkResults.forEach { chunkResult ->
-                    chunkSummaries.add(chunkResult.summary)
+                chunkResults.forEachIndexed { idx, chunkResult ->
+                    val sectionPrefix = "### Section ${idx + 1}\n"
+                    chunkSummaries.add(sectionPrefix + chunkResult.summary)
                     allKeyPoints.addAll(chunkResult.keyPoints)
                     allMnemonicTips.addAll(chunkResult.mnemonicTips)
                     allFlashcards.addAll(chunkResult.flashcards)
                     allQuizQuestions.addAll(chunkResult.quizQuestions)
                 }
 
-                onProgress("Consolidation et synthèse globale...")
-                val consolidatedSynthesis = executeWithRetry(maxAttempts = 2) {
-                    consolidateSectionsWithAi(
-                        config = config,
-                        courseTitle = courseTitle,
-                        sectionSummaries = chunkSummaries,
-                        allKeyPoints = allKeyPoints,
-                        allMnemonicTips = allMnemonicTips
-                    )
-                }
-
-                // Intelligent deduplication of flashcards and quiz questions
+                onProgress("Finalisation du matériel pédagogique...")
+                val combinedSummary = chunkSummaries.filter { it.isNotBlank() }.joinToString("\n\n")
+                val distinctKeyPoints = allKeyPoints.distinctBy { it.trim().lowercase() }.take(12)
+                val distinctMnemonicTips = allMnemonicTips.distinctBy { it.trim().lowercase() }.take(6)
                 val distinctFlashcards = deduplicateFlashcards(allFlashcards)
                 val distinctValidQuizQuestions = deduplicateAndValidateQuiz(allQuizQuestions)
 
-                QuizValidator.validateAllOrThrow(distinctValidQuizQuestions)
-
                 return@withContext Result.success(
                     StudyGenerationResult(
-                        summary = consolidatedSynthesis.first,
-                        keyPoints = consolidatedSynthesis.second,
+                        summary = combinedSummary,
+                        keyPoints = distinctKeyPoints,
                         flashcards = distinctFlashcards,
                         quizQuestions = distinctValidQuizQuestions,
-                        mnemonicTips = consolidatedSynthesis.third
+                        mnemonicTips = distinctMnemonicTips
                     )
                 )
             }
@@ -183,47 +175,46 @@ class AiRepositoryImpl(
         courseText: String,
         isFullDoc: Boolean
     ): StudyGenerationResult {
-        val targetFlashcardsCount = if (isFullDoc) "8 à 15" else "4 à 6"
-        val targetQuizCount = if (isFullDoc) "5 à 10" else "2 à 4"
+        val targetFlashcardsCount = if (isFullDoc) "6 à 10" else "4 à 6"
+        val targetQuizCount = if (isFullDoc) "4 à 6" else "2 à 4"
 
         val prompt = """
-            Tu es un ingénieur pédagogique de haut niveau et un tuteur universitaire bienveillant.
+            Tu es un ingénieur pédagogique et un professeur universitaire.
             Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère un matériel de révision structuré en français.
             
-            Format de réponse attendu : Un objet JSON STRICT respectant exactement ce schéma (aucun texte, markdown ou balise avant ou après le JSON) :
+            Format de réponse attendu : Un objet JSON STRICT (sans texte introductif ni markdown) :
             {
-              "summary": "Résumé clair, pédagogique et fidèle au contenu",
+              "summary": "Résumé clair et pédagogique du cours (2 à 4 paragraphes structurés)",
               "keyPoints": [
                 "Point clé essentiel 1",
                 "Point clé essentiel 2",
                 "Point clé essentiel 3"
               ],
               "mnemonicTips": [
-                "Astuce mnémotechnique concrète pour retenir une formule ou un concept"
+                "Astuce mnémotechnique concrète pour retenir une notion"
               ],
               "flashcards": [
                 {
-                  "question": "Question atomique et précise testant un concept clé",
-                  "answer": "Réponse exacte et concise",
-                  "explanation": "Brève explication clarifiant le concept"
+                  "question": "Question atomique et précise",
+                  "answer": "Réponse concise et exacte",
+                  "explanation": "Brève explication"
                 }
               ],
               "quizQuestions": [
                 {
-                  "question": "Question à choix multiples",
+                  "question": "Question de QCM",
                   "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-                  "correctAnswer": "Option 1 (la réponse correcte exacte)",
+                  "correctAnswer": "Option 1",
                   "explanation": "Pourquoi cette réponse est correcte"
                 }
               ]
             }
 
-            Règles strictes et anti-hallucination :
-            1. Base-toi EXCLUSIVEMENT sur les informations fournies dans le texte du cours ci-dessous.
-            2. N'invente aucun fait, date, formule ou nom non présent dans le texte.
-            3. Génère $targetFlashcardsCount flashcards atomiques et pertinentes.
-            4. Génère $targetQuizCount questions de QCM avec exactement 4 options distinctes et 1 seule bonne réponse (qui doit être rigoureusement identique à l'une des 4 options).
-            5. Si une notion est ambiguë dans le document, privilégie ce qui est textuellement écrit.
+            Règles strictes :
+            1. Base-toi uniquement sur le cours fourni.
+            2. Génère $targetFlashcardsCount flashcards précises.
+            3. Génère $targetQuizCount QCM comportant exactement 4 options distinctes et une bonne réponse identique à l'une des 4 options.
+            4. Réponds UNIQUEMENT en JSON valide.
 
             TEXTE DU COURS :
             $courseText
@@ -238,75 +229,6 @@ class AiRepositoryImpl(
         )
 
         return parseJsonResponse(rawText)
-    }
-
-    /**
-     * Second-pass AI consolidation to synthesize multiple section summaries into a single executive summary.
-     */
-    private suspend fun consolidateSectionsWithAi(
-        config: AiConfig,
-        courseTitle: String,
-        sectionSummaries: List<String>,
-        allKeyPoints: List<String>,
-        allMnemonicTips: List<String>
-    ): Triple<String, List<String>, List<String>> {
-        val prompt = """
-            Tu es un expert pédagogique. Tu as analysé plusieurs sections d'un cours intitulé "$courseTitle".
-            Voici les résumés et points clés intermédiaires extraits de chaque section :
-
-            RÉSUMÉS DES SECTIONS :
-            ${sectionSummaries.joinToString("\n\n---\n\n")}
-
-            POINTS CLÉS EXTRAITS :
-            ${allKeyPoints.joinToString("\n• ")}
-
-            ASTUCES MNÉMOTECHNIQUES :
-            ${allMnemonicTips.joinToString("\n• ")}
-
-            TÂCHE :
-            Produis une synthèse globale unifiée et harmonieuse en JSON STRICT :
-            {
-              "summary": "Synthèse globale rédigée et structurée couvrant l'ensemble du cours",
-              "keyPoints": ["Top 5 à 10 points clés consolidés et non redondants"],
-              "mnemonicTips": ["Top 3 à 5 meilleures astuces mnémotechniques uniques"]
-            }
-        """.trimIndent()
-
-        return try {
-            val rawText = openAiClient.generateChatCompletion(
-                baseUrl = config.baseUrl,
-                apiKey = config.apiKey,
-                modelName = config.modelName,
-                prompt = prompt,
-                temperature = 0.2
-            )
-            val cleaned = extractJson(rawText)
-            val json = JSONObject(cleaned)
-
-            val summary = json.optString("summary", "")
-                .ifBlank { json.optString("resume", "") }
-                .ifBlank { json.optString("synthese", "") }
-                .ifBlank { sectionSummaries.joinToString("\n\n") }
-
-            val keyPoints = (json.optJSONArray("keyPoints")
-                ?: json.optJSONArray("key_points")
-                ?: json.optJSONArray("pointsCles")
-                ?: json.optJSONArray("points"))?.toStringList() ?: allKeyPoints.distinct()
-
-            val mnemonicTips = (json.optJSONArray("mnemonicTips")
-                ?: json.optJSONArray("mnemonic_tips")
-                ?: json.optJSONArray("astuces")
-                ?: json.optJSONArray("tips"))?.toStringList() ?: allMnemonicTips.distinct()
-
-            Triple(summary, keyPoints, mnemonicTips)
-        } catch (_: Exception) {
-            // Fallback gracefully to non-redundant merge
-            Triple(
-                sectionSummaries.filter { it.isNotBlank() }.joinToString("\n\n"),
-                allKeyPoints.distinctBy { it.trim().lowercase() },
-                allMnemonicTips.distinctBy { it.trim().lowercase() }
-            )
-        }
     }
 
     private fun deduplicateFlashcards(cards: List<GeneratedFlashcard>): List<GeneratedFlashcard> {

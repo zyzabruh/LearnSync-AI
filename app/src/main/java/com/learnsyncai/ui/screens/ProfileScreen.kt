@@ -64,13 +64,13 @@ enum class AiProviderPreset(
         id = "GEMINI",
         displayName = "Gemini (direct)",
         defaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
-        defaultModel = "gemini-2.0-flash"
+        defaultModel = "gemini-2.5-flash"
     ),
     OPENROUTER(
         id = "OPENROUTER",
         displayName = "OpenRouter",
         defaultBaseUrl = "https://openrouter.ai/api/v1",
-        defaultModel = "google/gemini-2.0-flash-exp:free"
+        defaultModel = "google/gemini-2.5-flash"
     ),
     NVIDIA_NIM(
         id = "NVIDIA_NIM",

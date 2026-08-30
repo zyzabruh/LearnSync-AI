@@ -20,11 +20,27 @@ class OpenAiCompatibleClient(
 
         fun createDefaultOkHttpClient(): OkHttpClient {
             return OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(15, TimeUnit.SECONDS)
-                .callTimeout(90, TimeUnit.SECONDS)
+                .connectTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(90, TimeUnit.SECONDS)
+                .writeTimeout(20, TimeUnit.SECONDS)
+                .callTimeout(120, TimeUnit.SECONDS)
                 .build()
+        }
+
+        fun normalizeModelName(rawModel: String, baseUrl: String): String {
+            val trimmed = rawModel.trim()
+            val isGoogle = baseUrl.contains("googleapis.com") || baseUrl.contains("google")
+            return when {
+                isGoogle && (trimmed.equals("gemini-2.0-flash", ignoreCase = true) ||
+                        trimmed.equals("gemini-1.5-flash", ignoreCase = true) ||
+                        trimmed.equals("gemini-1.5-pro", ignoreCase = true) ||
+                        trimmed.equals("gemini-2.0-flash-exp", ignoreCase = true) ||
+                        trimmed.equals("gemini-pro", ignoreCase = true) ||
+                        trimmed.isBlank()) -> "gemini-2.5-flash"
+                trimmed.equals("google/gemini-2.0-flash-exp:free", ignoreCase = true) -> "google/gemini-2.5-flash"
+                trimmed.isBlank() -> if (isGoogle) "gemini-2.5-flash" else "gemini-2.5-flash"
+                else -> trimmed
+            }
         }
     }
 
@@ -37,15 +53,13 @@ class OpenAiCompatibleClient(
         modelName: String,
         prompt: String,
         systemPrompt: String? = null,
-        temperature: Double = 0.3
+        temperature: Double = 0.2
     ): String = withContext(Dispatchers.IO) {
         val cleanBaseUrl = baseUrl.trim().trimEnd('/')
         if (cleanBaseUrl.isBlank()) {
             throw IllegalArgumentException("L'URL de base du fournisseur IA est vide.")
         }
-        if (modelName.isBlank()) {
-            throw IllegalArgumentException("Le nom du modèle IA est vide.")
-        }
+        val effectiveModel = normalizeModelName(modelName, cleanBaseUrl)
 
         val endpoint = if (cleanBaseUrl.endsWith("/chat/completions")) {
             cleanBaseUrl
@@ -66,10 +80,15 @@ class OpenAiCompatibleClient(
             .put("content", prompt)
         messagesArray.put(userMsg)
 
+        val hasJsonFormat = cleanBaseUrl.contains("googleapis.com") || cleanBaseUrl.contains("openai.com") || cleanBaseUrl.contains("openrouter.ai")
         val requestPayload = JSONObject().apply {
-            put("model", modelName.trim())
+            put("model", effectiveModel)
             put("messages", messagesArray)
             put("temperature", temperature)
+            put("max_tokens", 4096)
+            if (hasJsonFormat) {
+                put("response_format", JSONObject().put("type", "json_object"))
+            }
         }
 
         val requestBody = requestPayload.toString().toRequestBody(JSON_MEDIA_TYPE)
@@ -85,7 +104,7 @@ class OpenAiCompatibleClient(
         }
 
         val response = try {
-            android.util.Log.d("LearnSyncAI", "requête commencée: model=$modelName, promptLength=${prompt.length}")
+            android.util.Log.d("LearnSyncAI", "requête commencée: model=$effectiveModel, endpoint=$endpoint, promptLength=${prompt.length}")
             client.newCall(requestBuilder.build()).execute()
         } catch (e: IOException) {
             throw e
@@ -93,17 +112,70 @@ class OpenAiCompatibleClient(
             throw IOException("Échec de connexion au service IA : ${e.localizedMessage}", e)
         }
 
-        response.use { resp ->
+        var shouldRetryWithoutJsonFormat = false
+        val content = response.use { resp ->
             val responseBodyString = resp.body?.string() ?: ""
             android.util.Log.d("LearnSyncAI", "réponse reçue: statusCode=${resp.code}, length=${responseBodyString.length}")
             if (!resp.isSuccessful) {
-                val errorMessage = extractErrorMessage(resp.code, responseBodyString)
-                throw IOException(errorMessage)
+                if (resp.code == 400 && hasJsonFormat) {
+                    shouldRetryWithoutJsonFormat = true
+                    ""
+                } else {
+                    val errorMessage = extractErrorMessage(resp.code, responseBodyString)
+                    throw IOException(errorMessage)
+                }
+            } else {
+                val extracted = extractContentFromResponse(responseBodyString)
+                android.util.Log.d("LearnSyncAI", "longueur réponse: ${extracted.length}")
+                extracted
             }
+        }
 
-            val extractedContent = extractContentFromResponse(responseBodyString)
-            android.util.Log.d("LearnSyncAI", "longueur réponse: ${extractedContent.length}")
-            extractedContent
+        if (shouldRetryWithoutJsonFormat) {
+            executeWithoutResponseFormat(
+                endpoint = endpoint,
+                apiKey = apiKey,
+                model = effectiveModel,
+                messagesArray = messagesArray,
+                temperature = temperature
+            )
+        } else {
+            content
+        }
+    }
+
+    private fun executeWithoutResponseFormat(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        messagesArray: JSONArray,
+        temperature: Double
+    ): String {
+        val payload = JSONObject().apply {
+            put("model", model)
+            put("messages", messagesArray)
+            put("temperature", temperature)
+            put("max_tokens", 4096)
+        }
+        val requestBody = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val requestBuilder = Request.Builder()
+            .url(endpoint)
+            .post(requestBody)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("HTTP-Referer", "https://learnsync.ai")
+            .addHeader("X-Title", "LearnSync AI")
+
+        if (apiKey.isNotBlank()) {
+            requestBuilder.addHeader("Authorization", "Bearer ${apiKey.trim()}")
+        }
+
+        val response = client.newCall(requestBuilder.build()).execute()
+        response.use { resp ->
+            val body = resp.body?.string() ?: ""
+            if (!resp.isSuccessful) {
+                throw IOException(extractErrorMessage(resp.code, body))
+            }
+            return extractContentFromResponse(body)
         }
     }
 
@@ -115,15 +187,17 @@ class OpenAiCompatibleClient(
         apiKey: String,
         modelName: String
     ): Result<String> = runCatching {
+        val effectiveModel = normalizeModelName(modelName, baseUrl)
         val testResponse = generateChatCompletion(
             baseUrl = baseUrl,
             apiKey = apiKey,
-            modelName = modelName,
-            prompt = "Réponds uniquement par le mot 'OK' en majuscules pour tester la connexion.",
+            modelName = effectiveModel,
+            prompt = "{\"test\": true}",
+            systemPrompt = "Réponds avec {\"status\": \"ok\"} en JSON.",
             temperature = 0.0
         )
         if (testResponse.isNotBlank()) {
-            "Connexion réussie avec $modelName !"
+            "Connexion réussie avec $effectiveModel !"
         } else {
             throw IllegalStateException("Réponse vide reçue du modèle.")
         }

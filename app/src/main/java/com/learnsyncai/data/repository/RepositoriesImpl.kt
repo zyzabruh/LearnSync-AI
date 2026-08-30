@@ -176,10 +176,10 @@ class ReviewRepositoryImpl(private val reviewLogDao: ReviewLogDao) : ReviewRepos
 
 class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : PreferencesRepository {
     override fun getPreferences(): Flow<UserPreferences> =
-        prefsDao.getPreferences().map { it?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.0-flash") }
+        prefsDao.getPreferences().map { it?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.5-flash") }
 
     override suspend fun getPreferencesSync(): UserPreferences =
-        prefsDao.getPreferencesSync()?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.0-flash")
+        prefsDao.getPreferencesSync()?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.5-flash")
 
     override suspend fun updatePreferences(preferences: UserPreferences) =
         prefsDao.insertPreferences(preferences.toEntity())
