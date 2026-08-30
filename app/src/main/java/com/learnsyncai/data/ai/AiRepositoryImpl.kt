@@ -196,7 +196,7 @@ class AiRepositoryImpl(
             modelName = config.modelName,
             prompt = prompt,
             temperature = 0.2,
-            maxTokens = 8192
+            maxTokens = 131072
         )
 
         return parseSummarySection(rawText)
@@ -262,7 +262,7 @@ class AiRepositoryImpl(
             modelName = config.modelName,
             prompt = prompt,
             temperature = 0.2,
-            maxTokens = 8192
+            maxTokens = 131072
         )
 
         return parsePracticeSection(rawText)

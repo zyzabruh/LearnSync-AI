@@ -17,13 +17,14 @@ class OpenAiCompatibleClient(
 
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        private val MAX_TOKENS_FALLBACKS = intArrayOf(131072, 65535, 32768, 8192)
 
         fun createDefaultOkHttpClient(): OkHttpClient {
             return OkHttpClient.Builder()
                 .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(90, TimeUnit.SECONDS)
+                .readTimeout(180, TimeUnit.SECONDS)
                 .writeTimeout(20, TimeUnit.SECONDS)
-                .callTimeout(120, TimeUnit.SECONDS)
+                .callTimeout(300, TimeUnit.SECONDS)
                 .build()
         }
 
@@ -54,7 +55,7 @@ class OpenAiCompatibleClient(
         prompt: String,
         systemPrompt: String? = null,
         temperature: Double = 0.2,
-        maxTokens: Int = 4096
+        maxTokens: Int = 131072
     ): String = withContext(Dispatchers.IO) {
         val cleanBaseUrl = baseUrl.trim().trimEnd('/')
         if (cleanBaseUrl.isBlank()) {
@@ -82,12 +83,50 @@ class OpenAiCompatibleClient(
         messagesArray.put(userMsg)
 
         val hasJsonFormat = cleanBaseUrl.contains("googleapis.com") || cleanBaseUrl.contains("openai.com") || cleanBaseUrl.contains("openrouter.ai")
+
+        val fallbacks = (MAX_TOKENS_FALLBACKS.toList() + maxTokens).distinct().filter { it <= maxTokens }
+        var lastError: IOException? = null
+        var success: String? = null
+        for (attemptMaxTokens in fallbacks) {
+            try {
+                success = executeChatRequest(
+                    endpoint = endpoint,
+                    apiKey = apiKey,
+                    model = effectiveModel,
+                    messagesArray = messagesArray,
+                    temperature = temperature,
+                    maxTokens = attemptMaxTokens,
+                    useJsonFormat = hasJsonFormat
+                )
+                break
+            } catch (e: MaxTokensExceededException) {
+                lastError = e
+                // Le plafond du modèle est plus bas : on retente avec la valeur suivante.
+            }
+        }
+        success ?: throw lastError ?: IOException("Échec de la requête IA.")
+    }
+
+    private class MaxTokensExceededException(message: String) : IOException(message)
+
+    /**
+     * Exécute une requête /chat/completions avec gestion du retry sans response_format.
+     */
+    private suspend fun executeChatRequest(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        messagesArray: JSONArray,
+        temperature: Double,
+        maxTokens: Int,
+        useJsonFormat: Boolean
+    ): String = withContext(Dispatchers.IO) {
         val requestPayload = JSONObject().apply {
-            put("model", effectiveModel)
+            put("model", model)
             put("messages", messagesArray)
             put("temperature", temperature)
             put("max_tokens", maxTokens)
-            if (hasJsonFormat) {
+            if (useJsonFormat) {
                 put("response_format", JSONObject().put("type", "json_object"))
             }
         }
@@ -105,7 +144,7 @@ class OpenAiCompatibleClient(
         }
 
         val response = try {
-            android.util.Log.d("LearnSyncAI", "requête commencée: model=$effectiveModel, endpoint=$endpoint, maxTokens=$maxTokens, promptLength=${prompt.length}")
+            android.util.Log.d("LearnSyncAI", "requête commencée: model=$model, endpoint=$endpoint, maxTokens=$maxTokens")
             client.newCall(requestBuilder.build()).execute()
         } catch (e: IOException) {
             throw e
@@ -118,7 +157,9 @@ class OpenAiCompatibleClient(
             val responseBodyString = resp.body?.string() ?: ""
             android.util.Log.d("LearnSyncAI", "réponse reçue: statusCode=${resp.code}, length=${responseBodyString.length}")
             if (!resp.isSuccessful) {
-                if (resp.code == 400 && hasJsonFormat) {
+                if (resp.code == 400 && isMaxTokensError(responseBodyString)) {
+                    throw MaxTokensExceededException("max_tokens dépasse le plafond du modèle : $maxTokens")
+                } else if (resp.code == 400 && useJsonFormat) {
                     shouldRetryWithoutJsonFormat = true
                     ""
                 } else {
@@ -136,7 +177,7 @@ class OpenAiCompatibleClient(
             executeWithoutResponseFormat(
                 endpoint = endpoint,
                 apiKey = apiKey,
-                model = effectiveModel,
+                model = model,
                 messagesArray = messagesArray,
                 temperature = temperature,
                 maxTokens = maxTokens
@@ -144,6 +185,14 @@ class OpenAiCompatibleClient(
         } else {
             content
         }
+    }
+
+    private fun isMaxTokensError(responseBody: String): Boolean {
+        val lower = responseBody.lowercase()
+        return lower.contains("max_tokens") &&
+                (lower.contains("exceed") || lower.contains("too large") ||
+                        lower.contains("greater than") || lower.contains("maximum") ||
+                        lower.contains("out of range") || lower.contains("unsupported_value"))
     }
 
     private fun executeWithoutResponseFormat(
@@ -225,13 +274,22 @@ class OpenAiCompatibleClient(
             val messageObj = firstChoice.optJSONObject("message")
             val content = messageObj?.optString("content")
 
-            if (content.isNullOrBlank()) {
+            val effectiveContent = if (content.isNullOrBlank()) {
                 // Fallback for some reasoning / raw text formats
                 val text = firstChoice.optString("text", "")
-                if (text.isNotBlank()) text else throw IllegalStateException("Contenu vide dans la réponse IA.")
+                if (text.isNotBlank()) text else null
             } else {
                 content
             }
+
+            if (effectiveContent.isNullOrBlank()) {
+                val truncated = finishReason.equals("length", ignoreCase = true)
+                throw IllegalStateException(
+                    if (truncated) "Réponse tronquée par la limite de sortie du modèle (contenu vide), réessayez."
+                    else "Contenu vide dans la réponse IA."
+                )
+            }
+            return effectiveContent
         } catch (e: Exception) {
             if (e is IllegalStateException) throw e
             throw IllegalStateException("Impossible de décoder la réponse JSON de l'IA : ${e.message}", e)
