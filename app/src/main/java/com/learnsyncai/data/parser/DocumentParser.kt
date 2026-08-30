@@ -2,6 +2,7 @@ package com.learnsyncai.data.parser
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
@@ -29,13 +30,36 @@ class DocumentParser(private val context: Context) {
     }
 
     fun parseDocument(uri: Uri, fileName: String): ParseResult {
-        val extension = fileName.substringAfterLast('.', "").lowercase()
-        return when (extension) {
-            "pdf" -> parsePdf(uri, fileName)
-            "docx" -> parseDocx(uri, fileName)
-            "txt" -> parseTxt(uri, fileName)
-            else -> parseTxt(uri, fileName)
+        // Le nom transmis par l'UI vient souvent de lastPathSegment (ex. "msf:26"),
+        // sans extension : on interroge le ContentResolver pour le vrai nom.
+        val resolvedName = resolveDisplayName(uri) ?: fileName
+        val extension = resolvedName.substringAfterLast('.', "").lowercase()
+
+        // La signature binaire est plus fiable que l'extension : un PDF choisi
+        // via SAF peut arriver avec un nom sans ".pdf" et être sinon lu comme texte.
+        val magic = readMagicBytes(uri)
+        return when {
+            magic.startsWith("%PDF-") || extension == "pdf" -> parsePdf(uri, resolvedName)
+            magic.startsWith("PK") || extension == "docx" -> parseDocx(uri, resolvedName)
+            else -> parseTxt(uri, resolvedName)
         }
+    }
+
+    private fun resolveDisplayName(uri: Uri): String? = try {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun readMagicBytes(uri: Uri): String = try {
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            val buffer = ByteArray(5)
+            val read = stream.read(buffer)
+            if (read > 0) String(buffer, 0, read, StandardCharsets.US_ASCII) else ""
+        } ?: ""
+    } catch (_: Exception) {
+        ""
     }
 
     private fun parsePdf(uri: Uri, fileName: String): ParseResult {
@@ -87,6 +111,16 @@ class DocumentParser(private val context: Context) {
 
         if (text.isBlank() || text.count { it.isLetterOrDigit() } < 5) {
             throw IllegalStateException("Le fichier texte est vide ou ne contient aucun contenu lisible.")
+        }
+
+        // Filet de sécurité : un binaire (PDF/DOCX non reconnu) décodé en texte
+        // contient des caractères de contrôle et des marqueurs PDF — on refuse.
+        val controlChars = text.count { it.code < 32 && it != '\n' && it != '\r' && it != '\t' }
+        val looksLikeRawPdf = text.contains("endstream") || text.contains("FlateDecode") || text.contains("%PDF-")
+        if (controlChars > text.length / 100 || looksLikeRawPdf) {
+            throw IllegalStateException(
+                "Le fichier importé est un document binaire (PDF ou DOCX) qui n'a pas pu être décodé en texte. Réessayez de l'importer depuis sa source d'origine."
+            )
         }
 
         val title = fileName.substringBeforeLast('.')
