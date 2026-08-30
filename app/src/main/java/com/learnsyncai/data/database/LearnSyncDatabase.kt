@@ -39,6 +39,10 @@ abstract class LearnSyncDatabase : RoomDatabase() {
         flashcards: List<FlashcardEntity>,
         quizQuestions: List<QuizQuestionEntity>
     ) {
+        // Le cours d'abord (upsert, sans cascade) : les contenus insérés ensuite
+        // satisfont leur clé étrangère vers la ligne déjà à jour.
+        courseDao().insertCourse(course)
+
         studyMaterialDao().deleteMaterialsForCourse(course.id)
         flashcardDao().deleteFlashcardsForCourse(course.id)
         quizQuestionDao().deleteQuizQuestionsForCourse(course.id)
@@ -46,7 +50,6 @@ abstract class LearnSyncDatabase : RoomDatabase() {
         studyMaterialDao().insertMaterial(material)
         flashcardDao().insertFlashcards(flashcards)
         quizQuestionDao().insertQuizQuestions(quizQuestions)
-        courseDao().insertCourse(course)
 
         android.util.Log.d("LearnSyncAI", "commit Room: courseId=${course.id}")
     }

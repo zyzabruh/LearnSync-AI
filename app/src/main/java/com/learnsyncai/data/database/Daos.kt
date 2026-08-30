@@ -11,10 +11,12 @@ interface CourseDao {
     @Query("SELECT * FROM courses WHERE id = :courseId")
     suspend fun getCourseById(courseId: String): CourseEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // @Upsert (UPDATE si la ligne existe) : contrairement à REPLACE, il ne supprime
+    // pas la ligne existante, donc ne déclenche pas le CASCADE des contenus liés.
+    @Upsert
     suspend fun insertCourse(course: CourseEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertCourses(courses: List<CourseEntity>)
 
     @Delete
