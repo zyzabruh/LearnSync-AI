@@ -47,6 +47,9 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     modelName = currentPrefs.aiModelName
                 )
             }
+        },
+        preferencesProvider = {
+            prefsRepo.getPreferencesSync()
         }
     )
     private val documentParser = DocumentParser(application)

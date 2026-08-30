@@ -3,6 +3,7 @@ package com.learnsyncai.data.ai
 import com.learnsyncai.domain.model.GeneratedFlashcard
 import com.learnsyncai.domain.model.GeneratedQuizQuestion
 import com.learnsyncai.domain.model.StudyGenerationResult
+import com.learnsyncai.domain.model.UserPreferences
 import com.learnsyncai.domain.repository.AiRepository
 import com.learnsyncai.domain.usecase.QuizValidator
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +26,8 @@ data class AiConfig(
 
 class AiRepositoryImpl(
     private val openAiClient: OpenAiCompatibleClient = OpenAiCompatibleClient(),
-    private val configProvider: (suspend () -> AiConfig)? = null
+    private val configProvider: (suspend () -> AiConfig)? = null,
+    private val preferencesProvider: (suspend () -> UserPreferences)? = null
 ) : AiRepository {
 
     override suspend fun generateStudyMaterial(
@@ -42,35 +44,70 @@ class AiRepositoryImpl(
             }
 
             val config = configProvider?.invoke() ?: AiConfig()
+            val prefs = preferencesProvider?.invoke() ?: UserPreferences(true, 10, "08:00", "system", "fr")
 
-            // Optimized chunk size for fast single-call analysis (up to ~35k chars / 7k words)
             val chunkSize = 35000
             val chunks = splitIntoChunks(trimmedText, chunkSize)
+            val numChunks = chunks.size
 
-            if (chunks.size == 1) {
-                onProgress("Génération du résumé, flashcards et QCM avec l'IA...")
-                val result = executeWithRetry(maxAttempts = 2) {
-                    generateForChunk(config, courseTitle, chunks[0], isFullDoc = true)
+            if (numChunks == 1) {
+                onProgress("Génération de la synthèse et des notions clés...")
+                val summaryResult = executeWithRetry(maxAttempts = 2) {
+                    generateSummarySection(config, courseTitle, chunks[0], true, prefs, 0, 1)
                 }
-                val validQuiz = QuizValidator.filterValidQuestions(result.quizQuestions)
-                val finalResult = result.copy(quizQuestions = validQuiz)
+
+                onProgress("Génération des flashcards et QCM...")
+                val practiceResult = executeWithRetry(maxAttempts = 2) {
+                    generatePracticeSection(config, courseTitle, chunks[0], true, prefs, 0, 1)
+                }
+
+                val validQuiz = QuizValidator.filterValidQuestions(practiceResult.second)
+                val finalResult = StudyGenerationResult(
+                    summary = summaryResult.first,
+                    keyPoints = summaryResult.second,
+                    flashcards = practiceResult.first,
+                    quizQuestions = validQuiz,
+                    mnemonicTips = summaryResult.third
+                )
                 return@withContext Result.success(finalResult)
             } else {
-                // Multi-chunk processing in parallel with rate-limiting Semaphore
-                onProgress("Analyse accélérée de ${chunks.size} sections du document...")
-                val semaphore = Semaphore(2)
+                onProgress("Analyse accélérée de $numChunks sections du document...")
+                val semaphore = Semaphore(1)
                 val chunkResults = coroutineScope {
                     chunks.mapIndexed { index, chunk ->
                         async(Dispatchers.IO) {
                             semaphore.withPermit {
-                                executeWithRetry(maxAttempts = 2) {
-                                    generateForChunk(
-                                        config = config,
-                                        courseTitle = "$courseTitle (Partie ${index + 1}/${chunks.size})",
-                                        courseText = chunk,
-                                        isFullDoc = false
-                                    )
+                                val summaryJob = async(Dispatchers.IO) {
+                                    executeWithRetry(maxAttempts = 2) {
+                                        generateSummarySection(
+                                            config = config,
+                                            courseTitle = "$courseTitle (Partie ${index + 1}/$numChunks)",
+                                            courseText = chunk,
+                                            isFullDoc = false,
+                                            prefs = prefs,
+                                            chunkIndex = index,
+                                            totalChunks = numChunks
+                                        )
+                                    }
                                 }
+                                val practiceJob = async(Dispatchers.IO) {
+                                    executeWithRetry(maxAttempts = 2) {
+                                        generatePracticeSection(
+                                            config = config,
+                                            courseTitle = "$courseTitle (Partie ${index + 1}/$numChunks)",
+                                            courseText = chunk,
+                                            isFullDoc = false,
+                                            prefs = prefs,
+                                            chunkIndex = index,
+                                            totalChunks = numChunks
+                                        )
+                                    }
+                                }
+                                val (sumRes, pracRes) = awaitAll(summaryJob, practiceJob)
+                                Pair(
+                                    sumRes as Triple<String, List<String>, List<String>>,
+                                    pracRes as Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>
+                                )
                             }
                         }
                     }.awaitAll()
@@ -82,19 +119,19 @@ class AiRepositoryImpl(
                 val allMnemonicTips = mutableListOf<String>()
                 val chunkSummaries = mutableListOf<String>()
 
-                chunkResults.forEachIndexed { idx, chunkResult ->
+                chunkResults.forEachIndexed { idx, (sumRes, pracRes) ->
                     val sectionPrefix = "### Section ${idx + 1}\n"
-                    chunkSummaries.add(sectionPrefix + chunkResult.summary)
-                    allKeyPoints.addAll(chunkResult.keyPoints)
-                    allMnemonicTips.addAll(chunkResult.mnemonicTips)
-                    allFlashcards.addAll(chunkResult.flashcards)
-                    allQuizQuestions.addAll(chunkResult.quizQuestions)
+                    chunkSummaries.add(sectionPrefix + sumRes.first)
+                    allKeyPoints.addAll(sumRes.second)
+                    allMnemonicTips.addAll(sumRes.third)
+                    allFlashcards.addAll(pracRes.first)
+                    allQuizQuestions.addAll(pracRes.second)
                 }
 
                 onProgress("Finalisation du matériel pédagogique...")
                 val combinedSummary = chunkSummaries.filter { it.isNotBlank() }.joinToString("\n\n")
-                val distinctKeyPoints = allKeyPoints.distinctBy { it.trim().lowercase() }.take(12)
-                val distinctMnemonicTips = allMnemonicTips.distinctBy { it.trim().lowercase() }.take(6)
+                val distinctKeyPoints = allKeyPoints.distinctBy { it.trim().lowercase() }
+                val distinctMnemonicTips = allMnemonicTips.distinctBy { it.trim().lowercase() }.take(10)
                 val distinctFlashcards = deduplicateFlashcards(allFlashcards)
                 val distinctValidQuizQuestions = deduplicateAndValidateQuiz(allQuizQuestions)
 
@@ -111,6 +148,133 @@ class AiRepositoryImpl(
         } catch (e: Exception) {
             Result.failure(mapUserFacingException(e))
         }
+    }
+
+    private suspend fun generateSummarySection(
+        config: AiConfig,
+        courseTitle: String,
+        courseText: String,
+        isFullDoc: Boolean,
+        prefs: UserPreferences,
+        chunkIndex: Int,
+        totalChunks: Int
+    ): Triple<String, List<String>, List<String>> {
+        val mnemonicCount = if (prefs.mnemonicTipsMode == "custom") {
+            distributeCount(prefs.mnemonicTipsCustomCount, chunkIndex, totalChunks)
+        } else {
+            if (isFullDoc) 3 else 2
+        }
+
+        val prompt = """
+            Tu es un ingénieur pédagogique et un professeur universitaire.
+            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère la section synthétique en français.
+            
+            Format JSON STRICT (sans texte introductif ni markdown) :
+            {
+              "summary": "Résumé structuré, détaillé et approfondi du cours (longueur idéale 800 à 1200 mots si le contenu le permet, structuré en paragraphes clairs)",
+              "keyPoints": [
+                "Point clé essentiel 1",
+                "Point clé essentiel 2"
+              ],
+              "mnemonicTips": [
+                "Astuce mnémotechnique concrète"
+              ]
+            }
+
+            Règles strictes :
+            1. Base-toi uniquement sur le cours fourni.
+            2. Identifie tous les concepts clés et n'omets aucune information importante (pas de plafond numérique pour les points clés).
+            3. Rédige un résumé riche, détaillé et complet.
+            4. Génère exactement $mnemonicCount astuces mnémotechniques concrètes.
+            5. Réponds UNIQUEMENT en JSON valide.
+
+            TEXTE DU COURS :
+            $courseText
+        """.trimIndent()
+
+        val rawText = openAiClient.generateChatCompletion(
+            baseUrl = config.baseUrl,
+            apiKey = config.apiKey,
+            modelName = config.modelName,
+            prompt = prompt,
+            temperature = 0.2,
+            maxTokens = 8192
+        )
+
+        return parseSummarySection(rawText)
+    }
+
+    private suspend fun generatePracticeSection(
+        config: AiConfig,
+        courseTitle: String,
+        courseText: String,
+        isFullDoc: Boolean,
+        prefs: UserPreferences,
+        chunkIndex: Int,
+        totalChunks: Int
+    ): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
+        val flashcardsCount = if (prefs.flashcardsMode == "custom") {
+            distributeCount(prefs.flashcardsCustomCount, chunkIndex, totalChunks)
+        } else {
+            if (isFullDoc) 8 else 5
+        }
+
+        val quizCount = if (prefs.quizMode == "custom") {
+            distributeCount(prefs.quizCustomCount, chunkIndex, totalChunks)
+        } else {
+            if (isFullDoc) 5 else 3
+        }
+
+        val prompt = """
+            Tu es un ingénieur pédagogique et un professeur universitaire.
+            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère les exercices (flashcards et QCM) en français.
+            
+            Format JSON STRICT (sans texte introductif ni markdown) :
+            {
+              "flashcards": [
+                {
+                  "question": "Question atomique et précise",
+                  "answer": "Réponse concise et exacte (maximum 2 phrases)",
+                  "explanation": "Brève explication (maximum 1 phrase)"
+                }
+              ],
+              "quizQuestions": [
+                {
+                  "question": "Question de QCM",
+                  "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+                  "correctAnswer": "Option 1",
+                  "explanation": "Pourquoi cette réponse est correcte (maximum 1 phrase)"
+                }
+              ]
+            }
+
+            Règles strictes :
+            1. Base-toi uniquement sur le cours fourni.
+            2. Génère exactement $flashcardsCount flashcards précises (réponse concise en 2 phrases max).
+            3. Génère exactement $quizCount QCM comportant exactement 4 options distinctes et une bonne réponse identique à l'une des 4 options (explication en 1 phrase max).
+            4. Réponds UNIQUEMENT en JSON valide.
+
+            TEXTE DU COURS :
+            $courseText
+        """.trimIndent()
+
+        val rawText = openAiClient.generateChatCompletion(
+            baseUrl = config.baseUrl,
+            apiKey = config.apiKey,
+            modelName = config.modelName,
+            prompt = prompt,
+            temperature = 0.2,
+            maxTokens = 8192
+        )
+
+        return parsePracticeSection(rawText)
+    }
+
+    private fun distributeCount(total: Int, index: Int, totalChunks: Int): Int {
+        if (totalChunks <= 1) return total
+        val base = total / totalChunks
+        val rem = total % totalChunks
+        return base + if (index < rem) 1 else 0
     }
 
     internal suspend fun <T> executeWithRetry(
@@ -169,68 +333,6 @@ class AiRepositoryImpl(
         }
     }
 
-    private suspend fun generateForChunk(
-        config: AiConfig,
-        courseTitle: String,
-        courseText: String,
-        isFullDoc: Boolean
-    ): StudyGenerationResult {
-        val targetFlashcardsCount = if (isFullDoc) "6 à 10" else "4 à 6"
-        val targetQuizCount = if (isFullDoc) "4 à 6" else "2 à 4"
-
-        val prompt = """
-            Tu es un ingénieur pédagogique et un professeur universitaire.
-            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère un matériel de révision structuré en français.
-            
-            Format de réponse attendu : Un objet JSON STRICT (sans texte introductif ni markdown) :
-            {
-              "summary": "Résumé clair et pédagogique du cours (2 à 4 paragraphes structurés)",
-              "keyPoints": [
-                "Point clé essentiel 1",
-                "Point clé essentiel 2",
-                "Point clé essentiel 3"
-              ],
-              "mnemonicTips": [
-                "Astuce mnémotechnique concrète pour retenir une notion"
-              ],
-              "flashcards": [
-                {
-                  "question": "Question atomique et précise",
-                  "answer": "Réponse concise et exacte",
-                  "explanation": "Brève explication"
-                }
-              ],
-              "quizQuestions": [
-                {
-                  "question": "Question de QCM",
-                  "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-                  "correctAnswer": "Option 1",
-                  "explanation": "Pourquoi cette réponse est correcte"
-                }
-              ]
-            }
-
-            Règles strictes :
-            1. Base-toi uniquement sur le cours fourni.
-            2. Génère $targetFlashcardsCount flashcards précises.
-            3. Génère $targetQuizCount QCM comportant exactement 4 options distinctes et une bonne réponse identique à l'une des 4 options.
-            4. Réponds UNIQUEMENT en JSON valide.
-
-            TEXTE DU COURS :
-            $courseText
-        """.trimIndent()
-
-        val rawText = openAiClient.generateChatCompletion(
-            baseUrl = config.baseUrl,
-            apiKey = config.apiKey,
-            modelName = config.modelName,
-            prompt = prompt,
-            temperature = 0.2
-        )
-
-        return parseJsonResponse(rawText)
-    }
-
     private fun deduplicateFlashcards(cards: List<GeneratedFlashcard>): List<GeneratedFlashcard> {
         val seen = mutableSetOf<String>()
         val result = mutableListOf<GeneratedFlashcard>()
@@ -258,19 +360,33 @@ class AiRepositoryImpl(
         return result
     }
 
+    internal fun parseSummarySection(rawText: String): Triple<String, List<String>, List<String>> {
+        val jsonObject = JSONObject(extractJson(rawText))
+        val summary = extractSummary(jsonObject)
+        val keyPoints = extractKeyPoints(jsonObject)
+        val mnemonicTips = extractMnemonicTips(jsonObject)
+        return Triple(summary, keyPoints, mnemonicTips)
+    }
+
+    internal fun parsePracticeSection(rawText: String): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
+        val jsonObject = JSONObject(extractJson(rawText))
+        val flashcards = extractFlashcards(jsonObject)
+        val quizQuestions = extractQuizQuestions(jsonObject)
+        return Pair(flashcards, quizQuestions)
+    }
+
     internal fun parseJsonResponse(rawText: String): StudyGenerationResult {
-        android.util.Log.d("LearnSyncAI", "longueur réponse: ${rawText.length}")
-        val extractedJson = extractJson(rawText)
-        android.util.Log.d("LearnSyncAI", "JSON extrait: length=${extractedJson.length}")
+        val jsonObject = JSONObject(extractJson(rawText))
+        val summary = extractSummary(jsonObject)
+        val keyPoints = extractKeyPoints(jsonObject)
+        val mnemonicTips = extractMnemonicTips(jsonObject)
+        val flashcards = extractFlashcards(jsonObject)
+        val quizQuestions = extractQuizQuestions(jsonObject)
+        return StudyGenerationResult(summary, keyPoints, flashcards, quizQuestions, mnemonicTips)
+    }
 
-        val jsonObject = try {
-            JSONObject(extractedJson)
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Format JSON invalide retourné par l'IA : ${e.message}", e)
-        }
-
-        // 1. Summary
-        val summary = jsonObject.optString("summary", "")
+    internal fun extractSummary(jsonObject: JSONObject): String {
+        return jsonObject.optString("summary", "")
             .ifBlank { jsonObject.optString("resume", "") }
             .ifBlank { jsonObject.optString("résumé", "") }
             .ifBlank { jsonObject.optString("synthese", "") }
@@ -278,12 +394,9 @@ class AiRepositoryImpl(
             .ifBlank { jsonObject.optString("overview", "") }
             .ifBlank { jsonObject.optString("content", "") }
             .trim()
+    }
 
-        if (summary.isBlank()) {
-            throw IllegalArgumentException("La réponse de l'IA ne contient pas de résumé valide.")
-        }
-
-        // 2. Key Points
+    internal fun extractKeyPoints(jsonObject: JSONObject): List<String> {
         val keyPointsArray = jsonObject.optJSONArray("keyPoints")
             ?: jsonObject.optJSONArray("key_points")
             ?: jsonObject.optJSONArray("pointsCles")
@@ -293,9 +406,10 @@ class AiRepositoryImpl(
             ?: jsonObject.optJSONArray("notions_clés")
             ?: jsonObject.optJSONArray("points")
             ?: jsonObject.optJSONArray("key_concepts")
-        val keyPoints = keyPointsArray?.toStringList() ?: emptyList()
+        return keyPointsArray?.toStringList() ?: emptyList()
+    }
 
-        // 3. Mnemonic Tips
+    internal fun extractMnemonicTips(jsonObject: JSONObject): List<String> {
         val mnemonicArray = jsonObject.optJSONArray("mnemonicTips")
             ?: jsonObject.optJSONArray("mnemonic_tips")
             ?: jsonObject.optJSONArray("astuces")
@@ -303,9 +417,10 @@ class AiRepositoryImpl(
             ?: jsonObject.optJSONArray("astuces_mnemoniques")
             ?: jsonObject.optJSONArray("tips")
             ?: jsonObject.optJSONArray("mnemonics")
-        val mnemonicTips = mnemonicArray?.toStringList() ?: emptyList()
+        return mnemonicArray?.toStringList() ?: emptyList()
+    }
 
-        // 4. Flashcards
+    internal fun extractFlashcards(jsonObject: JSONObject): List<GeneratedFlashcard> {
         val flashcardsArray = jsonObject.optJSONArray("flashcards")
             ?: jsonObject.optJSONArray("flash_cards")
             ?: jsonObject.optJSONArray("cards")
@@ -336,8 +451,10 @@ class AiRepositoryImpl(
                 }
             }
         }
+        return flashcards
+    }
 
-        // 5. Quiz Questions
+    internal fun extractQuizQuestions(jsonObject: JSONObject): List<GeneratedQuizQuestion> {
         val quizArray = jsonObject.optJSONArray("quizQuestions")
             ?: jsonObject.optJSONArray("quiz_questions")
             ?: jsonObject.optJSONArray("quiz")
@@ -396,19 +513,7 @@ class AiRepositoryImpl(
                 }
             }
         }
-
-        android.util.Log.d("LearnSyncAI", "summary length: ${summary.length}")
-        android.util.Log.d("LearnSyncAI", "keyPoints count: ${keyPoints.size}")
-        android.util.Log.d("LearnSyncAI", "flashcards count: ${flashcards.size}")
-        android.util.Log.d("LearnSyncAI", "quiz count: ${quizQuestions.size}")
-
-        return StudyGenerationResult(
-            summary = summary,
-            keyPoints = keyPoints,
-            flashcards = flashcards,
-            quizQuestions = quizQuestions,
-            mnemonicTips = mnemonicTips
-        )
+        return quizQuestions
     }
 
     internal fun normalizeQuizQuestion(
@@ -536,4 +641,3 @@ class AiRepositoryImpl(
         return list
     }
 }
-

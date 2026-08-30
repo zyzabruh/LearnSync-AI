@@ -705,6 +705,208 @@ fun ProfileScreen(
                 }
             }
 
+            // SECTION: Paramètres de génération IA (Quantités)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = LearnSyncShapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(LearnSyncSpacing.large),
+                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+                    ) {
+                        ProfileSectionTitle(icon = Icons.Default.Tune, title = "Quantités de génération IA")
+
+                        // 1. Points clés (Info only)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Points clés / Notions",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Mode automatique uniquement (couverture complète sans limite fixe, idéal pour ne rien omettre).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        // 2. Flashcards
+                        Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Flashcards",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    FilterChip(
+                                        selected = preferences.flashcardsMode == "auto",
+                                        onClick = { onUpdatePreferences(preferences.copy(flashcardsMode = "auto")) },
+                                        label = { Text("Auto") }
+                                    )
+                                    FilterChip(
+                                        selected = preferences.flashcardsMode == "custom",
+                                        onClick = { onUpdatePreferences(preferences.copy(flashcardsMode = "custom")) },
+                                        label = { Text("Personnalisé") }
+                                    )
+                                }
+                            }
+                            if (preferences.flashcardsMode == "custom") {
+                                val quickOptions = listOf(5, 10, 15, 20, 30, 50)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    quickOptions.forEach { count ->
+                                        FilterChip(
+                                            selected = preferences.flashcardsCustomCount == count,
+                                            onClick = { onUpdatePreferences(preferences.copy(flashcardsCustomCount = count)) },
+                                            label = { Text("$count") }
+                                        )
+                                    }
+                                }
+                                OutlinedTextField(
+                                    value = preferences.flashcardsCustomCount.toString(),
+                                    onValueChange = { s ->
+                                        val c = s.toIntOrNull() ?: 10
+                                        onUpdatePreferences(preferences.copy(flashcardsCustomCount = c.coerceIn(1, 200)))
+                                    },
+                                    label = { Text("Nombre exact de flashcards") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        // 3. QCM
+                        Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Questions QCM",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    FilterChip(
+                                        selected = preferences.quizMode == "auto",
+                                        onClick = { onUpdatePreferences(preferences.copy(quizMode = "auto")) },
+                                        label = { Text("Auto") }
+                                    )
+                                    FilterChip(
+                                        selected = preferences.quizMode == "custom",
+                                        onClick = { onUpdatePreferences(preferences.copy(quizMode = "custom")) },
+                                        label = { Text("Personnalisé") }
+                                    )
+                                }
+                            }
+                            if (preferences.quizMode == "custom") {
+                                val quickOptions = listOf(5, 10, 15, 20, 30, 50)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    quickOptions.forEach { count ->
+                                        FilterChip(
+                                            selected = preferences.quizCustomCount == count,
+                                            onClick = { onUpdatePreferences(preferences.copy(quizCustomCount = count)) },
+                                            label = { Text("$count") }
+                                        )
+                                    }
+                                }
+                                OutlinedTextField(
+                                    value = preferences.quizCustomCount.toString(),
+                                    onValueChange = { s ->
+                                        val c = s.toIntOrNull() ?: 5
+                                        onUpdatePreferences(preferences.copy(quizCustomCount = c.coerceIn(1, 100)))
+                                    },
+                                    label = { Text("Nombre exact de QCM") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        // 4. Mnemonic Tips
+                        Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Astuces mnémotechniques",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    FilterChip(
+                                        selected = preferences.mnemonicTipsMode == "auto",
+                                        onClick = { onUpdatePreferences(preferences.copy(mnemonicTipsMode = "auto")) },
+                                        label = { Text("Auto") }
+                                    )
+                                    FilterChip(
+                                        selected = preferences.mnemonicTipsMode == "custom",
+                                        onClick = { onUpdatePreferences(preferences.copy(mnemonicTipsMode = "custom")) },
+                                        label = { Text("Personnalisé") }
+                                    )
+                                }
+                            }
+                            if (preferences.mnemonicTipsMode == "custom") {
+                                val quickOptions = listOf(3, 5, 10)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    quickOptions.forEach { count ->
+                                        FilterChip(
+                                            selected = preferences.mnemonicTipsCustomCount == count,
+                                            onClick = { onUpdatePreferences(preferences.copy(mnemonicTipsCustomCount = count)) },
+                                            label = { Text("$count") }
+                                        )
+                                    }
+                                }
+                                OutlinedTextField(
+                                    value = preferences.mnemonicTipsCustomCount.toString(),
+                                    onValueChange = { s ->
+                                        val c = s.toIntOrNull() ?: 3
+                                        onUpdatePreferences(preferences.copy(mnemonicTipsCustomCount = c.coerceIn(1, 30)))
+                                    },
+                                    label = { Text("Nombre exact d'astuces") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // SECTION 4: Calendrier & Synchronisation Cloud
             item {
                 Card(

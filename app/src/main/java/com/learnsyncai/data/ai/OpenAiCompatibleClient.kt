@@ -53,7 +53,8 @@ class OpenAiCompatibleClient(
         modelName: String,
         prompt: String,
         systemPrompt: String? = null,
-        temperature: Double = 0.2
+        temperature: Double = 0.2,
+        maxTokens: Int = 4096
     ): String = withContext(Dispatchers.IO) {
         val cleanBaseUrl = baseUrl.trim().trimEnd('/')
         if (cleanBaseUrl.isBlank()) {
@@ -85,7 +86,7 @@ class OpenAiCompatibleClient(
             put("model", effectiveModel)
             put("messages", messagesArray)
             put("temperature", temperature)
-            put("max_tokens", 4096)
+            put("max_tokens", maxTokens)
             if (hasJsonFormat) {
                 put("response_format", JSONObject().put("type", "json_object"))
             }
@@ -104,7 +105,7 @@ class OpenAiCompatibleClient(
         }
 
         val response = try {
-            android.util.Log.d("LearnSyncAI", "requête commencée: model=$effectiveModel, endpoint=$endpoint, promptLength=${prompt.length}")
+            android.util.Log.d("LearnSyncAI", "requête commencée: model=$effectiveModel, endpoint=$endpoint, maxTokens=$maxTokens, promptLength=${prompt.length}")
             client.newCall(requestBuilder.build()).execute()
         } catch (e: IOException) {
             throw e
@@ -137,7 +138,8 @@ class OpenAiCompatibleClient(
                 apiKey = apiKey,
                 model = effectiveModel,
                 messagesArray = messagesArray,
-                temperature = temperature
+                temperature = temperature,
+                maxTokens = maxTokens
             )
         } else {
             content
@@ -149,13 +151,14 @@ class OpenAiCompatibleClient(
         apiKey: String,
         model: String,
         messagesArray: JSONArray,
-        temperature: Double
+        temperature: Double,
+        maxTokens: Int
     ): String {
         val payload = JSONObject().apply {
             put("model", model)
             put("messages", messagesArray)
             put("temperature", temperature)
-            put("max_tokens", 4096)
+            put("max_tokens", maxTokens)
         }
         val requestBody = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
         val requestBuilder = Request.Builder()
@@ -213,6 +216,12 @@ class OpenAiCompatibleClient(
             }
 
             val firstChoice = choices.getJSONObject(0)
+            val finishReason = firstChoice.optString("finish_reason", "")
+            android.util.Log.d("LearnSyncAI", "finish_reason: $finishReason")
+            if (finishReason.equals("length", ignoreCase = true)) {
+                throw IllegalStateException("réponse tronquée, réessayez avec une quantité plus faible")
+            }
+
             val messageObj = firstChoice.optJSONObject("message")
             val content = messageObj?.optString("content")
 

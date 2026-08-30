@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CalendarEventEntity::class,
         AiProfileEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
@@ -158,6 +158,17 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN flashcardsMode TEXT NOT NULL DEFAULT 'auto'")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN flashcardsCustomCount INTEGER NOT NULL DEFAULT 10")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN quizMode TEXT NOT NULL DEFAULT 'auto'")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN quizCustomCount INTEGER NOT NULL DEFAULT 5")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN mnemonicTipsMode TEXT NOT NULL DEFAULT 'auto'")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN mnemonicTipsCustomCount INTEGER NOT NULL DEFAULT 3")
+            }
+        }
+
         fun getDatabase(context: Context): LearnSyncDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -165,7 +176,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
                 INSTANCE = instance
                 instance

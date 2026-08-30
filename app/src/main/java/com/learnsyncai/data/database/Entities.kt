@@ -125,7 +125,13 @@ data class UserPreferencesEntity(
     val aiProvider: String = "GEMINI",
     val aiBaseUrl: String = "https://generativelanguage.googleapis.com/v1beta/openai",
     val aiApiKey: String = "",
-    val aiModelName: String = "gemini-2.5-flash"
+    val aiModelName: String = "gemini-2.5-flash",
+    val flashcardsMode: String = "auto",
+    val flashcardsCustomCount: Int = 10,
+    val quizMode: String = "auto",
+    val quizCustomCount: Int = 5,
+    val mnemonicTipsMode: String = "auto",
+    val mnemonicTipsCustomCount: Int = 3
 )
 
 @Entity(
