@@ -69,6 +69,19 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
+        // Reset stale GENERATING status from a previous session (app killed mid-generation)
+        viewModelScope.launch {
+            try {
+                courseRepo.getAllCourses().firstOrNull()
+                    ?.filter { it.generationStatus == "GENERATING" }
+                    ?.forEach { stale ->
+                        courseRepo.insertCourse(
+                            stale.copy(generationStatus = "ERROR", updatedAt = System.currentTimeMillis())
+                        )
+                    }
+            } catch (_: Throwable) {}
+        }
+
         // Seed initial AI profile if none exists
         viewModelScope.launch {
             try {
@@ -289,6 +302,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     )
 
                     _uiState.value = UiState.Success("Matériel v$nextVersion généré : ${flashcards.size} flashcards et ${quizQuestions.size} QCM créés !")
+                    _generationProgress.value = ""
                 },
                 onFailure = { err ->
                     courseRepo.insertCourse(
@@ -298,6 +312,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     )
                     _uiState.value = UiState.Error("Échec de la génération : ${err.localizedMessage ?: "Erreur inconnue"}")
+                    _generationProgress.value = ""
                 }
             )
         }

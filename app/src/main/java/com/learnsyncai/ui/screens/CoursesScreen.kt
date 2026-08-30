@@ -27,7 +27,6 @@ fun CoursesScreen(
     courses: List<Course>,
     allFlashcards: List<Flashcard> = emptyList(),
     dueCards: List<Flashcard> = emptyList(),
-    generationProgress: String,
     onImportCourse: (Uri, String) -> Unit,
     onGenerateMaterial: (Course) -> Unit,
     onSelectCourse: (Course) -> Unit,
@@ -160,15 +159,6 @@ fun CoursesScreen(
                 }
             }
         }
-    }
-
-    // AI Generation Modal
-    if (generationProgress.isNotBlank()) {
-        AiGeneratingProgressModal(
-            progressStageText = generationProgress,
-            courseTitle = pendingImportFileName ?: "Nouveau cours",
-            onDismiss = {}
-        )
     }
 
     // Delete Confirmation Dialog

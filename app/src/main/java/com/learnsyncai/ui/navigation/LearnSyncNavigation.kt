@@ -228,7 +228,6 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     courses = courses,
                                     allFlashcards = allFlashcards,
                                     dueCards = dueFlashcards,
-                                    generationProgress = generationProgress,
                                     onImportCourse = { uri, name -> viewModel.importCourse(uri, name) },
                                     onGenerateMaterial = { course -> viewModel.generateMaterial(course) },
                                     onSelectCourse = { course -> navController.navigate("course_detail/${course.id}") },
