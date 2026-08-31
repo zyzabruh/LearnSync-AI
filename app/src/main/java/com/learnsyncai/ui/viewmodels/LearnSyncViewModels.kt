@@ -512,6 +512,38 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // --- Session de révision (file locale en mémoire) ---
+
+    /**
+     * File de la session de révision en cours : null = aucune session active
+     * (écran de choix), liste vide = session terminée. La file vit dans le
+     * ViewModel : quitter l'écran met la session en pause, y revenir la reprend
+     * dans le même ordre aléatoire.
+     */
+    private val _reviewQueue = MutableStateFlow<List<Flashcard>?>(null)
+    val reviewQueue: StateFlow<List<Flashcard>?> = _reviewQueue.asStateFlow()
+
+    /** Démarre une session mélangée sur les cartes fournies (limit = 20, 30... ou null = tout). */
+    fun startReviewSession(cards: List<Flashcard>, limit: Int? = null) {
+        val shuffled = cards.distinctBy { it.id }.shuffled()
+        _reviewQueue.value = if (limit != null) shuffled.take(limit) else shuffled
+    }
+
+    fun endReviewSession() {
+        _reviewQueue.value = null
+    }
+
+    /** Note la carte en tête de file : la retire, et la replace en fin de file si "Again". */
+    fun rateCurrentCard(card: Flashcard, rating: Int, responseTimeMs: Long) {
+        reviewCard(card, rating, responseTimeMs)
+        _reviewQueue.update { queue ->
+            queue?.let { q ->
+                val rest = q.dropWhile { it.id == card.id }
+                if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
+            }
+        }
+    }
+
     fun deleteCourse(courseId: String) {
         viewModelScope.launch {
             try {

@@ -198,15 +198,16 @@ fun SectionHeader(
 fun HeroProgressCard(
     dueCardsCount: Int,
     streak: Int,
-    dailyGoal: Int,
     todayReviewsCount: Int,
     onStartSession: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val progressRatio = if (dailyGoal > 0) {
-        (todayReviewsCount.toFloat() / dailyGoal).coerceIn(0f, 1f)
-    } else 0f
-    val progressPercent = (progressRatio * 100).toInt()
+    // Progression du jour : cartes révisées / (révisées + cartes restantes à dû)
+    // Plus d'objectif quotidien : la session couvre toujours tout ce qui est dû.
+    val totalToday = todayReviewsCount + dueCardsCount
+    val progressRatio = if (totalToday > 0) {
+        (todayReviewsCount.toFloat() / totalToday).coerceIn(0f, 1f)
+    } else 1f
 
     Card(
         modifier = modifier
@@ -259,7 +260,7 @@ fun HeroProgressCard(
                         shape = LearnSyncShapes.pill
                     ) {
                         Text(
-                            text = "$todayReviewsCount / $dailyGoal objectif",
+                            text = "$todayReviewsCount révisée${if (todayReviewsCount > 1) "s" else ""} aujourd'hui",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Medium,
                             color = Color.White,
@@ -277,7 +278,7 @@ fun HeroProgressCard(
                         color = Color.White
                     )
                     Text(
-                        text = if (dueCardsCount > 0) "$progressPercent% de ton objectif quotidien atteint" else "Excellente régularité, continue comme ça !",
+                        text = if (dueCardsCount > 0) "Révision complète de tous tes cours" else "Excellente régularité, continue comme ça !",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.85f)
                     )

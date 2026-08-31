@@ -132,7 +132,8 @@ data class UserPreferencesEntity(
     val quizMode: String = "auto",
     val quizCustomCount: Int = 5,
     val mnemonicTipsMode: String = "auto",
-    val mnemonicTipsCustomCount: Int = 3
+    val mnemonicTipsCustomCount: Int = 3,
+    val autoTtsEnabled: Boolean = false
 )
 
 @Entity(

@@ -33,6 +33,11 @@ object SpacedRepetition {
     const val RATING_GOOD = 3
     const val RATING_EASY = 4
 
+    // Étape d'apprentissage après "Again" (comme Anki) : la carte est re-due
+    // 10 minutes plus tard et réapparaît en fin de session courante, au lieu
+    // de disparaître pendant 1 jour.
+    const val AGAIN_RELEARN_DELAY_MS = 10L * 60L * 1000L
+
     // FSRS default stability anchors (days) for initial review
     private val INITIAL_STABILITY = mapOf(
         RATING_AGAIN to 0.4f,
@@ -132,9 +137,14 @@ object SpacedRepetition {
             }
         }
 
-        // Calculate next interval from new stability
-        val newInterval = calculateInterval(newStability, validRating)
-        val dueDate = currentTime + (newInterval.toLong() * dayInMillis)
+        // "Again" : intervalle 0 + due dans 10 minutes (étape d'apprentissage).
+        // Sinon, interval calculé depuis la nouvelle stabilité.
+        val newInterval = if (validRating == RATING_AGAIN) 0 else calculateInterval(newStability, validRating)
+        val dueDate = if (validRating == RATING_AGAIN) {
+            currentTime + AGAIN_RELEARN_DELAY_MS
+        } else {
+            currentTime + (newInterval.toLong() * dayInMillis)
+        }
         val newBox = mapStabilityToBox(newStability)
 
         val updatedCard = card.copy(

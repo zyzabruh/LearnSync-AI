@@ -824,30 +824,37 @@ fun ProfileScreen(
                         modifier = Modifier.padding(LearnSyncSpacing.large),
                         verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
                     ) {
-                        ProfileSectionTitle(icon = Icons.Default.Tune, title = "Objectifs de révision")
+                        ProfileSectionTitle(icon = Icons.Default.Tune, title = "Paramètres de révision")
 
                         Text(
-                            text = "Objectif quotidien : ${preferences.dailyGoal} cartes / jour",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-
-                        Slider(
-                            value = preferences.dailyGoal.toFloat(),
-                            onValueChange = { newValue ->
-                                onUpdatePreferences(preferences.copy(dailyGoal = newValue.toInt()))
-                            },
-                            valueRange = 5f..100f,
-                            steps = 18
+                            text = "La session de révision couvre toujours toutes les cartes dues de tous tes cours (plus d'objectif quotidien).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("5", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("50", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("100", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Lecture vocale automatique",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Lire la question à voix haute à l'affichage de chaque carte",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = preferences.autoTtsEnabled,
+                                onCheckedChange = { enabled ->
+                                    onUpdatePreferences(preferences.copy(autoTtsEnabled = enabled))
+                                }
+                            )
                         }
                     }
                 }

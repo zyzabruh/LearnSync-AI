@@ -255,8 +255,8 @@ fun QuizQuestion.toEntity(): QuizQuestionEntity {
 fun ReviewLogEntity.toDomain() = ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
 fun ReviewLog.toEntity() = ReviewLogEntity(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
 
-fun UserPreferencesEntity.toDomain() = UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount)
-fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount)
+fun UserPreferencesEntity.toDomain() = UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled)
+fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled)
 
 fun CalendarEventEntity.toDomain() = CalendarEvent(id, courseId, title, scheduledDate, androidEventId, updatedAt)
 fun CalendarEvent.toEntity() = CalendarEventEntity(id, courseId, title, scheduledDate, androidEventId, updatedAt)

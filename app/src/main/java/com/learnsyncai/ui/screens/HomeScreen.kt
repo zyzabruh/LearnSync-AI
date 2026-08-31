@@ -34,7 +34,6 @@ fun HomeScreen(
     dueCards: List<Flashcard>,
     allFlashcards: List<Flashcard>,
     reviewLogs: List<ReviewLog>,
-    dailyGoal: Int = 20,
     onNavigateToReview: () -> Unit,
     onNavigateToCourses: () -> Unit,
     onNavigateToStats: () -> Unit,
@@ -126,7 +125,6 @@ fun HomeScreen(
                 HeroProgressCard(
                     dueCardsCount = dueCards.size,
                     streak = streak,
-                    dailyGoal = dailyGoal,
                     todayReviewsCount = todayReviewsCount,
                     onStartSession = onNavigateToReview
                 )

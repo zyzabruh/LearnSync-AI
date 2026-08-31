@@ -37,6 +37,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
     val navController = rememberNavController()
     val courses by viewModel.courses.collectAsState()
     val dueFlashcards by viewModel.dueFlashcards.collectAsState()
+    val reviewQueue by viewModel.reviewQueue.collectAsState()
     val allFlashcards by viewModel.allFlashcards.collectAsState()
     val reviewLogs by viewModel.reviewLogs.collectAsState()
     val preferences by viewModel.preferences.collectAsState()
@@ -216,7 +217,6 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     dueCards = dueFlashcards,
                                     allFlashcards = allFlashcards,
                                     reviewLogs = reviewLogs,
-                                    dailyGoal = preferences.dailyGoal,
                                     onNavigateToReview = { navController.navigate(Screen.Review.route) },
                                     onNavigateToCourses = { navController.navigate(Screen.Courses.route) },
                                     onNavigateToStats = { navController.navigate(Screen.Stats.route) },
@@ -303,7 +303,11 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                             composable(Screen.Review.route) {
                                 ReviewScreen(
                                     dueCards = dueFlashcards,
-                                    onReviewCard = { card, rating, time -> viewModel.reviewCard(card, rating, time) },
+                                    reviewQueue = reviewQueue,
+                                    autoTtsEnabled = preferences.autoTtsEnabled,
+                                    onReviewCard = { card, rating, time -> viewModel.rateCurrentCard(card, rating, time) },
+                                    onStartSession = { limit -> viewModel.startReviewSession(dueFlashcards, limit) },
+                                    onEndSession = { viewModel.endReviewSession() },
                                     onFinishReview = { navController.navigate(Screen.Home.route) }
                                 )
                             }
@@ -317,7 +321,11 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
 
                                 ReviewScreen(
                                     dueCards = courseDueFlashcards,
-                                    onReviewCard = { card, rating, time -> viewModel.reviewCard(card, rating, time) },
+                                    reviewQueue = reviewQueue,
+                                    autoTtsEnabled = preferences.autoTtsEnabled,
+                                    onReviewCard = { card, rating, time -> viewModel.rateCurrentCard(card, rating, time) },
+                                    onStartSession = { limit -> viewModel.startReviewSession(courseDueFlashcards, limit) },
+                                    onEndSession = { viewModel.endReviewSession() },
                                     onFinishReview = { navController.popBackStack() }
                                 )
                             }

@@ -41,6 +41,11 @@ fun QuizScreen(
     var correctCount by remember { mutableIntStateOf(0) }
     val haptic = LocalHapticFeedback.current
 
+    // Ordre aléatoire des questions, figé une seule fois par session
+    val questions = remember(quizQuestions.isNotEmpty()) {
+        if (quizQuestions.isNotEmpty()) quizQuestions.shuffled() else quizQuestions
+    }
+
     if (quizQuestions.isEmpty()) {
         Scaffold(
             topBar = {
@@ -70,10 +75,10 @@ fun QuizScreen(
         return
     }
 
-    val isQuizFinished = currentIndex >= quizQuestions.size
+    val isQuizFinished = currentIndex >= questions.size
 
     if (isQuizFinished) {
-        val total = quizQuestions.size
+        val total = questions.size
         val scorePercent = ((correctCount.toFloat() / total) * 100).toInt()
 
         Scaffold(
@@ -180,8 +185,9 @@ fun QuizScreen(
         return
     }
 
-    val currentQuestion = quizQuestions[currentIndex]
-    val options = currentQuestion.options
+    val currentQuestion = questions[currentIndex]
+    // Ordre aléatoire des options (la correction compare le texte, pas l'index)
+    val options = remember(currentQuestion.id) { currentQuestion.options.shuffled() }
     val optionLabels = listOf("A", "B", "C", "D")
 
     Scaffold(
@@ -194,7 +200,7 @@ fun QuizScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Question ${currentIndex + 1} / ${quizQuestions.size}",
+                            text = "Question ${currentIndex + 1} / ${questions.size}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -234,7 +240,7 @@ fun QuizScreen(
         ) {
             // Progress Bar
             LinearProgressIndicator(
-                progress = { ((currentIndex.toFloat()) / quizQuestions.size.toFloat()).coerceIn(0f, 1f) },
+                progress = { ((currentIndex.toFloat()) / questions.size.toFloat()).coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
@@ -393,7 +399,7 @@ fun QuizScreen(
                 }
 
                 LearnSyncButton(
-                    text = if (currentIndex + 1 < quizQuestions.size) "Question suivante" else "Voir les résultats",
+                    text = if (currentIndex + 1 < questions.size) "Question suivante" else "Voir les résultats",
                     icon = Icons.AutoMirrored.Filled.ArrowForward,
                     onClick = {
                         currentIndex++

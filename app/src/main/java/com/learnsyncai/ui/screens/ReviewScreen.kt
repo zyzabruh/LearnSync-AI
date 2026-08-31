@@ -42,16 +42,212 @@ import java.util.Locale
 @Composable
 fun ReviewScreen(
     dueCards: List<Flashcard>,
+    reviewQueue: List<Flashcard>?,
+    autoTtsEnabled: Boolean,
     onReviewCard: (Flashcard, Int, Long) -> Unit,
+    onStartSession: (Int?) -> Unit,
+    onEndSession: () -> Unit,
     onFinishReview: () -> Unit
 ) {
-    var currentIndex by remember { mutableIntStateOf(0) }
+    var sessionTotal by remember { mutableIntStateOf(0) }
+    var totalReviewedCount by remember { mutableIntStateOf(0) }
+    var againCount by remember { mutableIntStateOf(0) }
+    var hardCount by remember { mutableIntStateOf(0) }
+    var goodCount by remember { mutableIntStateOf(0) }
+    var easyCount by remember { mutableIntStateOf(0) }
+    var sessionStartTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    when {
+        // Aucune session active : écran de choix (tout réviser / cible de session)
+        reviewQueue == null -> {
+            ReviewSessionStartScreen(
+                dueCount = dueCards.size,
+                onStart = { limit ->
+                    sessionTotal = 0
+                    totalReviewedCount = 0
+                    againCount = 0
+                    hardCount = 0
+                    goodCount = 0
+                    easyCount = 0
+                    sessionStartTime = System.currentTimeMillis()
+                    onStartSession(limit)
+                },
+                onFinishReview = onFinishReview
+            )
+        }
+
+        // Session terminée : bilan avec répartition des notes
+        reviewQueue.isEmpty() -> {
+            ReviewSessionCompleteScreen(
+                totalReviewed = totalReviewedCount,
+                againCount = againCount,
+                hardCount = hardCount,
+                goodCount = goodCount,
+                easyCount = easyCount,
+                sessionStartTime = sessionStartTime,
+                onFinish = {
+                    onEndSession()
+                    onFinishReview()
+                }
+            )
+        }
+
+        // Session en cours (ou en pause, reprise telle quelle)
+        else -> {
+            ReviewSessionScreen(
+                queue = reviewQueue,
+                sessionTotal = sessionTotal,
+                autoTtsEnabled = autoTtsEnabled,
+                onRate = { card, rating, reviewTime ->
+                    totalReviewedCount++
+                    when (rating) {
+                        SpacedRepetition.RATING_AGAIN -> againCount++
+                        SpacedRepetition.RATING_HARD -> hardCount++
+                        SpacedRepetition.RATING_GOOD -> goodCount++
+                        else -> easyCount++
+                    }
+                    onReviewCard(card, rating, reviewTime)
+                },
+                onNewSession = onEndSession,
+                onFinishReview = onFinishReview,
+                onSessionSizeInitialized = { size -> if (sessionTotal == 0) sessionTotal = size }
+            )
+        }
+    }
+}
+
+/** Écran de départ : choisit une session complète ou une cible de 20 cartes. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReviewSessionStartScreen(
+    dueCount: Int,
+    onStart: (Int?) -> Unit,
+    onFinishReview: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Réviser", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onFinishReview) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(LearnSyncSpacing.xxl),
+            contentAlignment = Alignment.Center
+        ) {
+            if (dueCount == 0) {
+                EmptyState(
+                    title = "Rien à réviser !",
+                    description = "Aucune carte n'est due pour le moment. Reviens plus tard ou génère du contenu pour tes cours.",
+                    icon = Icons.Default.CheckCircle,
+                    actionLabel = "Retour à l'accueil",
+                    onActionClick = onFinishReview
+                )
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = LearnSyncShapes.card,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(LearnSyncSpacing.xxl),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.large)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(CircleShape)
+                                .background(IndigoSoftBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.School,
+                                contentDescription = null,
+                                tint = IndigoPrimary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$dueCount carte${if (dueCount > 1) "s" else ""} à réviser",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Révision complète de tous tes cours, dans un ordre aléatoire.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        LearnSyncButton(
+                            text = "Tout réviser ($dueCount)",
+                            icon = Icons.Default.PlayArrow,
+                            onClick = { onStart(null) },
+                            modifier = Modifier.fillMaxWidth().testTag("start_session_button")
+                        )
+
+                        if (dueCount > SESSION_TARGET_SIZE) {
+                            LearnSyncSecondaryButton(
+                                text = "Réviser $SESSION_TARGET_SIZE cartes",
+                                onClick = { onStart(SESSION_TARGET_SIZE) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Cible par défaut d'une session partielle. */
+const val SESSION_TARGET_SIZE = 20
+
+/** Session en cours : file fournie par le ViewModel (mélangée, requeue "Again" en fin). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReviewSessionScreen(
+    queue: List<Flashcard>,
+    sessionTotal: Int,
+    autoTtsEnabled: Boolean,
+    onRate: (Flashcard, Int, Long) -> Unit,
+    onNewSession: () -> Unit,
+    onFinishReview: () -> Unit,
+    onSessionSizeInitialized: (Int) -> Unit
+) {
+    // Taille totale de la session mémorisée une seule fois (résiste au requeue des "Again")
+    if (queue.isNotEmpty()) {
+        LaunchedEffect(Unit) { onSessionSizeInitialized(queue.size) }
+    }
+
+    val currentCard = queue.firstOrNull() ?: return
     var isAnswerRevealed by remember { mutableStateOf(false) }
     var cardStartTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var sessionStartTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var totalGoodOrEasyCount by remember { mutableIntStateOf(0) }
-    var totalReviewedCount by remember { mutableIntStateOf(0) }
     val haptic = LocalHapticFeedback.current
+
+    // Anti double-tap : ignore une seconde note sur la même carte
+    var lastRatedId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentCard?.id) { lastRatedId = null }
 
     // Synthèse vocale locale (lecture des questions / réponses)
     val ttsContext = LocalContext.current
@@ -70,171 +266,36 @@ fun ReviewScreen(
         }
     }
 
-    val isSessionComplete = dueCards.isEmpty() || currentIndex >= dueCards.size
+    fun rate(rating: Int) {
+        val card = currentCard
+        if (card.id == lastRatedId) return
+        lastRatedId = card.id
+        val reviewTime = System.currentTimeMillis() - cardStartTime
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        isAnswerRevealed = false
+        cardStartTime = System.currentTimeMillis()
+        onRate(card, rating, reviewTime)
+    }
 
-    if (isSessionComplete) {
-        // Session Completed Celebration Screen
-        val sessionDurationSeconds = ((System.currentTimeMillis() - sessionStartTime) / 1000).coerceAtLeast(1)
-        val minutes = sessionDurationSeconds / 60
-        val seconds = sessionDurationSeconds % 60
-        val durationText = if (minutes > 0) "$minutes min $seconds s" else "$seconds s"
-        val successRate = if (totalReviewedCount > 0) {
-            ((totalGoodOrEasyCount.toFloat() / totalReviewedCount) * 100).toInt()
-        } else 100
-
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(LearnSyncSpacing.xxl),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = LearnSyncShapes.card,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(LearnSyncSpacing.xxl),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.large)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(CircleShape)
-                                .background(EmeraldSoftBg),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "🎉",
-                                fontSize = 40.sp
-                            )
-                        }
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.extraSmall)
-                        ) {
-                            Text(
-                                text = "Session terminée !",
-                                style = MaterialTheme.typography.headlineLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Bravo pour ta régularité !",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                        // Stats Summary Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = "$totalReviewedCount",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = IndigoPrimary
-                                )
-                                Text(
-                                    text = "Cartes",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = "$successRate%",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = EmeraldSuccess
-                                )
-                                Text(
-                                    text = "Réussite",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = durationText,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AmberFlame
-                                )
-                                Text(
-                                    text = "Temps",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.EventRepeat,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Prochaine session recommandée demain",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(LearnSyncSpacing.small))
-
-                        LearnSyncButton(
-                            text = "Retour à l'accueil",
-                            onClick = onFinishReview,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
+    // Lecture vocale automatique de la question (option activée)
+    LaunchedEffect(currentCard.id) {
+        if (autoTtsEnabled) {
+            tts.value?.speak(currentCard.question, TextToSpeech.QUEUE_FLUSH, null, "auto_question")
         }
-        return
     }
 
-    val currentCard = dueCards[currentIndex]
-
-    // Precalculate next intervals for 4 rating options using FSRS algorithm
-    val currentTime = System.currentTimeMillis()
-    val intervalAgain = remember(currentCard.id) {
-        val result = SpacedRepetition.calculateReview(currentCard, SpacedRepetition.RATING_AGAIN, currentTime)
-        formatIntervalDays(result.newInterval)
-    }
+    // Intervalle "Again" : étape d'apprentissage de 10 minutes
+    val intervalAgain = "10 min"
     val intervalHard = remember(currentCard.id) {
-        val result = SpacedRepetition.calculateReview(currentCard, SpacedRepetition.RATING_HARD, currentTime)
+        val result = SpacedRepetition.calculateReview(currentCard, SpacedRepetition.RATING_HARD, System.currentTimeMillis())
         formatIntervalDays(result.newInterval)
     }
     val intervalGood = remember(currentCard.id) {
-        val result = SpacedRepetition.calculateReview(currentCard, SpacedRepetition.RATING_GOOD, currentTime)
+        val result = SpacedRepetition.calculateReview(currentCard, SpacedRepetition.RATING_GOOD, System.currentTimeMillis())
         formatIntervalDays(result.newInterval)
     }
     val intervalEasy = remember(currentCard.id) {
-        val result = SpacedRepetition.calculateReview(currentCard, SpacedRepetition.RATING_EASY, currentTime)
+        val result = SpacedRepetition.calculateReview(currentCard, SpacedRepetition.RATING_EASY, System.currentTimeMillis())
         formatIntervalDays(result.newInterval)
     }
 
@@ -248,7 +309,7 @@ fun ReviewScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "${currentIndex + 1} / ${dueCards.size}",
+                            text = "${queue.size} restante${if (queue.size > 1) "s" else ""}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -272,7 +333,15 @@ fun ReviewScreen(
                     IconButton(onClick = onFinishReview) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Quitter"
+                            contentDescription = "Mettre en pause"
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onNewSession) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Nouvelle session"
                         )
                     }
                 },
@@ -292,7 +361,7 @@ fun ReviewScreen(
         ) {
             // Linear Progress Bar
             LinearProgressIndicator(
-                progress = { ((currentIndex.toFloat()) / dueCards.size.toFloat()).coerceIn(0f, 1f) },
+                progress = { ((sessionTotal - queue.size).toFloat() / sessionTotal.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
@@ -324,31 +393,18 @@ fun ReviewScreen(
                             },
                             onDragEnd = {
                                 if (totalDrag > 80f) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (!isAnswerRevealed) {
                                         isAnswerRevealed = true
                                     } else {
                                         // Swipe right -> Good rating
-                                        val reviewTime = System.currentTimeMillis() - cardStartTime
-                                        totalReviewedCount++
-                                        totalGoodOrEasyCount++
-                                        onReviewCard(currentCard, SpacedRepetition.RATING_GOOD, reviewTime)
-                                        isAnswerRevealed = false
-                                        cardStartTime = System.currentTimeMillis()
-                                        currentIndex++
+                                        rate(SpacedRepetition.RATING_GOOD)
                                     }
                                 } else if (totalDrag < -80f) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (!isAnswerRevealed) {
                                         isAnswerRevealed = true
                                     } else {
-                                        // Swipe left -> Again rating
-                                        val reviewTime = System.currentTimeMillis() - cardStartTime
-                                        totalReviewedCount++
-                                        onReviewCard(currentCard, SpacedRepetition.RATING_AGAIN, reviewTime)
-                                        isAnswerRevealed = false
-                                        cardStartTime = System.currentTimeMillis()
-                                        currentIndex++
+                                        // Swipe left -> Again rating (requeue en fin de session)
+                                        rate(SpacedRepetition.RATING_AGAIN)
                                     }
                                 }
                                 totalDrag = 0f
@@ -390,6 +446,23 @@ fun ReviewScreen(
                             color = IndigoDark,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
+                    }
+
+                    // Carte difficile (leech) : souvent oubliée
+                    if (currentCard.lapses >= 5) {
+                        Spacer(modifier = Modifier.height(LearnSyncSpacing.small))
+                        Surface(
+                            shape = LearnSyncShapes.pill,
+                            color = AmberSoftBg
+                        ) {
+                            Text(
+                                text = "Carte difficile (${currentCard.lapses} oublis)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = AmberDark,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(LearnSyncSpacing.large))
@@ -528,14 +601,7 @@ fun ReviewScreen(
                         intervalText = intervalAgain,
                         color = RatingAgainColor,
                         modifier = Modifier.weight(1f),
-                        onClick = {
-                            val reviewTime = System.currentTimeMillis() - cardStartTime
-                            totalReviewedCount++
-                            onReviewCard(currentCard, SpacedRepetition.RATING_AGAIN, reviewTime)
-                            isAnswerRevealed = false
-                            cardStartTime = System.currentTimeMillis()
-                            currentIndex++
-                        }
+                        onClick = { rate(SpacedRepetition.RATING_AGAIN) }
                     )
 
                     ReviewRatingButton(
@@ -543,14 +609,7 @@ fun ReviewScreen(
                         intervalText = intervalHard,
                         color = RatingHardColor,
                         modifier = Modifier.weight(1f),
-                        onClick = {
-                            val reviewTime = System.currentTimeMillis() - cardStartTime
-                            totalReviewedCount++
-                            onReviewCard(currentCard, SpacedRepetition.RATING_HARD, reviewTime)
-                            isAnswerRevealed = false
-                            cardStartTime = System.currentTimeMillis()
-                            currentIndex++
-                        }
+                        onClick = { rate(SpacedRepetition.RATING_HARD) }
                     )
 
                     ReviewRatingButton(
@@ -558,15 +617,7 @@ fun ReviewScreen(
                         intervalText = intervalGood,
                         color = RatingGoodColor,
                         modifier = Modifier.weight(1f),
-                        onClick = {
-                            val reviewTime = System.currentTimeMillis() - cardStartTime
-                            totalReviewedCount++
-                            totalGoodOrEasyCount++
-                            onReviewCard(currentCard, SpacedRepetition.RATING_GOOD, reviewTime)
-                            isAnswerRevealed = false
-                            cardStartTime = System.currentTimeMillis()
-                            currentIndex++
-                        }
+                        onClick = { rate(SpacedRepetition.RATING_GOOD) }
                     )
 
                     ReviewRatingButton(
@@ -574,15 +625,191 @@ fun ReviewScreen(
                         intervalText = intervalEasy,
                         color = RatingEasyColor,
                         modifier = Modifier.weight(1f),
-                        onClick = {
-                            val reviewTime = System.currentTimeMillis() - cardStartTime
-                            totalReviewedCount++
-                            totalGoodOrEasyCount++
-                            onReviewCard(currentCard, SpacedRepetition.RATING_EASY, reviewTime)
-                            isAnswerRevealed = false
-                            cardStartTime = System.currentTimeMillis()
-                            currentIndex++
+                        onClick = { rate(SpacedRepetition.RATING_EASY) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Bilan de fin de session avec la répartition des notes. */
+@Composable
+private fun ReviewSessionCompleteScreen(
+    totalReviewed: Int,
+    againCount: Int,
+    hardCount: Int,
+    goodCount: Int,
+    easyCount: Int,
+    sessionStartTime: Long,
+    onFinish: () -> Unit
+) {
+    val sessionDurationSeconds = ((System.currentTimeMillis() - sessionStartTime) / 1000).coerceAtLeast(1)
+    val minutes = sessionDurationSeconds / 60
+    val seconds = sessionDurationSeconds % 60
+    val durationText = if (minutes > 0) "$minutes min $seconds s" else "$seconds s"
+    val successRate = if (totalReviewed > 0) {
+        (((goodCount + easyCount).toFloat() / totalReviewed) * 100).toInt()
+    } else 100
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(LearnSyncSpacing.xxl),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = LearnSyncShapes.card,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(LearnSyncSpacing.xxl),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.large)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(80.dp)
+                            .clip(CircleShape)
+                            .background(EmeraldSoftBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "🎉",
+                            fontSize = 40.sp
+                        )
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.extraSmall)
+                    ) {
+                        Text(
+                            text = "Session terminée !",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Bravo pour ta régularité !",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    // Stats Summary Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$totalReviewed",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = IndigoPrimary
+                            )
+                            Text(
+                                text = "Réponses",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$successRate%",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = EmeraldSuccess
+                            )
+                            Text(
+                                text = "Réussite",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = durationText,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = AmberFlame
+                            )
+                            Text(
+                                text = "Temps",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Répartition des notes
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        listOf(
+                            "Again" to againCount to RatingAgainColor,
+                            "Hard" to hardCount to RatingHardColor,
+                            "Good" to goodCount to RatingGoodColor,
+                            "Easy" to easyCount to RatingEasyColor
+                        ).forEach { (pair, color) ->
+                            val (label, count) = pair
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "$count",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = color
+                                )
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EventRepeat,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = if (againCount > 0)
+                                "Les cartes « Again » reviennent dans 10 minutes"
+                            else
+                                "Prochaine session quand de nouvelles cartes seront dues",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(LearnSyncSpacing.small))
+
+                    LearnSyncButton(
+                        text = "Retour à l'accueil",
+                        onClick = onFinish,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
