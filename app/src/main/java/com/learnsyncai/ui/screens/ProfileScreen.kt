@@ -45,6 +45,7 @@ import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 
@@ -52,6 +53,15 @@ private fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+private fun formatModelSize(bytes: Long): String {
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024) {
+        String.format(java.util.Locale.FRANCE, "%.2f Go", mb / 1024.0)
+    } else {
+        String.format(java.util.Locale.FRANCE, "%.0f Mo", mb)
+    }
 }
 
 enum class AiProviderPreset(
@@ -118,7 +128,10 @@ fun ProfileScreen(
     onTestAiConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String> = { _, _, _ -> Result.success("OK") },
     onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) },
     onDownloadGemmaModel: (url: String, hfToken: String, onResult: (Result<String>) -> Unit) -> Unit = { _, _, _ -> },
-    modelDownloadProgress: Float? = null
+    modelDownloadProgress: Float? = null,
+    localModels: List<com.learnsyncai.ui.viewmodels.LocalModelInfo> = emptyList(),
+    onRefreshLocalModels: () -> Unit = {},
+    onDeleteLocalModel: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -560,6 +573,130 @@ fun ProfileScreen(
                             }
                         }
                     }
+                }
+            }
+            // SECTION: Modèles locaux (Gemma) téléchargés / importés
+            item {
+                LaunchedEffect(Unit) { onRefreshLocalModels() }
+                var localModelToDelete by remember { mutableStateOf<com.learnsyncai.ui.viewmodels.LocalModelInfo?>(null) }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = LearnSyncShapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(LearnSyncSpacing.large),
+                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+                    ) {
+                        ProfileSectionTitle(icon = Icons.Default.SmartToy, title = "Modèles IA locaux (${localModels.size})")
+
+                        if (localModels.isEmpty()) {
+                            Text(
+                                text = "Aucun modèle stocké sur l'appareil. Les modèles Gemma téléchargés ou importés (2 à 4 Go chacun) apparaîtront ici et pourront être supprimés pour libérer de l'espace.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            val totalSize = localModels.sumOf { it.sizeBytes }
+                            Text(
+                                text = "Stockage total utilisé : ${formatModelSize(totalSize)}. Supprimez les modèles que vous n'utilisez plus pour libérer de l'espace.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            localModels.forEach { model ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = LearnSyncShapes.medium,
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = model.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = formatModelSize(model.sizeBytes),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        if (model.usedByActiveProfile) {
+                                            Surface(shape = LearnSyncShapes.pill, color = EmeraldSoftBg) {
+                                                Text(
+                                                    text = "Utilisé",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = EmeraldDark,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { localModelToDelete = model },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.DeleteOutline,
+                                                contentDescription = "Supprimer le modèle",
+                                                tint = RoseError.copy(alpha = 0.8f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Confirmation de suppression
+                localModelToDelete?.let { model ->
+                    AlertDialog(
+                        onDismissRequest = { localModelToDelete = null },
+                        title = { Text("Supprimer ce modèle ?", fontWeight = FontWeight.Bold) },
+                        text = {
+                            Text(
+                                text = "« ${model.name} » (${formatModelSize(model.sizeBytes)}) sera définitivement supprimé du stockage de l'app." +
+                                    if (model.usedByActiveProfile) "\n\nAttention : ce modèle est actuellement utilisé par votre profil IA actif — vous devrez le retélécharger pour générer hors-ligne." else "",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    onDeleteLocalModel(model.path)
+                                    localModelToDelete = null
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = RoseError,
+                                    contentColor = MaterialTheme.colorScheme.onError
+                                )
+                            ) {
+                                Text("Supprimer")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { localModelToDelete = null }) {
+                                Text("Annuler")
+                            }
+                        },
+                        shape = LearnSyncShapes.large
+                    )
                 }
             }
 
@@ -1111,7 +1248,9 @@ private fun AiProfileEditDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
             ) {
                 // Preset chips

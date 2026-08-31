@@ -35,6 +35,14 @@ class HfAuthenticationRequiredException(val pageUrl: String) : IllegalStateExcep
     "Authentification requise : collez un token Hugging Face dans le champ prévu (gratuit), puis réessayez."
 )
 
+/** Un fichier modèle local (Gemma) présent dans le stockage privé de l'app. */
+data class LocalModelInfo(
+    val path: String,
+    val name: String,
+    val sizeBytes: Long,
+    val usedByActiveProfile: Boolean
+)
+
 class LearnSyncViewModel(application: Application) : AndroidViewModel(application) {
     private val db = LearnSyncDatabase.getDatabase(application)
     private val courseRepo = CourseRepositoryImpl(db.courseDao(), db)
@@ -833,6 +841,48 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             aiProfileRepo.setActiveProfile(profileId)
             _uiState.value = UiState.Success("Profil IA activé.")
+        }
+    }
+
+    // --- Gestion des fichiers modèles locaux (Gemma) ---
+
+    private val _localModels = MutableStateFlow<List<LocalModelInfo>>(emptyList())
+    val localModels: StateFlow<List<LocalModelInfo>> = _localModels.asStateFlow()
+
+    fun refreshLocalModels() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val activePath = aiProfileRepo.getAllProfiles().firstOrNull()
+                ?.find { it.isActive && it.provider == "LOCAL_GEMMA" }?.baseUrl
+            val dir = java.io.File(getApplication<Application>().filesDir, "models")
+            val list = dir.listFiles()
+                ?.filter { it.isFile && it.length() > 0 && !it.name.endsWith(".part") }
+                ?.map {
+                    LocalModelInfo(
+                        path = it.absolutePath,
+                        name = it.name,
+                        sizeBytes = it.length(),
+                        usedByActiveProfile = it.absolutePath == activePath
+                    )
+                }
+                ?.sortedByDescending { it.sizeBytes }
+                ?: emptyList()
+            _localModels.value = list
+        }
+    }
+
+    /** Supprime un fichier modèle local (et son éventuel .part) ; les profils qui le référencent sont vidés. */
+    fun deleteLocalModel(path: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val file = java.io.File(path)
+                file.delete()
+                java.io.File(file.parentFile, file.name + ".part").delete()
+            }
+            val profiles = aiProfileRepo.getAllProfiles().firstOrNull() ?: emptyList()
+            profiles.filter { it.baseUrl == path }.forEach { profile ->
+                aiProfileRepo.updateProfile(profile.copy(baseUrl = ""))
+            }
+            refreshLocalModels()
         }
     }
 

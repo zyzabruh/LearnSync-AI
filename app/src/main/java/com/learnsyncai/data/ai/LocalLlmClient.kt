@@ -37,12 +37,18 @@ class LocalLlmClient(private val context: Context) {
                     newEngine
                 }
 
+                // Format de chat Gemma : indispensable pour que le modèle
+                // instruct suive les consignes (sinon il complète du texte brut
+                // et ignore le format JSON demandé).
+                val formatted = "<start_of_turn>user\n$prompt<end_of_turn>\n<start_of_turn>model\n"
+
                 val response = try {
-                    effective.generateResponse(prompt)
+                    effective.generateResponse(formatted)
                 } catch (e: Exception) {
                     throw IllegalStateException("Échec de l'inférence locale : ${e.message}", e)
                 }
-                response ?: throw IllegalStateException("Le modèle local a renvoyé une réponse vide.")
+                response?.trim()?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalStateException("Le modèle local a renvoyé une réponse vide.")
             }
         }
 

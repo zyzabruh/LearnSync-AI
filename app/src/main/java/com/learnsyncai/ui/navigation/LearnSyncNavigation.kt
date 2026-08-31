@@ -44,6 +44,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
     val activeAiProfile by viewModel.activeAiProfile.collectAsState()
     val hasValidAiConfig by viewModel.hasValidAiConfig.collectAsState()
     val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsState()
+    val localModels by viewModel.localModels.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val generationProgress by viewModel.generationProgress.collectAsState()
 
@@ -377,7 +378,10 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     onDownloadGemmaModel = { url, token, onResult ->
                                         viewModel.downloadGemmaModel(url, token, onResult)
                                     },
-                                    modelDownloadProgress = modelDownloadProgress
+                                    modelDownloadProgress = modelDownloadProgress,
+                                    localModels = localModels,
+                                    onRefreshLocalModels = { viewModel.refreshLocalModels() },
+                                    onDeleteLocalModel = { path -> viewModel.deleteLocalModel(path) }
                                 )
                             }
                         }

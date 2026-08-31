@@ -50,7 +50,7 @@ class AiRepositoryImpl(
             val prefs = preferencesProvider?.invoke() ?: UserPreferences.DEFAULT
 
             // En local, le contexte du modèle est limité : sections plus petites.
-            val chunkSize = if (config.isLocal) 10000 else 35000
+            val chunkSize = if (config.isLocal) 8000 else 35000
             val chunks = splitIntoChunks(trimmedText, chunkSize)
             val numChunks = chunks.size
 
