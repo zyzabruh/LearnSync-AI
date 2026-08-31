@@ -43,6 +43,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
     val aiProfiles by viewModel.aiProfiles.collectAsState()
     val activeAiProfile by viewModel.activeAiProfile.collectAsState()
     val hasValidAiConfig by viewModel.hasValidAiConfig.collectAsState()
+    val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val generationProgress by viewModel.generationProgress.collectAsState()
 
@@ -372,7 +373,11 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     },
                                     onImportLocalModel = { uri ->
                                         viewModel.importLocalGemmaModel(uri)
-                                    }
+                                    },
+                                    onDownloadGemmaModel = { url, onResult ->
+                                        viewModel.downloadGemmaModel(url, onResult)
+                                    },
+                                    modelDownloadProgress = modelDownloadProgress
                                 )
                             }
                         }

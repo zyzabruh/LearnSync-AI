@@ -115,7 +115,9 @@ fun ProfileScreen(
     onSyncCalendar: () -> Unit,
     onNavigateToCalendar: () -> Unit = {},
     onTestAiConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String> = { _, _, _ -> Result.success("OK") },
-    onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) }
+    onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) },
+    onDownloadGemmaModel: (url: String, onResult: (Result<String>) -> Unit) -> Unit = { _, _ -> },
+    modelDownloadProgress: Float? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1017,7 +1019,9 @@ fun ProfileScreen(
                 showAddProfileDialog = false
             },
             onTestConnection = onTestAiConnection,
-            onImportLocalModel = onImportLocalModel
+            onImportLocalModel = onImportLocalModel,
+            onDownloadGemmaModel = onDownloadGemmaModel,
+            modelDownloadProgress = modelDownloadProgress
         )
     }
 
@@ -1039,7 +1043,9 @@ fun ProfileScreen(
                 profileToEdit = null
             },
             onTestConnection = onTestAiConnection,
-            onImportLocalModel = onImportLocalModel
+            onImportLocalModel = onImportLocalModel,
+            onDownloadGemmaModel = onDownloadGemmaModel,
+            modelDownloadProgress = modelDownloadProgress
         )
     }
 }
@@ -1050,9 +1056,12 @@ private fun AiProfileEditDialog(
     onDismiss: () -> Unit,
     onConfirm: (name: String, provider: String, baseUrl: String, apiKey: String, modelName: String) -> Unit,
     onTestConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String>,
-    onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) }
+    onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) },
+    onDownloadGemmaModel: (url: String, onResult: (Result<String>) -> Unit) -> Unit = { _, _ -> },
+    modelDownloadProgress: Float? = null
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var name by remember { mutableStateOf(initialProfile?.name ?: "") }
     var selectedPreset by remember {
         mutableStateOf(
@@ -1067,6 +1076,7 @@ private fun AiProfileEditDialog(
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<Result<String>?>(null) }
     var isImportingModel by remember { mutableStateOf(false) }
+    var licensePageUrl by remember { mutableStateOf<String?>(null) }
 
     val modelFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1186,6 +1196,132 @@ private fun AiProfileEditDialog(
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(if (baseUrl.isBlank()) "Importer un fichier modèle (.task / .litertlm)" else "Choisir un autre modèle")
+                    }
+
+                    Text(
+                        text = "ou télécharger directement :",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Modèles recommandés : téléchargement en un clic
+                    val recommendedModels = listOf(
+                        "Gemma 3 1B Instruct (~523 Mo, rapide)" to
+                            "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task",
+                        "Gemma 3n E2B (~3,1 Go, plus performant)" to
+                            "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/gemma-3n-E2B-it-int4.task"
+                    )
+                    recommendedModels.forEach { (label, url) ->
+                        val pageUrl = url.substringBefore("/resolve/")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    testResult = null
+                                    licensePageUrl = null
+                                    onDownloadGemmaModel(url) { result ->
+                                        result.fold(
+                                            onSuccess = { path ->
+                                                baseUrl = path
+                                                if (name.isBlank() || AiProviderPreset.entries.any { it.displayName == name }) {
+                                                    name = AiProviderPreset.LOCAL_GEMMA.displayName
+                                                }
+                                            },
+                                            onFailure = { err ->
+                                                testResult = Result.failure(err)
+                                                if (err is com.learnsyncai.ui.viewmodels.LicenseRequiredException) {
+                                                    licensePageUrl = err.pageUrl
+                                                }
+                                            }
+                                        )
+                                    }
+                                },
+                                enabled = modelDownloadProgress == null && !isImportingModel,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(label)
+                            }
+                            IconButton(
+                                onClick = {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.OpenInNew,
+                                    contentDescription = "Ouvrir la page Hugging Face du modèle",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Licence refusée : redirection directe vers la page d'acceptation
+                    licensePageUrl?.let { pageUrl ->
+                        Surface(
+                            color = AmberFlame.copy(alpha = 0.12f),
+                            shape = LearnSyncShapes.small,
+                            border = BorderStroke(1.dp, AmberFlame.copy(alpha = 0.4f))
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Licence requise : ce modèle Google exige une acceptation (une seule fois) sur Hugging Face.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Button(
+                                    onClick = {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Accepter la licence sur Hugging Face")
+                                }
+                                Text(
+                                    text = "Une fois acceptée (connectez-vous / créez un compte gratuit), revenez ici et relancez le téléchargement.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Barre de progression du téléchargement
+                    if (modelDownloadProgress != null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (modelDownloadProgress >= 0f) {
+                                LinearProgressIndicator(
+                                    progress = { modelDownloadProgress },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(
+                                    text = "Téléchargement : ${(modelDownloadProgress * 100).toInt()} %",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                Text(
+                                    text = "Téléchargement en cours...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "Les modèles Google sont protégés par une licence : si le téléchargement échoue, acceptez la licence sur la page Hugging Face du modèle (gratuit, avec un compte) puis réessayez.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 } else {
                     OutlinedTextField(

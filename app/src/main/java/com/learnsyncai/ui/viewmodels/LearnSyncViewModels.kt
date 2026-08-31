@@ -21,6 +21,15 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+/**
+ * Levée quand le téléchargement d'un modèle échoue pour cause de licence
+ * non acceptée (HTTP 401/403) : [pageUrl] pointe vers la page Hugging Face
+ * du modèle où accepter la licence.
+ */
+class LicenseRequiredException(val pageUrl: String) : IllegalStateException(
+    "Licence non acceptée : ce modèle Google exige d'accepter sa licence sur Hugging Face (gratuit, avec un compte)."
+)
+
 class LearnSyncViewModel(application: Application) : AndroidViewModel(application) {
     private val db = LearnSyncDatabase.getDatabase(application)
     private val courseRepo = CourseRepositoryImpl(db.courseDao(), db)
@@ -704,6 +713,72 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // --- Gestion des Profils IA ---
+
+    // Progression du téléchargement d'un modèle Gemma : null = inactif,
+    // -1 = taille totale inconnue (indéterminé), sinon 0..1
+    private val _modelDownloadProgress = MutableStateFlow<Float?>(null)
+    val modelDownloadProgress: StateFlow<Float?> = _modelDownloadProgress.asStateFlow()
+
+    /**
+     * Télécharge directement un modèle Gemma depuis Hugging Face dans le
+     * stockage privé de l'app et renvoie son chemin (utilisé comme baseUrl
+     * du profil local). Écrit d'abord dans un fichier .part puis renomme.
+     */
+    fun downloadGemmaModel(url: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            _modelDownloadProgress.value = 0f
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val fileName = url.substringAfterLast('/').ifBlank { "gemma-model.task" }
+                    val modelsDir = java.io.File(getApplication<Application>().filesDir, "models").apply { mkdirs() }
+                    val dest = java.io.File(modelsDir, fileName)
+                    val tmp = java.io.File(modelsDir, "$fileName.part")
+
+                    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 30000
+                    try {
+                        val code = connection.responseCode
+                        if (code == 401 || code == 403) {
+                            val pageUrl = url.substringBefore("/resolve/")
+                            throw LicenseRequiredException(pageUrl)
+                        }
+                        if (code != 200) {
+                            throw IllegalStateException("Téléchargement impossible (HTTP $code).")
+                        }
+                        val total = connection.contentLengthLong
+                        connection.inputStream.use { input ->
+                            tmp.outputStream().use { output ->
+                                val buffer = ByteArray(1 shl 16)
+                                var read: Int
+                                var done = 0L
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    output.write(buffer, 0, read)
+                                    done += read
+                                    _modelDownloadProgress.value = if (total > 0) done.toFloat() / total else -1f
+                                }
+                            }
+                        }
+                    } finally {
+                        connection.disconnect()
+                    }
+
+                    if (tmp.length() < 200L * 1024 * 1024) {
+                        tmp.delete()
+                        throw IllegalStateException("Le fichier téléchargé est trop petit pour être un modèle valide — réessayez ou importez-le manuellement.")
+                    }
+                    if (!tmp.renameTo(dest)) {
+                        tmp.copyTo(dest, overwrite = true)
+                        tmp.delete()
+                    }
+                    dest.absolutePath
+                }
+            }
+            _modelDownloadProgress.value = null
+            onResult(result)
+        }
+    }
+
     fun addAiProfile(name: String, provider: String, baseUrl: String, apiKey: String, modelName: String, setAsActive: Boolean = true) {
         viewModelScope.launch {
             val newProfile = AiProfile(
