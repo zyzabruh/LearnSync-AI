@@ -283,6 +283,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                         onStartReview = { navController.navigate("course_review/${course.id}") },
                                         onStartQuiz = { navController.navigate("course_quiz/${course.id}") },
                                         onRegenerate = { viewModel.generateMaterial(course) },
+                                        onGenerateMore = { viewModel.generateMoreMaterial(course) },
                                         onDeleteCourse = {
                                             viewModel.deleteCourse(course.id)
                                             navController.popBackStack()

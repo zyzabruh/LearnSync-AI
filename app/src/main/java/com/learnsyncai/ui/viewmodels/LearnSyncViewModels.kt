@@ -371,6 +371,115 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
+     * Génère du contenu SUPPLÉMENTAIRE pour un cours, sans supprimer
+     * l'existant et sans doublons : les questions déjà en base sont envoyées
+     * à l'IA en liste d'exclusion, et le résultat est re-filtré avant
+     * insertion (les anciennes flashcards/QCM sont conservées).
+     */
+    fun generateMoreMaterial(course: Course) {
+        viewModelScope.launch {
+            val activeProfile = aiProfileRepo.getActiveProfile()
+            val apiKey = activeProfile?.apiKey ?: prefsRepo.getPreferencesSync().aiApiKey
+            val baseUrl = activeProfile?.baseUrl ?: prefsRepo.getPreferencesSync().aiBaseUrl
+            val isLocalModel = activeProfile?.provider == "LOCAL_GEMMA"
+
+            if (apiKey.isBlank() && !isLocalModel && !baseUrl.contains("localhost") && !baseUrl.contains("127.0.0.1")) {
+                _uiState.value = UiState.Error("Configure une IA dans le Profil pour générer du contenu supplémentaire.")
+                return@launch
+            }
+
+            _uiState.value = UiState.Loading("Génération de contenu supplémentaire...")
+            _generationProgress.value = "Analyse des questions existantes..."
+            courseRepo.insertCourse(
+                course.copy(generationStatus = "GENERATING", updatedAt = System.currentTimeMillis())
+            )
+
+            try {
+                val courseText = courseContentStorage.readExtractedText(course.id)
+                val existingCards = flashcardRepo.getFlashcardsForCourse(course.id).firstOrNull() ?: emptyList()
+                val existingQuiz = quizRepo.getQuizQuestionsForCourse(course.id).firstOrNull() ?: emptyList()
+
+                val result = aiRepo.generateAdditionalPractice(
+                    courseTitle = course.title,
+                    courseText = courseText,
+                    existingFlashcardQuestions = existingCards.map { it.question },
+                    existingQuizQuestions = existingQuiz.map { it.question },
+                    onProgress = { _generationProgress.value = it }
+                )
+
+                result.fold(
+                    onSuccess = { (cards, quiz) ->
+                        // Garde-fou final : exclure toute question déjà en base
+                        val existingKeys = (existingCards.map { it.question.trim().lowercase() } +
+                                existingQuiz.map { it.question.trim().lowercase() }).toMutableSet()
+                        val newCards = cards.filter { c -> c.question.trim().length > 3 && existingKeys.add(c.question.trim().lowercase()) }
+                        val newQuiz = quiz.filter { q -> q.question.trim().length > 3 && existingKeys.add(q.question.trim().lowercase()) }
+
+                        if (newCards.isEmpty() && newQuiz.isEmpty()) {
+                            courseRepo.insertCourse(
+                                course.copy(generationStatus = "COMPLETED", updatedAt = System.currentTimeMillis())
+                            )
+                            _uiState.value = UiState.Success("Aucune nouvelle question trouvée : le cours semble déjà bien couvert.")
+                            _generationProgress.value = ""
+                            return@fold
+                        }
+
+                        // Insertion NON destructive : les anciennes cartes restent en base
+                        flashcardRepo.insertFlashcards(
+                            newCards.map { newFlashcard(course.id, it.question, it.answer, it.explanation) }
+                        )
+                        quizRepo.insertQuizQuestions(
+                            newQuiz.map {
+                                QuizQuestion(
+                                    id = UUID.randomUUID().toString(),
+                                    courseId = course.id,
+                                    question = it.question,
+                                    options = it.options,
+                                    correctAnswer = it.correctAnswer,
+                                    explanation = it.explanation,
+                                    difficulty = "medium"
+                                )
+                            }
+                        )
+                        courseRepo.insertCourse(
+                            course.copy(generationStatus = "COMPLETED", updatedAt = System.currentTimeMillis())
+                        )
+
+                        val detail = "+${newCards.size} flashcards et +${newQuiz.size} QCM ajoutés (contenu existant conservé)"
+                        GenerationNotifier.notifyDone(
+                            context = getApplication(),
+                            courseTitle = course.title,
+                            success = true,
+                            detail = detail
+                        )
+                        _uiState.value = UiState.Success("$detail !")
+                        _generationProgress.value = ""
+                    },
+                    onFailure = { err ->
+                        courseRepo.insertCourse(
+                            course.copy(generationStatus = "ERROR", updatedAt = System.currentTimeMillis())
+                        )
+                        _uiState.value = UiState.Error("Échec de la génération : ${err.localizedMessage ?: "Erreur inconnue"}")
+                        _generationProgress.value = ""
+                        GenerationNotifier.notifyDone(
+                            context = getApplication(),
+                            courseTitle = course.title,
+                            success = false,
+                            detail = err.localizedMessage ?: "Erreur inconnue"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                courseRepo.insertCourse(
+                    course.copy(generationStatus = "ERROR", updatedAt = System.currentTimeMillis())
+                )
+                _uiState.value = UiState.Error("Erreur : ${e.localizedMessage}")
+                _generationProgress.value = ""
+            }
+        }
+    }
+
+    /**
      * Mode hors-ligne : aucune clé API configurée. Génère un contenu de secours
      * localement (patterns définitions + cloze deletion), sans appel réseau.
      */

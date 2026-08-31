@@ -154,6 +154,118 @@ class AiRepositoryImpl(
         }
     }
 
+    /**
+     * Génère du contenu SUPPLÉMENTAIRE (flashcards + QCM) : les questions
+     * existantes sont envoyées à l'IA comme liste d'exclusion pour éviter les
+     * doublons, et le résultat est filtré une seconde fois côté app. Rien
+     * n'est supprimé : c'est au ViewModel d'ajouter le résultat à la base.
+     */
+    override suspend fun generateAdditionalPractice(
+        courseTitle: String,
+        courseText: String,
+        existingFlashcardQuestions: List<String>,
+        existingQuizQuestions: List<String>,
+        onProgress: (String) -> Unit
+    ): Result<Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>> = withContext(Dispatchers.IO) {
+        try {
+            val trimmedText = courseText.trim()
+            if (trimmedText.isBlank() || trimmedText.length < 30) {
+                return@withContext Result.failure(
+                    IllegalArgumentException("Le document contient trop peu de texte pour générer du matériel pédagogique.")
+                )
+            }
+
+            val config = configProvider?.invoke() ?: AiConfig()
+            val chunkSize = if (config.isLocal) 20000 else 35000
+            val chunks = splitIntoChunks(trimmedText, chunkSize)
+            val exclusionBlock = buildExclusionBlock(existingFlashcardQuestions, existingQuizQuestions)
+
+            onProgress(if (chunks.size == 1) "Génération de nouveau contenu..." else "Génération sur ${chunks.size} sections...")
+
+            val semaphore = Semaphore(2)
+            val chunkResults = coroutineScope {
+                chunks.map { chunk ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            executeWithRetry(maxAttempts = 2) {
+                                generateAdditionalPracticeSection(config, courseTitle, chunk, exclusionBlock)
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            // Fusion + dédoublonnage interne, puis exclusion des questions déjà en base
+            val existingKeys = (existingFlashcardQuestions + existingQuizQuestions)
+                .map { it.trim().lowercase() }
+                .toSet()
+
+            val allCards = chunkResults.flatMap { it.first }
+            val allQuiz = chunkResults.flatMap { it.second }
+
+            val newCards = deduplicateFlashcards(allCards)
+                .filter { it.question.trim().lowercase() !in existingKeys }
+            val newQuiz = deduplicateAndValidateQuiz(allQuiz)
+                .filter { it.question.trim().lowercase() !in existingKeys }
+
+            Result.success(Pair(newCards, newQuiz))
+        } catch (t: Throwable) {
+            Result.failure(mapUserFacingException(t))
+        }
+    }
+
+    /** Bloc compact des questions existantes, injecté dans le prompt d'exclusion. */
+    private fun buildExclusionBlock(
+        existingFlashcardQuestions: List<String>,
+        existingQuizQuestions: List<String>
+    ): String {
+        if (existingFlashcardQuestions.isEmpty() && existingQuizQuestions.isEmpty()) {
+            return "Aucune question existante."
+        }
+        return buildString {
+            existingFlashcardQuestions.take(80).forEach { q ->
+                append("- (flashcard) ").append(q.trim().take(140)).append("\n")
+            }
+            existingQuizQuestions.take(80).forEach { q ->
+                append("- (QCM) ").append(q.trim().take(140)).append("\n")
+            }
+        }
+    }
+
+    private suspend fun generateAdditionalPracticeSection(
+        config: AiConfig,
+        courseTitle: String,
+        courseText: String,
+        exclusionBlock: String
+    ): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
+        val prompt = """
+            Tu es un ingénieur pédagogique et un professeur universitaire.
+            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère des NOUVELLES flashcards et QCM en français.
+
+            Les questions suivantes EXISTENT DÉJÀ dans la base de l'utilisateur.
+            NE LES RÉPÈTE PAS et ne génère aucune variante quasi identique (même sens, formulation différente) :
+            $exclusionBlock
+
+            Règles strictes :
+            1. Base-toi uniquement sur le cours fourni.
+            2. Génère autant de flashcards et de QCM que nécessaire pour couvrir les concepts, définitions, formules ou faits clés du texte qui ne sont PAS déjà couverts par la liste d'exclusion ci-dessus, sans limite supérieure.
+            3. Les QCM doivent avoir exactement 4 options distinctes et une bonne réponse identique à l'une des 4 options.
+            4. Réponds UNIQUEMENT en JSON valide.
+
+            Format JSON STRICT (sans texte introductif ni markdown) :
+            {
+              "flashcards": [ { "question": "...", "answer": "...", "explanation": "..." } ],
+              "quizQuestions": [ { "question": "...", "options": ["Option 1", "Option 2", "Option 3", "Option 4"], "correctAnswer": "Option 1", "explanation": "..." } ]
+            }
+
+            TEXTE DU COURS :
+            $courseText
+        """.trimIndent()
+
+        val rawText = chatCompletion(config, prompt, temperature = 0.5)
+        return parsePracticeSection(rawText)
+    }
+
     private suspend fun generateSummarySection(
         config: AiConfig,
         courseTitle: String,

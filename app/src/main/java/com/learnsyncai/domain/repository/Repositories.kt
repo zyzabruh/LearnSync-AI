@@ -71,6 +71,19 @@ interface AiRepository {
         courseText: String,
         onProgress: (String) -> Unit = {}
     ): Result<StudyGenerationResult>
+
+    /**
+     * Génère du contenu SUPPLÉMENTAIRE (flashcards + QCM) sans supprimer
+     * l'existant : les questions déjà présentes sont passées en liste
+     * d'exclusion pour éviter les doublons.
+     */
+    suspend fun generateAdditionalPractice(
+        courseTitle: String,
+        courseText: String,
+        existingFlashcardQuestions: List<String>,
+        existingQuizQuestions: List<String>,
+        onProgress: (String) -> Unit = {}
+    ): Result<Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>>
 }
 
 interface PreferencesRepository {

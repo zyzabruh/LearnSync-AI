@@ -44,6 +44,7 @@ fun CourseDetailScreen(
     onStartReview: () -> Unit,
     onStartQuiz: () -> Unit,
     onRegenerate: () -> Unit,
+    onGenerateMore: () -> Unit = {},
     onDeleteCourse: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onExportCsv: (android.net.Uri) -> Unit = {},
@@ -112,6 +113,14 @@ fun CourseDetailScreen(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Générer plus de contenu") },
+                            leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onGenerateMore()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Régénérer le contenu") },
                             leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
