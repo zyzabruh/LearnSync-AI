@@ -117,7 +117,7 @@ fun ProfileScreen(
     onNavigateToCalendar: () -> Unit = {},
     onTestAiConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String> = { _, _, _ -> Result.success("OK") },
     onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) },
-    onDownloadGemmaModel: (url: String, onResult: (Result<String>) -> Unit) -> Unit = { _, _ -> },
+    onDownloadGemmaModel: (url: String, hfToken: String, onResult: (Result<String>) -> Unit) -> Unit = { _, _, _ -> },
     modelDownloadProgress: Float? = null
 ) {
     val context = LocalContext.current
@@ -1058,7 +1058,7 @@ private fun AiProfileEditDialog(
     onConfirm: (name: String, provider: String, baseUrl: String, apiKey: String, modelName: String) -> Unit,
     onTestConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String>,
     onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) },
-    onDownloadGemmaModel: (url: String, onResult: (Result<String>) -> Unit) -> Unit = { _, _ -> },
+    onDownloadGemmaModel: (url: String, hfToken: String, onResult: (Result<String>) -> Unit) -> Unit = { _, _, _ -> },
     modelDownloadProgress: Float? = null
 ) {
     val scope = rememberCoroutineScope()
@@ -1078,6 +1078,7 @@ private fun AiProfileEditDialog(
     var testResult by remember { mutableStateOf<Result<String>?>(null) }
     var isImportingModel by remember { mutableStateOf(false) }
     var licensePageUrl by remember { mutableStateOf<String?>(null) }
+    var hfToken by remember { mutableStateOf("") }
 
     val modelFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1205,6 +1206,40 @@ private fun AiProfileEditDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    // Token Hugging Face : requis pour télécharger les modèles Google (gated)
+                    OutlinedTextField(
+                        value = hfToken,
+                        onValueChange = { hfToken = it },
+                        label = { Text("Token Hugging Face (requis pour les modèles Google)") },
+                        placeholder = { Text("hf_...") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Créez-le gratuitement (permission « Read ») : Settings → Access Tokens.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/settings/tokens")))
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = "Ouvrir la page des tokens Hugging Face",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
                     // Modèles recommandés : téléchargement en un clic
                     val recommendedModels = listOf(
                         "Gemma 3 1B Instruct (~523 Mo, rapide)" to
@@ -1222,7 +1257,7 @@ private fun AiProfileEditDialog(
                                 onClick = {
                                     testResult = null
                                     licensePageUrl = null
-                                    onDownloadGemmaModel(url) { result ->
+                                    onDownloadGemmaModel(url, hfToken) { result ->
                                         result.fold(
                                             onSuccess = { path ->
                                                 baseUrl = path
@@ -1232,8 +1267,13 @@ private fun AiProfileEditDialog(
                                             },
                                             onFailure = { err ->
                                                 testResult = Result.failure(err)
-                                                if (err is com.learnsyncai.ui.viewmodels.LicenseRequiredException) {
-                                                    licensePageUrl = err.pageUrl
+                                                val troubleUrl = when (err) {
+                                                    is com.learnsyncai.ui.viewmodels.LicenseRequiredException -> err.pageUrl
+                                                    is com.learnsyncai.ui.viewmodels.HfAuthenticationRequiredException -> err.pageUrl
+                                                    else -> null
+                                                }
+                                                if (troubleUrl != null) {
+                                                    licensePageUrl = troubleUrl
                                                 }
                                             }
                                         )
@@ -1262,7 +1302,7 @@ private fun AiProfileEditDialog(
                         }
                     }
 
-                    // Licence refusée : redirection directe vers la page d'acceptation
+                    // Accès refusé : redirections licence + token
                     licensePageUrl?.let { pageUrl ->
                         Surface(
                             color = AmberFlame.copy(alpha = 0.12f),
@@ -1274,9 +1314,19 @@ private fun AiProfileEditDialog(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = "Licence requise : ce modèle Google exige une acceptation (une seule fois) sur Hugging Face.",
+                                    text = "Accès refusé : les modèles Google exigent un token Hugging Face ET la licence acceptée (gratuit, une seule fois).",
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                Button(
+                                    onClick = {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/settings/tokens")))
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("1. Créer un token (Settings → Access Tokens)")
+                                }
                                 Button(
                                     onClick = {
                                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
@@ -1285,10 +1335,10 @@ private fun AiProfileEditDialog(
                                 ) {
                                     Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Accepter la licence sur Hugging Face")
+                                    Text("2. Accepter la licence sur la page du modèle")
                                 }
                                 Text(
-                                    text = "Une fois acceptée (connectez-vous / créez un compte gratuit), revenez ici et relancez le téléchargement.",
+                                    text = "Collez ensuite le token dans le champ ci-dessus et relancez le téléchargement.",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

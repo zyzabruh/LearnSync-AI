@@ -27,7 +27,12 @@ import java.util.UUID
  * du modèle où accepter la licence.
  */
 class LicenseRequiredException(val pageUrl: String) : IllegalStateException(
-    "Licence non acceptée : ce modèle Google exige d'accepter sa licence sur Hugging Face (gratuit, avec un compte)."
+    "Accès refusé avec ce token : acceptez la licence du modèle sur sa page Hugging Face (gratuit), puis réessayez."
+)
+
+/** Levée quand aucun token Hugging Face n'a été fourni : les modèles Google exigent une authentification. */
+class HfAuthenticationRequiredException(val pageUrl: String) : IllegalStateException(
+    "Authentification requise : collez un token Hugging Face dans le champ prévu (gratuit), puis réessayez."
 )
 
 class LearnSyncViewModel(application: Application) : AndroidViewModel(application) {
@@ -724,7 +729,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
      * stockage privé de l'app et renvoie son chemin (utilisé comme baseUrl
      * du profil local). Écrit d'abord dans un fichier .part puis renomme.
      */
-    fun downloadGemmaModel(url: String, onResult: (Result<String>) -> Unit) {
+    fun downloadGemmaModel(url: String, hfToken: String, onResult: (Result<String>) -> Unit) {
         viewModelScope.launch {
             _modelDownloadProgress.value = 0f
             val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -737,10 +742,17 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
                     connection.connectTimeout = 15000
                     connection.readTimeout = 30000
+                    connection.setRequestProperty("User-Agent", "LearnSyncAI/1.0")
+                    if (hfToken.isNotBlank()) {
+                        connection.setRequestProperty("Authorization", "Bearer ${hfToken.trim()}")
+                    }
                     try {
                         val code = connection.responseCode
                         if (code == 401 || code == 403) {
                             val pageUrl = url.substringBefore("/resolve/")
+                            if (hfToken.isBlank()) {
+                                throw HfAuthenticationRequiredException(pageUrl)
+                            }
                             throw LicenseRequiredException(pageUrl)
                         }
                         if (code != 200) {

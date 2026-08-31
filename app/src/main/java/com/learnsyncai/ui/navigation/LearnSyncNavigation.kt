@@ -374,8 +374,8 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     onImportLocalModel = { uri ->
                                         viewModel.importLocalGemmaModel(uri)
                                     },
-                                    onDownloadGemmaModel = { url, onResult ->
-                                        viewModel.downloadGemmaModel(url, onResult)
+                                    onDownloadGemmaModel = { url, token, onResult ->
+                                        viewModel.downloadGemmaModel(url, token, onResult)
                                     },
                                     modelDownloadProgress = modelDownloadProgress
                                 )
