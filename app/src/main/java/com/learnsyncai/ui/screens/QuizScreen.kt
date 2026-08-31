@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -130,7 +131,7 @@ fun QuizScreen(
                             )
                         }
 
-                        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -165,7 +166,7 @@ fun QuizScreen(
                             }
                         }
 
-                        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                         LearnSyncButton(
                             text = "Terminer",
@@ -393,7 +394,7 @@ fun QuizScreen(
 
                 LearnSyncButton(
                     text = if (currentIndex + 1 < quizQuestions.size) "Question suivante" else "Voir les résultats",
-                    icon = Icons.Default.ArrowForward,
+                    icon = Icons.AutoMirrored.Filled.ArrowForward,
                     onClick = {
                         currentIndex++
                         selectedOptionIndex = null

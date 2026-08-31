@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -408,7 +409,7 @@ fun ReviewScreen(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.VolumeUp,
+                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                             contentDescription = "Lire la question à voix haute",
                             tint = IndigoPrimary,
                             modifier = Modifier.size(20.dp)
@@ -458,7 +459,7 @@ fun ReviewScreen(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.VolumeUp,
+                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                                     contentDescription = "Lire la réponse à voix haute",
                                     tint = EmeraldDark,
                                     modifier = Modifier.size(20.dp)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1252,7 +1253,7 @@ private fun AiProfileEditDialog(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.OpenInNew,
+                                    Icons.AutoMirrored.Filled.OpenInNew,
                                     contentDescription = "Ouvrir la page Hugging Face du modèle",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)
@@ -1282,7 +1283,7 @@ private fun AiProfileEditDialog(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("Accepter la licence sur Hugging Face")
                                 }

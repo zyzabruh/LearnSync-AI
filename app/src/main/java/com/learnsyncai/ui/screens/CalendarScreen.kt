@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -272,7 +273,7 @@ fun CalendarScreen(
                     EmptyState(
                         title = "Aucune session planifiée",
                         description = "Importe des cours pour générer des flashcards et planifier tes révisions.",
-                        icon = Icons.Default.EventNote
+                        icon = Icons.AutoMirrored.Filled.EventNote
                     )
                 }
             } else {

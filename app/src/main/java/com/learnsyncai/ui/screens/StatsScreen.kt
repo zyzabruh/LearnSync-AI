@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -127,7 +128,7 @@ fun StatsScreen(
                         StatCard(
                             title = "Précision",
                             value = if (totalReviews > 0) "$successRate%" else "—",
-                            icon = Icons.Default.TrendingUp,
+                            icon = Icons.AutoMirrored.Filled.TrendingUp,
                             iconColor = EmeraldDark,
                             iconBgColor = EmeraldSoftBg,
                             modifier = Modifier.weight(1f)

@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -466,7 +467,7 @@ fun CourseDetailScreen(
                                         horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Article,
+                                            imageVector = Icons.AutoMirrored.Filled.Article,
                                             contentDescription = null,
                                             tint = IndigoPrimary
                                         )
@@ -490,7 +491,7 @@ fun CourseDetailScreen(
                             EmptyState(
                                 title = "Aucun résumé",
                                 description = "Rédigez manuellement votre synthèse ou lancez la génération IA.",
-                                icon = Icons.Default.Article,
+                                icon = Icons.AutoMirrored.Filled.Article,
                                 actionLabel = "Générer avec l'IA",
                                 onActionClick = onRegenerate
                             )
