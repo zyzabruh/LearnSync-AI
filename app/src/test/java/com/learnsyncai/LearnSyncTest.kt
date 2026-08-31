@@ -36,11 +36,13 @@ class LearnSyncTest {
         )
 
         val result = SpacedRepetition.calculateReview(card, rating = 1, responseTimeMs = 1200L)
-        assertEquals(1, result.newInterval)
+        // "Again" = étape d'apprentissage : intervalle 0, carte re-due dans 10 minutes
+        assertEquals(0, result.newInterval)
         assertEquals(1, result.updatedCard.box)
         assertEquals(0, result.updatedCard.repetitions)
         assertEquals(2, result.updatedCard.lapses)
         assertTrue(result.updatedCard.easeFactor < 2.0f)
+        assertTrue(result.updatedCard.dueDate <= System.currentTimeMillis() + SpacedRepetition.AGAIN_RELEARN_DELAY_MS)
     }
 
     @Test
@@ -198,7 +200,9 @@ class LearnSyncTest {
         assertEquals(8.5f, againResult.difficulty, 0.001f)
         assertEquals(0, againResult.updatedCard.repetitions)
         assertEquals(1, againResult.updatedCard.lapses)
-        assertEquals(1, againResult.newInterval)
+        // "Again" = étape d'apprentissage : intervalle 0 + re-due dans 10 minutes
+        assertEquals(0, againResult.newInterval)
+        assertEquals(1000000L + SpacedRepetition.AGAIN_RELEARN_DELAY_MS, againResult.updatedCard.dueDate)
 
         val hardResult = SpacedRepetition.calculateReview(baseCard, rating = SpacedRepetition.RATING_HARD, currentTime = 1000000L)
         assertEquals(1.2f, hardResult.stability, 0.001f)
