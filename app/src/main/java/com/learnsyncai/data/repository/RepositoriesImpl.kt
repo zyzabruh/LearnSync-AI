@@ -206,8 +206,8 @@ class AiProfileRepositoryImpl(private val aiProfileDao: AiProfileDao) : AiProfil
 }
 
 // Mappers
-fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag)
-fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag)
+fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, language)
+fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, language)
 
 fun StudyMaterialEntity.toDomain() = StudyMaterial(
     id = id,

@@ -30,6 +30,19 @@ import com.learnsyncai.domain.model.StudyMaterial
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
 
+/** Options de langue de réponse IA : "auto" suit la langue du document. */
+private val courseLanguageOptions = listOf(
+    "auto" to "Auto (langue du document)",
+    "fr" to "Français",
+    "en" to "English",
+    "es" to "Español",
+    "de" to "Deutsch",
+    "it" to "Italiano",
+    "pt" to "Português",
+    "nl" to "Nederlands",
+    "ar" to "العربية"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CourseDetailScreen(
@@ -45,6 +58,7 @@ fun CourseDetailScreen(
     onStartQuiz: () -> Unit,
     onRegenerate: () -> Unit,
     onGenerateMore: () -> Unit = {},
+    onCourseLanguageChange: (String) -> Unit = {},
     onDeleteCourse: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onExportCsv: (android.net.Uri) -> Unit = {},
@@ -58,6 +72,7 @@ fun CourseDetailScreen(
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
+    var showLanguageMenu by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     // Dialog states for custom content creation
@@ -106,6 +121,38 @@ fun CourseDetailScreen(
                     }
                 },
                 actions = {
+                    // Langue de réponse IA du cours ("auto" = langue du document)
+                    Box {
+                        IconButton(onClick = { showLanguageMenu = !showLanguageMenu }) {
+                            Icon(Icons.Default.Translate, contentDescription = "Langue de réponse")
+                        }
+                        DropdownMenu(
+                            expanded = showLanguageMenu,
+                            onDismissRequest = { showLanguageMenu = false }
+                        ) {
+                            courseLanguageOptions.forEach { (code, label) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = label,
+                                            fontWeight = if (course.language == code) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        if (course.language == code) {
+                                            Icon(Icons.Default.Check, contentDescription = null)
+                                        } else {
+                                            Spacer(modifier = Modifier.size(24.dp))
+                                        }
+                                    },
+                                    onClick = {
+                                        showLanguageMenu = false
+                                        if (course.language != code) onCourseLanguageChange(code)
+                                    }
+                                )
+                            }
+                        }
+                    }
                     IconButton(onClick = { showMenu = !showMenu }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Options")
                     }

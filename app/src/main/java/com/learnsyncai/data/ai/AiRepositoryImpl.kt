@@ -36,6 +36,7 @@ class AiRepositoryImpl(
     override suspend fun generateStudyMaterial(
         courseTitle: String,
         courseText: String,
+        language: String,
         onProgress: (String) -> Unit
     ): Result<StudyGenerationResult> = withContext(Dispatchers.IO) {
         try {
@@ -57,12 +58,12 @@ class AiRepositoryImpl(
             if (numChunks == 1) {
                 onProgress("Génération de la synthèse et des notions clés...")
                 val summaryResult = executeWithRetry(maxAttempts = 2) {
-                    generateSummarySection(config, courseTitle, chunks[0], true, prefs, 0, 1)
+                    generateSummarySection(config, courseTitle, chunks[0], true, prefs, 0, 1, language)
                 }
 
                 onProgress("Génération des flashcards et QCM...")
                 val practiceResult = executeWithRetry(maxAttempts = 2) {
-                    generatePracticeSection(config, courseTitle, chunks[0], true, prefs, 0, 1)
+                    generatePracticeSection(config, courseTitle, chunks[0], true, prefs, 0, 1, language)
                 }
 
                 val validQuiz = QuizValidator.filterValidQuestions(practiceResult.second)
@@ -92,7 +93,8 @@ class AiRepositoryImpl(
                                             isFullDoc = false,
                                             prefs = prefs,
                                             chunkIndex = index,
-                                            totalChunks = numChunks
+                                            totalChunks = numChunks,
+                                            language = language
                                         )
                                     }
                                 }
@@ -105,7 +107,8 @@ class AiRepositoryImpl(
                                             isFullDoc = false,
                                             prefs = prefs,
                                             chunkIndex = index,
-                                            totalChunks = numChunks
+                                            totalChunks = numChunks,
+                                            language = language
                                         )
                                     }
                                 }
@@ -165,6 +168,7 @@ class AiRepositoryImpl(
         courseText: String,
         existingFlashcardQuestions: List<String>,
         existingQuizQuestions: List<String>,
+        language: String,
         onProgress: (String) -> Unit
     ): Result<Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>> = withContext(Dispatchers.IO) {
         try {
@@ -188,7 +192,7 @@ class AiRepositoryImpl(
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
                             executeWithRetry(maxAttempts = 2) {
-                                generateAdditionalPracticeSection(config, courseTitle, chunk, exclusionBlock)
+                                generateAdditionalPracticeSection(config, courseTitle, chunk, exclusionBlock, language)
                             }
                         }
                     }
@@ -214,6 +218,24 @@ class AiRepositoryImpl(
         }
     }
 
+    /** Consigne de langue de sortie pour les prompts : "auto" suit la langue du document. */
+    private fun languageInstruction(language: String): String = when (language) {
+        "auto" -> "CONSIGNE DE LANGUE : détecte automatiquement la langue du document fourni et rédige TOUT le contenu (questions, réponses, options, explications, résumé) dans cette langue."
+        else -> "CONSIGNE DE LANGUE : rédige TOUT le contenu (questions, réponses, options, explications, résumé) en ${languageDisplayName(language)}, quelle que soit la langue du document."
+    }
+
+    private fun languageDisplayName(code: String) = when (code) {
+        "fr" -> "français"
+        "en" -> "anglais"
+        "es" -> "espagnol"
+        "de" -> "allemand"
+        "it" -> "italien"
+        "pt" -> "portugais"
+        "nl" -> "néerlandais"
+        "ar" -> "arabe"
+        else -> code
+    }
+
     /** Bloc compact des questions existantes, injecté dans le prompt d'exclusion. */
     private fun buildExclusionBlock(
         existingFlashcardQuestions: List<String>,
@@ -236,11 +258,14 @@ class AiRepositoryImpl(
         config: AiConfig,
         courseTitle: String,
         courseText: String,
-        exclusionBlock: String
+        exclusionBlock: String,
+        language: String
     ): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
+        val langRule = languageInstruction(language)
         val prompt = """
             Tu es un ingénieur pédagogique et un professeur universitaire.
-            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère des NOUVELLES flashcards et QCM en français.
+            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère des NOUVELLES flashcards et QCM.
+            $langRule
 
             Les questions suivantes EXISTENT DÉJÀ dans la base de l'utilisateur.
             NE LES RÉPÈTE PAS et ne génère aucune variante quasi identique (même sens, formulation différente) :
@@ -273,7 +298,8 @@ class AiRepositoryImpl(
         isFullDoc: Boolean,
         prefs: UserPreferences,
         chunkIndex: Int,
-        totalChunks: Int
+        totalChunks: Int,
+        language: String
     ): Triple<String, List<String>, List<String>> {
         // Mode "auto" : aucun nombre imposé — l'IA génère autant que nécessaire.
         val mnemonicCount = if (prefs.mnemonicTipsMode == "custom") {
@@ -287,9 +313,11 @@ class AiRepositoryImpl(
             "Génère autant d'astuces mnémotechniques concrètes que le contenu s'y prête, sans limite supérieure (au moins une)."
         }
 
+        val langRule = languageInstruction(language)
         val prompt = """
             Tu es un ingénieur pédagogique et un professeur universitaire.
-            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère la section synthétique en français.
+            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère la section synthétique.
+            $langRule
 
             Format JSON STRICT (sans texte introductif ni markdown) :
             {
@@ -326,7 +354,8 @@ class AiRepositoryImpl(
         isFullDoc: Boolean,
         prefs: UserPreferences,
         chunkIndex: Int,
-        totalChunks: Int
+        totalChunks: Int,
+        language: String
     ): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
         // Mode "auto" : aucun nombre imposé — l'IA génère autant que nécessaire
         // pour couvrir tout le contenu, sans plafond.
@@ -356,8 +385,9 @@ class AiRepositoryImpl(
 
         val prompt = """
             Tu es un ingénieur pédagogique et un professeur universitaire.
-            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère les exercices (flashcards et QCM) en français.
-            
+            Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère les exercices (flashcards et QCM).
+            ${languageInstruction(language)}
+
             Format JSON STRICT (sans texte introductif ni markdown) :
             {
               "flashcards": [

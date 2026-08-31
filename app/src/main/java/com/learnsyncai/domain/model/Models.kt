@@ -11,7 +11,9 @@ data class Course(
     val progress: Float,
     val color: String,
     val generationStatus: String,
-    val tag: String = ""
+    val tag: String = "",
+    // Langue de réponse IA : "auto" = langue du document, sinon code (fr, en...)
+    val language: String = "auto"
 )
 
 data class StudyMaterial(

@@ -69,6 +69,7 @@ interface AiRepository {
     suspend fun generateStudyMaterial(
         courseTitle: String,
         courseText: String,
+        language: String = "auto",
         onProgress: (String) -> Unit = {}
     ): Result<StudyGenerationResult>
 
@@ -82,6 +83,7 @@ interface AiRepository {
         courseText: String,
         existingFlashcardQuestions: List<String>,
         existingQuizQuestions: List<String>,
+        language: String = "auto",
         onProgress: (String) -> Unit = {}
     ): Result<Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>>
 }

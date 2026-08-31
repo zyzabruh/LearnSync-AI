@@ -339,6 +339,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             val result = aiRepo.generateStudyMaterial(
                 courseTitle = course.title,
                 courseText = courseText,
+                language = course.language,
                 onProgress = { progressText ->
                     _generationProgress.value = progressText
                 }
@@ -404,6 +405,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     courseText = courseText,
                     existingFlashcardQuestions = existingCards.map { it.question },
                     existingQuizQuestions = existingQuiz.map { it.question },
+                    language = course.language,
                     onProgress = { _generationProgress.value = it }
                 )
 
@@ -650,6 +652,15 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 val rest = q.dropWhile { it.id == card.id }
                 if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
             }
+        }
+    }
+
+    /** Change la langue de réponse IA d'un cours ("auto" = langue du document). */
+    fun updateCourseLanguage(course: Course, language: String) {
+        viewModelScope.launch {
+            courseRepo.insertCourse(
+                course.copy(language = language, updatedAt = System.currentTimeMillis())
+            )
         }
     }
 

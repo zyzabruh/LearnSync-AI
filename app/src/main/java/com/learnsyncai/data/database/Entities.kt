@@ -17,7 +17,8 @@ data class CourseEntity(
     val progress: Float,
     val color: String,
     val generationStatus: String, // "NONE", "GENERATING", "COMPLETED", "ERROR"
-    val tag: String = ""
+    val tag: String = "",
+    val language: String = "auto"
 )
 
 @Entity(
