@@ -176,10 +176,10 @@ class ReviewRepositoryImpl(private val reviewLogDao: ReviewLogDao) : ReviewRepos
 
 class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : PreferencesRepository {
     override fun getPreferences(): Flow<UserPreferences> =
-        prefsDao.getPreferences().map { it?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.5-flash", "auto", 10, "auto", 5, "auto", 3) }
+        prefsDao.getPreferences().map { it?.toDomain() ?: UserPreferences.DEFAULT }
 
     override suspend fun getPreferencesSync(): UserPreferences =
-        prefsDao.getPreferencesSync()?.toDomain() ?: UserPreferences(true, 10, "08:00", "system", "fr", "GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai", "", "gemini-2.5-flash", "auto", 10, "auto", 5, "auto", 3)
+        prefsDao.getPreferencesSync()?.toDomain() ?: UserPreferences.DEFAULT
 
     override suspend fun updatePreferences(preferences: UserPreferences) =
         prefsDao.insertPreferences(preferences.toEntity())
@@ -206,8 +206,8 @@ class AiProfileRepositoryImpl(private val aiProfileDao: AiProfileDao) : AiProfil
 }
 
 // Mappers
-fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus)
-fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus)
+fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag)
+fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag)
 
 fun StudyMaterialEntity.toDomain() = StudyMaterial(
     id = id,

@@ -425,6 +425,9 @@ fun StatsScreen(
                         val mastered = courseCards.count { it.repetitions >= 2 && it.difficulty <= 6.0f }
                         ((mastered.toFloat() / courseCards.size) * 100).toInt()
                     }
+                    val courseAccuracy = if (courseLogs.isEmpty()) null else {
+                        ((courseLogs.count { it.rating >= SpacedRepetition.RATING_GOOD }.toFloat() / courseLogs.size) * 100).toInt()
+                    }
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -452,17 +455,33 @@ fun StatsScreen(
                                 )
                             }
 
-                            Surface(
-                                shape = LearnSyncShapes.pill,
-                                color = IndigoSoftBg
-                            ) {
-                                Text(
-                                    text = "$masteryPercent% maîtrise",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = IndigoPrimary,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (courseAccuracy != null) {
+                                    Surface(
+                                        shape = LearnSyncShapes.pill,
+                                        color = EmeraldSoftBg
+                                    ) {
+                                        Text(
+                                            text = "$courseAccuracy% réussite",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = EmeraldDark,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    shape = LearnSyncShapes.pill,
+                                    color = IndigoSoftBg
+                                ) {
+                                    Text(
+                                        text = "$masteryPercent% maîtrise",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = IndigoPrimary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }

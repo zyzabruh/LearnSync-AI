@@ -42,6 +42,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
     val preferences by viewModel.preferences.collectAsState()
     val aiProfiles by viewModel.aiProfiles.collectAsState()
     val activeAiProfile by viewModel.activeAiProfile.collectAsState()
+    val hasValidAiConfig by viewModel.hasValidAiConfig.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val generationProgress by viewModel.generationProgress.collectAsState()
 
@@ -228,12 +229,30 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     courses = courses,
                                     allFlashcards = allFlashcards,
                                     dueCards = dueFlashcards,
+                                    hasValidAiConfig = hasValidAiConfig,
                                     onImportCourse = { uri, name -> viewModel.importCourse(uri, name) },
+                                    onImportFromUrl = { url -> viewModel.importCourseFromUrl(url) },
                                     onGenerateMaterial = { course -> viewModel.generateMaterial(course) },
                                     onSelectCourse = { course -> navController.navigate("course_detail/${course.id}") },
                                     onDeleteCourse = { courseId -> viewModel.deleteCourse(courseId) },
+                                    onUpdateCourseTag = { courseId, tag -> viewModel.updateCourseTag(courseId, tag) },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
+                                    onNavigateToSearch = { navController.navigate("search") },
+                                    onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                     onReviewCourse = { courseId -> navController.navigate("course_review/$courseId") }
+                                )
+                            }
+
+                            composable("search") {
+                                val allQuiz by viewModel.allQuizQuestions.collectAsState()
+                                val allMaterials by viewModel.allMaterials.collectAsState()
+                                SearchScreen(
+                                    courses = courses,
+                                    flashcards = allFlashcards,
+                                    quizQuestions = allQuiz,
+                                    materials = allMaterials,
+                                    onBackClick = { navController.popBackStack() },
+                                    onSelectResult = { courseId -> navController.navigate("course_detail/$courseId") }
                                 )
                             }
 
@@ -248,6 +267,8 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                 val courseQuiz by viewModel.getQuizQuestionsForCourse(courseId).collectAsState(initial = emptyList())
 
                                 if (course != null) {
+                                    val coursePreview by viewModel.getCoursePreview(course.id)
+                                        .collectAsState(initial = "")
                                     CourseDetailScreen(
                                         course = course,
                                         materials = materials,
@@ -255,6 +276,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                         quizQuestions = courseQuiz,
                                         generationProgress = generationProgress,
                                         activeAiProfile = activeAiProfile,
+                                        coursePreview = coursePreview,
                                         onBackClick = { navController.popBackStack() },
                                         onStartReview = { navController.navigate("course_review/${course.id}") },
                                         onStartQuiz = { navController.navigate("course_quiz/${course.id}") },
@@ -263,6 +285,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                             viewModel.deleteCourse(course.id)
                                             navController.popBackStack()
                                         },
+                                        onExportCsv = { uri -> viewModel.exportCourseToCsv(uri, course.id) },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp -> viewModel.addCustomFlashcard(course.id, q, a, exp) },
                                         onDeleteFlashcard = { cardId -> viewModel.deleteFlashcard(cardId) },
@@ -346,6 +369,9 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onTestAiConnection = { baseUrl, apiKey, modelName ->
                                         viewModel.testAiConnection(baseUrl, apiKey, modelName)
+                                    },
+                                    onImportLocalModel = { uri ->
+                                        viewModel.importLocalGemmaModel(uri)
                                     }
                                 )
                             }

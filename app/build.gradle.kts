@@ -101,6 +101,8 @@ dependencies {
   implementation(libs.googleid)
   implementation(libs.pdfbox.android)
   implementation("androidx.work:work-runtime-ktx:2.10.0")
+  // IA 100% locale : moteur MediaPipe LLM (Gemma .task / .litertlm)
+  implementation("com.google.mediapipe:tasks-genai:0.10.24")
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="12dp"
+    android:background="@drawable/widget_background">
+
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="LearnSync AI"
+        android:textSize="12sp"
+        android:textColor="#6B7280" />
+
+    <TextView
+        android:id="@+id/widget_due_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="0 carte à réviser"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#1E293B"
+        android:layout_marginTop="4dp" />
+
+    <Button
+        android:id="@+id/widget_review_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Réviser"
+        android:textSize="12sp"
+        android:layout_marginTop="8dp" />
+</LinearLayout>

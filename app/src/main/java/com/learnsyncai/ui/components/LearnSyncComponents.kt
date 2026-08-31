@@ -398,6 +398,21 @@ fun CourseCard(
                             color = if (dueCardsCount > 0) AmberFlame else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (dueCardsCount > 0) FontWeight.SemiBold else FontWeight.Normal
                         )
+                        if (course.tag.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Surface(
+                                color = IndigoSoftBg,
+                                shape = LearnSyncShapes.pill
+                            ) {
+                                Text(
+                                    text = course.tag,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = IndigoPrimary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -414,6 +429,35 @@ fun CourseCard(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
+                }
+            }
+
+            // Statut de génération en direct
+            when (course.generationStatus) {
+                "GENERATING" -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Génération du contenu en cours...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                "ERROR" -> {
+                    Text(
+                        text = "Échec de la dernière génération — relancez depuis la fiche du cours.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RoseError
+                    )
                 }
             }
 

@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CalendarEventEntity::class,
         AiProfileEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
@@ -172,6 +172,12 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE courses ADD COLUMN tag TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): LearnSyncDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -179,7 +185,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
                 INSTANCE = instance
                 instance

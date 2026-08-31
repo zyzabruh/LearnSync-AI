@@ -85,6 +85,13 @@ enum class AiProviderPreset(
         defaultModel = "nemotron-3.5-lightning-free",
         note = "Seuls les modèles listés comme gratuits (ex. big-pickle, nemotron-3-ultra-free, nemotron-3.5-lightning-free, hy3-free, mimo-v2.5-free, ling-3.0-flash-fin-free) sont utilisables sans facturation."
     ),
+    LOCAL_GEMMA(
+        id = "LOCAL_GEMMA",
+        displayName = "Local (Gemma)",
+        defaultBaseUrl = "",
+        defaultModel = "gemma-local",
+        note = "IA 100% hors-ligne (aucune clé API) : importez un fichier modèle Gemma (.task / .litertlm), par ex. google/gemma-3n-E2B-it-litert-preview sur Hugging Face, ou un modèle déjà téléchargé par Google AI Edge Gallery (Android/media/com.google.ai.edge.gallery/...). Nécessite ~2 à 4 Go et assez de RAM ; la 1re génération charge le modèle (comptez quelques secondes)."
+    ),
     CUSTOM(
         id = "CUSTOM",
         displayName = "Personnalisé",
@@ -107,7 +114,8 @@ fun ProfileScreen(
     onSyncCloud: () -> Unit,
     onSyncCalendar: () -> Unit,
     onNavigateToCalendar: () -> Unit = {},
-    onTestAiConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String> = { _, _, _ -> Result.success("OK") }
+    onTestAiConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String> = { _, _, _ -> Result.success("OK") },
+    onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1008,7 +1016,8 @@ fun ProfileScreen(
                 onAddAiProfile(name, provider, baseUrl, apiKey, modelName)
                 showAddProfileDialog = false
             },
-            onTestConnection = onTestAiConnection
+            onTestConnection = onTestAiConnection,
+            onImportLocalModel = onImportLocalModel
         )
     }
 
@@ -1029,7 +1038,8 @@ fun ProfileScreen(
                 )
                 profileToEdit = null
             },
-            onTestConnection = onTestAiConnection
+            onTestConnection = onTestAiConnection,
+            onImportLocalModel = onImportLocalModel
         )
     }
 }
@@ -1039,7 +1049,8 @@ private fun AiProfileEditDialog(
     initialProfile: AiProfile?,
     onDismiss: () -> Unit,
     onConfirm: (name: String, provider: String, baseUrl: String, apiKey: String, modelName: String) -> Unit,
-    onTestConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String>
+    onTestConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String>,
+    onImportLocalModel: suspend (Uri) -> Result<String> = { Result.failure(IllegalStateException("Import de modèle indisponible.")) }
 ) {
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(initialProfile?.name ?: "") }
@@ -1055,6 +1066,28 @@ private fun AiProfileEditDialog(
 
     var isTesting by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<Result<String>?>(null) }
+    var isImportingModel by remember { mutableStateOf(false) }
+
+    val modelFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                isImportingModel = true
+                testResult = null
+                onImportLocalModel(uri).fold(
+                    onSuccess = { path ->
+                        baseUrl = path
+                        if (name.isBlank() || AiProviderPreset.entries.any { it.displayName == name }) {
+                            name = AiProviderPreset.LOCAL_GEMMA.displayName
+                        }
+                    },
+                    onFailure = { err -> testResult = Result.failure(err) }
+                )
+                isImportingModel = false
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1102,7 +1135,7 @@ private fun AiProfileEditDialog(
                 }
 
                 val note = selectedPreset.note
-                if (selectedPreset == AiProviderPreset.OPENCODE_ZEN && note != null) {
+                if (selectedPreset in listOf(AiProviderPreset.OPENCODE_ZEN, AiProviderPreset.LOCAL_GEMMA) && note != null) {
                     Surface(
                         color = AmberFlame.copy(alpha = 0.1f),
                         shape = LearnSyncShapes.small
@@ -1124,41 +1157,73 @@ private fun AiProfileEditDialog(
                     singleLine = true
                 )
 
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    label = { Text("URL de base *") },
-                    placeholder = { Text("https://...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = modelName,
-                    onValueChange = { modelName = it },
-                    label = { Text("Nom du modèle *") },
-                    placeholder = { Text("ex: gemini-2.0-flash, gpt-4o-mini...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("Clé API") },
-                    placeholder = { Text("Clé API (laisser vide si Ollama/Local)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
-                            Icon(
-                                imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (isApiKeyVisible) "Masquer la clé" else "Afficher la clé"
-                            )
+                if (selectedPreset == AiProviderPreset.LOCAL_GEMMA) {
+                    // Modèle local : import de fichier, pas d'URL ni de clé
+                    if (isImportingModel) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Text("Copie du modèle en cours (peut prendre une minute)...", style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                )
+                    OutlinedTextField(
+                        value = baseUrl.substringAfterLast('/'),
+                        onValueChange = {},
+                        label = { Text("Fichier modèle importé") },
+                        placeholder = { Text("Aucun fichier importé") },
+                        readOnly = true,
+                        enabled = false,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = { modelFilePicker.launch("*/*") },
+                        enabled = !isImportingModel,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (baseUrl.isBlank()) "Importer un fichier modèle (.task / .litertlm)" else "Choisir un autre modèle")
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("URL de base *") },
+                        placeholder = { Text("https://...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = modelName,
+                        onValueChange = { modelName = it },
+                        label = { Text("Nom du modèle *") },
+                        placeholder = { Text("ex: gemini-2.0-flash, gpt-4o-mini...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text("Clé API") },
+                        placeholder = { Text("Clé API (laisser vide si Ollama/Local)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
+                                Icon(
+                                    imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (isApiKeyVisible) "Masquer la clé" else "Afficher la clé"
+                                )
+                            }
+                        }
+                    )
+                }
 
                 // Test connection inside dialog
                 Button(

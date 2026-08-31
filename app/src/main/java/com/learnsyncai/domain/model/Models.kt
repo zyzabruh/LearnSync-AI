@@ -10,7 +10,8 @@ data class Course(
     val updatedAt: Long,
     val progress: Float,
     val color: String,
-    val generationStatus: String
+    val generationStatus: String,
+    val tag: String = ""
 )
 
 data class StudyMaterial(
@@ -76,7 +77,17 @@ data class UserPreferences(
     val quizCustomCount: Int = 5,
     val mnemonicTipsMode: String = "auto",
     val mnemonicTipsCustomCount: Int = 3
-)
+) {
+    companion object {
+        val DEFAULT = UserPreferences(
+            notificationsEnabled = true,
+            dailyGoal = 10,
+            reminderTime = "08:00",
+            theme = "system",
+            language = "fr"
+        )
+    }
+}
 
 data class StudyGenerationResult(
     val summary: String,

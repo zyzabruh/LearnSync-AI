@@ -1,5 +1,6 @@
 package com.learnsyncai.ui.screens
 
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +35,7 @@ import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +51,23 @@ fun ReviewScreen(
     var totalGoodOrEasyCount by remember { mutableIntStateOf(0) }
     var totalReviewedCount by remember { mutableIntStateOf(0) }
     val haptic = LocalHapticFeedback.current
+
+    // Synthèse vocale locale (lecture des questions / réponses)
+    val ttsContext = LocalContext.current
+    val tts = remember { mutableStateOf<TextToSpeech?>(null) }
+    DisposableEffect(ttsContext) {
+        var engine: TextToSpeech? = null
+        engine = TextToSpeech(ttsContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                engine?.language = Locale.FRANCE
+            }
+        }
+        tts.value = engine
+        onDispose {
+            engine?.stop()
+            engine?.shutdown()
+        }
+    }
 
     val isSessionComplete = dueCards.isEmpty() || currentIndex >= dueCards.size
 
@@ -381,6 +401,20 @@ fun ReviewScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
+                    IconButton(
+                        onClick = {
+                            tts.value?.speak(currentCard.question, TextToSpeech.QUEUE_FLUSH, null, "question")
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VolumeUp,
+                            contentDescription = "Lire la question à voix haute",
+                            tint = IndigoPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     AnimatedVisibility(
                         visible = isAnswerRevealed,
                         enter = fadeIn(animationSpec = tween(300)) + expandVertically()
@@ -416,6 +450,20 @@ fun ReviewScreen(
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+
+                            IconButton(
+                                onClick = {
+                                    tts.value?.speak(currentCard.answer, TextToSpeech.QUEUE_FLUSH, null, "answer")
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.VolumeUp,
+                                    contentDescription = "Lire la réponse à voix haute",
+                                    tint = EmeraldDark,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
 
                             if (currentCard.explanation.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(LearnSyncSpacing.large))

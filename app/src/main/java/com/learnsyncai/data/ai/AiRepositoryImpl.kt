@@ -21,11 +21,14 @@ import java.io.IOException
 data class AiConfig(
     val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta/openai",
     val apiKey: String = "",
-    val modelName: String = "gemini-2.5-flash"
+    val modelName: String = "gemini-2.5-flash",
+    // true = modèle local (Gemma via MediaPipe) : baseUrl contient alors le chemin du fichier
+    val isLocal: Boolean = false
 )
 
 class AiRepositoryImpl(
     private val openAiClient: OpenAiCompatibleClient = OpenAiCompatibleClient(),
+    private val localLlmClient: LocalLlmClient? = null,
     private val configProvider: (suspend () -> AiConfig)? = null,
     private val preferencesProvider: (suspend () -> UserPreferences)? = null
 ) : AiRepository {
@@ -44,9 +47,10 @@ class AiRepositoryImpl(
             }
 
             val config = configProvider?.invoke() ?: AiConfig()
-            val prefs = preferencesProvider?.invoke() ?: UserPreferences(true, 10, "08:00", "system", "fr")
+            val prefs = preferencesProvider?.invoke() ?: UserPreferences.DEFAULT
 
-            val chunkSize = 35000
+            // En local, le contexte du modèle est limité : sections plus petites.
+            val chunkSize = if (config.isLocal) 10000 else 35000
             val chunks = splitIntoChunks(trimmedText, chunkSize)
             val numChunks = chunks.size
 
@@ -72,7 +76,9 @@ class AiRepositoryImpl(
                 return@withContext Result.success(finalResult)
             } else {
                 onProgress("Analyse accélérée de $numChunks sections du document...")
-                val semaphore = Semaphore(1)
+                // 2 requêtes IA en parallèle max (respecte les rate limits tout en
+                // réduisant fortement le temps de génération sur gros documents).
+                val semaphore = Semaphore(2)
                 val chunkResults = coroutineScope {
                     chunks.mapIndexed { index, chunk ->
                         async(Dispatchers.IO) {
@@ -190,14 +196,7 @@ class AiRepositoryImpl(
             $courseText
         """.trimIndent()
 
-        val rawText = openAiClient.generateChatCompletion(
-            baseUrl = config.baseUrl,
-            apiKey = config.apiKey,
-            modelName = config.modelName,
-            prompt = prompt,
-            temperature = 0.2,
-            maxTokens = 131072
-        )
+        val rawText = chatCompletion(config, prompt, temperature = 0.2)
 
         return parseSummarySection(rawText)
     }
@@ -256,16 +255,70 @@ class AiRepositoryImpl(
             $courseText
         """.trimIndent()
 
-        val rawText = openAiClient.generateChatCompletion(
-            baseUrl = config.baseUrl,
-            apiKey = config.apiKey,
-            modelName = config.modelName,
-            prompt = prompt,
-            temperature = 0.2,
-            maxTokens = 131072
-        )
+        val rawText = chatCompletion(config, prompt, temperature = 0.2)
 
-        return parsePracticeSection(rawText)
+        val parsed = parsePracticeSection(rawText)
+
+        return completeMissingPractice(config, courseText, flashcardsCount, quizCount, parsed)
+    }
+
+    /**
+     * Les petits modèles ignorent parfois "génère exactement N". Si la réponse
+     * est en dessous de la cible, on lance UNE passe complémentaire ciblée
+     * (seulement sur le manque), puis on fusionne en dédupliquant par question.
+     */
+    private suspend fun completeMissingPractice(
+        config: AiConfig,
+        courseText: String,
+        flashcardsTarget: Int,
+        quizTarget: Int,
+        parsed: Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>
+    ): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
+        var cards = parsed.first
+        var quiz = parsed.second
+        val missingCards = flashcardsTarget - cards.size
+        val missingQuiz = quizTarget - quiz.size
+        if (missingCards <= 0 && missingQuiz <= 0) return parsed
+        if (courseText.length < 200) return parsed
+
+        val sb = StringBuilder()
+        if (missingCards > 0) sb.append("- exactement $missingCards flashcards supplémentaires\n")
+        if (missingQuiz > 0) sb.append("- exactement $missingQuiz QCM supplémentaires\n")
+
+        val supplementPrompt = """
+            Tu es un ingénieur pédagogique.
+            Analyse le texte de cours ci-dessous et génère UNIQUEMENT du contenu NOUVEAU, différent de ce qui a déjà été produit :
+            $sb
+            Format JSON STRICT :
+            {
+              "flashcards": [ { "question": "...", "answer": "...", "explanation": "..." } ],
+              "quizQuestions": [ { "question": "...", "options": ["Option 1", "Option 2", "Option 3", "Option 4"], "correctAnswer": "Option 1", "explanation": "..." } ]
+            }
+            Règles strictes :
+            1. Base-toi uniquement sur le cours fourni.
+            2. Les QCM doivent avoir exactement 4 options distinctes.
+            3. Réponds UNIQUEMENT en JSON valide.
+
+            TEXTE DU COURS :
+            $courseText
+        """.trimIndent()
+
+        try {
+            val rawSupplement = chatCompletion(config, supplementPrompt, temperature = 0.4)
+            val supplement = parsePracticeSection(rawSupplement)
+
+            val existingCardQuestions = cards.map { it.question.trim().lowercase() }.toMutableSet()
+            val newCards = supplement.first.filter { existingCardQuestions.add(it.question.trim().lowercase()) }
+            if (missingCards > 0) cards = (cards + newCards).take(flashcardsTarget)
+
+            val existingQuizQuestions = quiz.map { it.question.trim().lowercase() }.toMutableSet()
+            val newQuiz = supplement.second.filter { existingQuizQuestions.add(it.question.trim().lowercase()) }
+            if (missingQuiz > 0) quiz = (quiz + newQuiz).take(quizTarget)
+        } catch (_: Exception) {
+            // La passe complémentaire est un bonus : on garde le résultat initial.
+        }
+
+        return Pair(cards, quiz)
     }
 
     private fun distributeCount(total: Int, index: Int, totalChunks: Int): Int {
@@ -358,12 +411,35 @@ class AiRepositoryImpl(
         return result
     }
 
-    internal fun parseSummarySection(rawText: String): Triple<String, List<String>, List<String>> {
-        val jsonObject = try {
-            JSONObject(extractJson(rawText))
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
+    /**
+     * Point d'entrée unique des appels IA : route vers l'API cloud
+     * OpenAI-compatible ou vers le moteur local Gemma (MediaPipe).
+     */
+    private suspend fun chatCompletion(config: AiConfig, prompt: String, temperature: Double): String {
+        return if (config.isLocal) {
+            val client = localLlmClient
+                ?: throw IllegalStateException("Moteur local indisponible.")
+            client.generate(config.baseUrl, prompt)
+        } else {
+            openAiClient.generateChatCompletion(
+                baseUrl = config.baseUrl,
+                apiKey = config.apiKey,
+                modelName = config.modelName,
+                prompt = prompt,
+                temperature = temperature,
+                maxTokens = 131072
+            )
         }
+    }
+
+    private fun parseJsonObject(rawText: String): JSONObject = try {
+        JSONObject(extractJson(rawText))
+    } catch (e: Exception) {
+        throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
+    }
+
+    internal fun parseSummarySection(rawText: String): Triple<String, List<String>, List<String>> {
+        val jsonObject = parseJsonObject(rawText)
         val summary = extractSummary(jsonObject)
         if (summary.isBlank()) {
             throw IllegalArgumentException("La réponse de l'IA ne contient pas de résumé valide.")
@@ -374,22 +450,14 @@ class AiRepositoryImpl(
     }
 
     internal fun parsePracticeSection(rawText: String): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
-        val jsonObject = try {
-            JSONObject(extractJson(rawText))
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
-        }
+        val jsonObject = parseJsonObject(rawText)
         val flashcards = extractFlashcards(jsonObject)
         val quizQuestions = extractQuizQuestions(jsonObject)
         return Pair(flashcards, quizQuestions)
     }
 
     internal fun parseJsonResponse(rawText: String): StudyGenerationResult {
-        val jsonObject = try {
-            JSONObject(extractJson(rawText))
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
-        }
+        val jsonObject = parseJsonObject(rawText)
         val summary = extractSummary(jsonObject)
         if (summary.isBlank()) {
             throw IllegalArgumentException("La réponse de l'IA ne contient pas de résumé valide.")

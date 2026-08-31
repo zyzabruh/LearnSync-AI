@@ -3,9 +3,12 @@ package com.learnsyncai.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
@@ -21,28 +24,41 @@ import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
 
+private val IMPORT_MIME_TYPES = arrayOf(
+    "application/pdf",
+    "text/plain",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CoursesScreen(
     courses: List<Course>,
     allFlashcards: List<Flashcard> = emptyList(),
     dueCards: List<Flashcard> = emptyList(),
+    hasValidAiConfig: Boolean = true,
     onImportCourse: (Uri, String) -> Unit,
+    onImportFromUrl: (String) -> Unit = {},
     onGenerateMaterial: (Course) -> Unit,
     onSelectCourse: (Course) -> Unit,
     onDeleteCourse: (String) -> Unit,
+    onUpdateCourseTag: (String, String) -> Unit = { _, _ -> },
     onNavigateToCalendar: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {},
     onReviewCourse: (String) -> Unit = {}
 ) {
-    var pendingImportFileName by remember { mutableStateOf<String?>(null) }
     var courseToDelete by remember { mutableStateOf<Course?>(null) }
+    var courseToTag by remember { mutableStateOf<Course?>(null) }
+    var showUrlDialog by remember { mutableStateOf(false) }
+    var showOnboardingDismissed by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "document.pdf"
-            pendingImportFileName = fileName
             onImportCourse(uri, fileName)
         }
     }
@@ -66,6 +82,20 @@ fun CoursesScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onNavigateToSearch) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Rechercher",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(onClick = { showUrlDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = "Importer depuis une URL",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(onClick = onNavigateToCalendar) {
                         Icon(
                             imageVector = Icons.Default.CalendarMonth,
@@ -81,15 +111,7 @@ fun CoursesScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = {
-                    filePickerLauncher.launch(
-                        arrayOf(
-                            "application/pdf",
-                            "text/plain",
-                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
-                    )
-                },
+                onClick = { filePickerLauncher.launch(IMPORT_MIME_TYPES) },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = LearnSyncShapes.pill,
@@ -115,21 +137,17 @@ fun CoursesScreen(
             ) {
                 EmptyState(
                     title = "Aucun cours pour le moment",
-                    description = "Importe tes cours au format PDF, DOCX ou TXT. LearnSync créera automatiquement tes fiches, synthèses, flashcards et QCMs d'entraînement.",
+                    description = "Importe tes cours au format PDF, DOCX, PPTX ou TXT (ou via une URL). LearnSync créera automatiquement tes fiches, synthèses, flashcards et QCMs d'entraînement.",
                     icon = Icons.Default.UploadFile,
                     actionLabel = "Choisir un document",
-                    onActionClick = {
-                        filePickerLauncher.launch(
-                            arrayOf(
-                                "application/pdf",
-                                "text/plain",
-                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                            )
-                        )
-                    }
+                    onActionClick = { filePickerLauncher.launch(IMPORT_MIME_TYPES) }
                 )
             }
         } else {
+            val availableTags = courses.map { it.tag }.filter { it.isNotBlank() }.distinct()
+            var selectedTag by remember { mutableStateOf<String?>(null) }
+            val filteredCourses = if (selectedTag == null) courses else courses.filter { it.tag == selectedTag }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -138,7 +156,42 @@ fun CoursesScreen(
                 verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium),
                 contentPadding = PaddingValues(top = LearnSyncSpacing.small, bottom = 88.dp)
             ) {
-                items(courses, key = { it.id }) { course ->
+                // Onboarding : config IA manquante
+                if (!hasValidAiConfig && !showOnboardingDismissed) {
+                    item {
+                        OnboardingCard(
+                            onConfigureAi = onNavigateToProfile,
+                            onDismiss = { showOnboardingDismissed = true }
+                        )
+                    }
+                }
+
+                // Filtres par étiquette
+                if (availableTags.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedTag == null,
+                                onClick = { selectedTag = null },
+                                label = { Text("Tous (${courses.size})") }
+                            )
+                            availableTags.forEach { tag ->
+                                FilterChip(
+                                    selected = selectedTag == tag,
+                                    onClick = { selectedTag = if (selectedTag == tag) null else tag },
+                                    label = { Text(tag) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(filteredCourses, key = { it.id }) { course ->
                     val courseCards = allFlashcards.filter { it.courseId == course.id }
                     val courseDueCards = dueCards.filter { it.courseId == course.id }
                     val masteryPercent = if (courseCards.isEmpty()) 0 else {
@@ -199,6 +252,120 @@ fun CoursesScreen(
                 }
             },
             shape = LearnSyncShapes.large
+        )
+    }
+
+    // URL Import Dialog
+    if (showUrlDialog) {
+        var url by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showUrlDialog = false },
+            title = { Text("Importer depuis une URL", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Collez le lien d'une page web (article de cours, documentation...). Le texte sera extrait puis généré comme un document classique.")
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = { url = it },
+                        label = { Text("https://...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onImportFromUrl(url)
+                        showUrlDialog = false
+                    },
+                    enabled = url.startsWith("http://") || url.startsWith("https://")
+                ) {
+                    Text("Importer")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUrlDialog = false }) {
+                    Text("Annuler")
+                }
+            },
+            shape = LearnSyncShapes.large
+        )
+    }
+}
+
+@Composable
+private fun OnboardingCard(
+    onConfigureAi: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = LearnSyncShapes.large,
+        colors = CardDefaults.cardColors(containerColor = AmberSoftBg),
+        border = BorderStroke(1.dp, AmberFlame.copy(alpha = 0.4f))
+    ) {
+        Column(
+            modifier = Modifier.padding(LearnSyncSpacing.large),
+            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                ) {
+                    Icon(Icons.Default.RocketLaunch, contentDescription = null, tint = AmberDark)
+                    Text(
+                        text = "Bienvenue ! Démarrez en 3 étapes",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = AmberDark
+                    )
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Fermer", modifier = Modifier.size(16.dp))
+                }
+            }
+
+            OnboardingStep(number = "1", text = "Importez un cours (PDF, DOCX, PPTX, TXT ou URL) — bouton en bas à droite.")
+            OnboardingStep(number = "2", text = "Configurez votre IA (Gemini, OpenRouter...) pour des contenus de qualité. Sans clé, LearnSync génère un contenu de secours hors-ligne.")
+            OnboardingStep(number = "3", text = "Générez, puis révisez : les flashcards suivent l'algorithme FSRS automatiquement.")
+
+            LearnSyncSecondaryButton(
+                text = "Configurer mon IA",
+                icon = Icons.Default.SmartToy,
+                onClick = onConfigureAi
+            )
+        }
+    }
+}
+
+@Composable
+private fun OnboardingStep(number: String, text: String) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Surface(
+            shape = androidx.compose.foundation.shape.CircleShape,
+            color = AmberFlame.copy(alpha = 0.2f)
+        ) {
+            Text(
+                text = number,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = AmberDark,
+                modifier = Modifier.padding(6.dp)
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }

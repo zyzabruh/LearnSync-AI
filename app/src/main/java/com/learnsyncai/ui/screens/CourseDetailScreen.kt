@@ -38,12 +38,14 @@ fun CourseDetailScreen(
     quizQuestions: List<QuizQuestion>,
     generationProgress: String = "",
     activeAiProfile: AiProfile? = null,
+    coursePreview: String = "",
     onBackClick: () -> Unit,
     onStartReview: () -> Unit,
     onStartQuiz: () -> Unit,
     onRegenerate: () -> Unit,
     onDeleteCourse: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
+    onExportCsv: (android.net.Uri) -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String) -> Unit = { _, _, _ -> },
     onDeleteFlashcard: (flashcardId: String) -> Unit = {},
     onAddQuizQuestion: (question: String, options: List<String>, correctAnswer: String, explanation: String) -> Unit = { _, _, _, _ -> },
@@ -79,6 +81,12 @@ fun CourseDetailScreen(
 
     val latestMaterial = materials.firstOrNull()
 
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: android.net.Uri? ->
+        if (uri != null) onExportCsv(uri)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -111,6 +119,15 @@ fun CourseDetailScreen(
                                 onRegenerate()
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Exporter en CSV (Anki)") },
+                            leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                val safeTitle = course.title.replace(Regex("[^a-zA-Z0-9 _-]"), "").trim().ifBlank { "cours" }
+                                exportLauncher.launch("$safeTitle.csv")
+                            }
+                        )
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Supprimer le cours", color = RoseError) },
@@ -137,6 +154,47 @@ fun CourseDetailScreen(
             verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.large),
             contentPadding = PaddingValues(bottom = LearnSyncSpacing.xxl)
         ) {
+            // Aperçu du document avant génération
+            if (materials.isEmpty() && generationProgress.isEmpty() && coursePreview.isNotBlank()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = LearnSyncShapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(LearnSyncSpacing.large),
+                            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    text = "Aperçu du document",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = coursePreview,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 8,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            LearnSyncSecondaryButton(
+                                text = "Générer les contenus",
+                                icon = Icons.Default.AutoAwesome,
+                                onClick = onRegenerate
+                            )
+                        }
+                    }
+                }
+            }
+
             // Course Header Metric Card
             item {
                 Card(

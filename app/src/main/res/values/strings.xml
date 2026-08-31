@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">LearnSync AI</string>
+    <string name="widget_description">Cartes à réviser aujourd\'hui</string>
 </resources>
