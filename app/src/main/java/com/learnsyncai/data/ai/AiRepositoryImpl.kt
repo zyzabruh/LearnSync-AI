@@ -49,8 +49,8 @@ class AiRepositoryImpl(
             val config = configProvider?.invoke() ?: AiConfig()
             val prefs = preferencesProvider?.invoke() ?: UserPreferences.DEFAULT
 
-            // En local, le contexte du modèle est limité : sections plus petites.
-            val chunkSize = if (config.isLocal) 8000 else 35000
+            // Contexte local généreux (32k tokens) : sections proches du cloud.
+            val chunkSize = if (config.isLocal) 20000 else 35000
             val chunks = splitIntoChunks(trimmedText, chunkSize)
             val numChunks = chunks.size
 
@@ -172,7 +172,7 @@ class AiRepositoryImpl(
         val prompt = """
             Tu es un ingénieur pédagogique et un professeur universitaire.
             Analyse le texte de cours ci-dessous intitulé "$courseTitle" et génère la section synthétique en français.
-            
+
             Format JSON STRICT (sans texte introductif ni markdown) :
             {
               "summary": "Résumé structuré, détaillé et approfondi du cours (longueur idéale 800 à 1200 mots si le contenu le permet, structuré en paragraphes clairs)",
@@ -366,7 +366,10 @@ class AiRepositoryImpl(
                 msg.contains("deadline") ||
                 msg.contains("503") ||
                 msg.contains("502") ||
-                msg.contains("500")
+                msg.contains("500") ||
+                // JSON invalide : un 2e essai (échantillonnage différent) réussit
+                // souvent, surtout en local où il ne coûte rien.
+                msg.contains("format json invalide")
     }
 
     internal fun mapUserFacingException(throwable: Throwable): Throwable {
@@ -379,7 +382,10 @@ class AiRepositoryImpl(
             throwable is IOException || msg.contains("network") || msg.contains("timeout") || msg.contains("unavailable") || msg.contains("connect") ->
                 IllegalStateException("Problème de connexion avec le service IA. Vérifiez votre accès Internet.", throwable)
             msg.contains("json") || msg.contains("parsing") ->
-                IllegalStateException("La réponse de l'IA n'a pas pu être structurée. Veuillez réessayer.", throwable)
+                IllegalStateException(
+                    "La réponse de l'IA n'a pas pu être structurée. Détail : ${throwable.message ?: "non disponible"}",
+                    throwable
+                )
             else -> throwable
         }
     }
@@ -432,10 +438,54 @@ class AiRepositoryImpl(
         }
     }
 
-    private fun parseJsonObject(rawText: String): JSONObject = try {
-        JSONObject(extractJson(rawText))
-    } catch (e: Exception) {
-        throw IllegalArgumentException("Format JSON invalide: ${e.message}", e)
+    private fun parseJsonObject(rawText: String): JSONObject {
+        val extracted = extractJson(rawText)
+        try {
+            return JSONObject(extracted)
+        } catch (_: Exception) {
+        }
+        // Réparation best-effort : les petites sorties tronquées (limite de
+        // tokens) deviennent valides en refermant chaîne/objets/tableaux ouverts.
+        val repaired = repairJson(extracted)
+        if (repaired != null) {
+            try {
+                return JSONObject(repaired)
+            } catch (_: Exception) {
+            }
+        }
+        val preview = rawText.trim().take(200).replace(Regex("\\s+"), " ")
+        throw IllegalArgumentException("Format JSON invalide | Réponse reçue: « $preview »")
+    }
+
+    /**
+     * Referme le JSON tronqué : suit chaînes/échappements, empile les délimiteurs
+     * ouverts et ajoute les fermetures manquantes. Renvoie null si rien à réparer.
+     */
+    private fun repairJson(input: String): String? {
+        val text = input.trim()
+        if (!text.contains('{') && !text.contains('[')) return null
+
+        val sb = StringBuilder()
+        val stack = ArrayDeque<Char>()
+        var inString = false
+        var escaped = false
+        for (ch in text) {
+            sb.append(ch)
+            when {
+                escaped -> escaped = false
+                ch == '\\' && inString -> escaped = true
+                ch == '"' -> inString = !inString
+                !inString && (ch == '{' || ch == '[') -> stack.addLast(if (ch == '{') '}' else ']')
+                !inString && (ch == '}' || ch == ']') -> if (stack.isNotEmpty() && stack.last() == ch) stack.removeLast()
+            }
+        }
+        if (stack.isEmpty() && !inString) return null
+
+        var repaired = sb.toString().trimEnd()
+        if (inString) repaired += "\""
+        if (repaired.endsWith(",")) repaired = repaired.dropLast(1)
+        while (stack.isNotEmpty()) repaired += stack.removeLast()
+        return repaired
     }
 
     internal fun parseSummarySection(rawText: String): Triple<String, List<String>, List<String>> {

@@ -78,6 +78,9 @@ class LocalLlmClient(private val context: Context) {
     }
 
     companion object {
-        const val DEFAULT_MAX_TOKENS = 4096
+        // Fenêtre de contexte MediaPipe (prompt + réponse) : 32768 = le maximum
+        // supporté par Gemma 3. Si le chargement échoue faute de RAM sur un
+        // appareil modeste, redescendre à 16384.
+        const val DEFAULT_MAX_TOKENS = 32768
     }
 }
