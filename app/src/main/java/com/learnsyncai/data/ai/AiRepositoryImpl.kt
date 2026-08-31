@@ -135,7 +135,7 @@ class AiRepositoryImpl(
                 onProgress("Finalisation du matériel pédagogique...")
                 val combinedSummary = chunkSummaries.filter { it.isNotBlank() }.joinToString("\n\n")
                 val distinctKeyPoints = allKeyPoints.distinctBy { it.trim().lowercase() }
-                val distinctMnemonicTips = allMnemonicTips.distinctBy { it.trim().lowercase() }.take(10)
+                val distinctMnemonicTips = allMnemonicTips.distinctBy { it.trim().lowercase() }
                 val distinctFlashcards = deduplicateFlashcards(allFlashcards)
                 val distinctValidQuizQuestions = deduplicateAndValidateQuiz(allQuizQuestions)
 
@@ -163,10 +163,16 @@ class AiRepositoryImpl(
         chunkIndex: Int,
         totalChunks: Int
     ): Triple<String, List<String>, List<String>> {
+        // Mode "auto" : aucun nombre imposé — l'IA génère autant que nécessaire.
         val mnemonicCount = if (prefs.mnemonicTipsMode == "custom") {
             distributeCount(prefs.mnemonicTipsCustomCount, chunkIndex, totalChunks)
         } else {
-            if (isFullDoc) 3 else 2
+            null
+        }
+        val mnemonicRule = if (mnemonicCount != null) {
+            "Génère exactement $mnemonicCount astuces mnémotechniques concrètes."
+        } else {
+            "Génère autant d'astuces mnémotechniques concrètes que le contenu s'y prête, sans limite supérieure (au moins une)."
         }
 
         val prompt = """
@@ -189,7 +195,7 @@ class AiRepositoryImpl(
             1. Base-toi uniquement sur le cours fourni.
             2. Identifie tous les concepts clés et n'omets aucune information importante (pas de plafond numérique pour les points clés).
             3. Rédige un résumé riche, détaillé et complet.
-            4. Génère exactement $mnemonicCount astuces mnémotechniques concrètes.
+            4. $mnemonicRule
             5. Réponds UNIQUEMENT en JSON valide.
 
             TEXTE DU COURS :
@@ -210,16 +216,30 @@ class AiRepositoryImpl(
         chunkIndex: Int,
         totalChunks: Int
     ): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
+        // Mode "auto" : aucun nombre imposé — l'IA génère autant que nécessaire
+        // pour couvrir tout le contenu, sans plafond.
         val flashcardsCount = if (prefs.flashcardsMode == "custom") {
             distributeCount(prefs.flashcardsCustomCount, chunkIndex, totalChunks)
         } else {
-            if (isFullDoc) 8 else 5
+            null
         }
 
         val quizCount = if (prefs.quizMode == "custom") {
             distributeCount(prefs.quizCustomCount, chunkIndex, totalChunks)
         } else {
-            if (isFullDoc) 5 else 3
+            null
+        }
+
+        val flashcardsRule = if (flashcardsCount != null) {
+            "Génère exactement $flashcardsCount flashcards précises (réponse concise en 2 phrases max)."
+        } else {
+            "Génère autant de flashcards que nécessaire pour couvrir TOUS les concepts importants du texte, sans limite supérieure : chaque concept, définition, formule ou fait clé doit donner lieu à au moins une flashcard (réponse concise en 2 phrases max)."
+        }
+
+        val quizRule = if (quizCount != null) {
+            "Génère exactement $quizCount QCM comportant exactement 4 options distinctes et une bonne réponse identique à l'une des 4 options (explication en 1 phrase max)."
+        } else {
+            "Génère autant de QCM que nécessaire pour couvrir tous les points testables du texte, sans limite supérieure (chacun avec exactement 4 options distinctes, une bonne réponse identique à l'une des options, explication en 1 phrase max)."
         }
 
         val prompt = """
@@ -247,8 +267,8 @@ class AiRepositoryImpl(
 
             Règles strictes :
             1. Base-toi uniquement sur le cours fourni.
-            2. Génère exactement $flashcardsCount flashcards précises (réponse concise en 2 phrases max).
-            3. Génère exactement $quizCount QCM comportant exactement 4 options distinctes et une bonne réponse identique à l'une des 4 options (explication en 1 phrase max).
+            2. $flashcardsRule
+            3. $quizRule
             4. Réponds UNIQUEMENT en JSON valide.
 
             TEXTE DU COURS :
@@ -263,21 +283,24 @@ class AiRepositoryImpl(
     }
 
     /**
-     * Les petits modèles ignorent parfois "génère exactement N". Si la réponse
-     * est en dessous de la cible, on lance UNE passe complémentaire ciblée
-     * (seulement sur le manque), puis on fusionne en dédupliquant par question.
+     * Les petits modèles ignorent parfois "génère exactement N". Si une cible
+     * chiffrée existe (mode custom) et que la réponse est en dessous, on lance
+     * UNE passe complémentaire ciblée (seulement sur le manque), puis on
+     * fusionne en dédupliquant par question. En mode auto (cible null), il n'y
+     * a pas de manque à combler.
      */
     private suspend fun completeMissingPractice(
         config: AiConfig,
         courseText: String,
-        flashcardsTarget: Int,
-        quizTarget: Int,
+        flashcardsTarget: Int?,
+        quizTarget: Int?,
         parsed: Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>
     ): Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>> {
         var cards = parsed.first
         var quiz = parsed.second
-        val missingCards = flashcardsTarget - cards.size
-        val missingQuiz = quizTarget - quiz.size
+        if (flashcardsTarget == null && quizTarget == null) return parsed
+        val missingCards = flashcardsTarget?.let { it - cards.size } ?: 0
+        val missingQuiz = quizTarget?.let { it - quiz.size } ?: 0
         if (missingCards <= 0 && missingQuiz <= 0) return parsed
         if (courseText.length < 200) return parsed
 
@@ -309,11 +332,17 @@ class AiRepositoryImpl(
 
             val existingCardQuestions = cards.map { it.question.trim().lowercase() }.toMutableSet()
             val newCards = supplement.first.filter { existingCardQuestions.add(it.question.trim().lowercase()) }
-            if (missingCards > 0) cards = (cards + newCards).take(flashcardsTarget)
+            if (missingCards > 0) {
+                cards = cards + newCards
+                flashcardsTarget?.let { target -> cards = cards.take(target) }
+            }
 
             val existingQuizQuestions = quiz.map { it.question.trim().lowercase() }.toMutableSet()
             val newQuiz = supplement.second.filter { existingQuizQuestions.add(it.question.trim().lowercase()) }
-            if (missingQuiz > 0) quiz = (quiz + newQuiz).take(quizTarget)
+            if (missingQuiz > 0) {
+                quiz = quiz + newQuiz
+                quizTarget?.let { target -> quiz = quiz.take(target) }
+            }
         } catch (_: Exception) {
             // La passe complémentaire est un bonus : on garde le résultat initial.
         }
@@ -433,7 +462,10 @@ class AiRepositoryImpl(
                 modelName = config.modelName,
                 prompt = prompt,
                 temperature = temperature,
-                maxTokens = 131072
+                // 256k tokens de sortie max : les serveurs qui plafonnent en
+                // dessous (ex. Gemini 2.5 = 65k) ignorent ou serrent la valeur,
+                // donc ça reste sans risque pour les modèles plus petits.
+                maxTokens = 262144
             )
         }
     }

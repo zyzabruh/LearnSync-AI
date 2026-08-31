@@ -301,12 +301,16 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                             }
 
                             composable(Screen.Review.route) {
+                                val aheadCards = allFlashcards.filter { it.dueDate > System.currentTimeMillis() }
+
                                 ReviewScreen(
                                     dueCards = dueFlashcards,
+                                    aheadCount = aheadCards.size,
                                     reviewQueue = reviewQueue,
                                     autoTtsEnabled = preferences.autoTtsEnabled,
                                     onReviewCard = { card, rating, time -> viewModel.rateCurrentCard(card, rating, time) },
                                     onStartSession = { limit -> viewModel.startReviewSession(dueFlashcards, limit) },
+                                    onStartAheadSession = { viewModel.startReviewSession(aheadCards, null) },
                                     onEndSession = { viewModel.endReviewSession() },
                                     onFinishReview = { navController.navigate(Screen.Home.route) }
                                 )
@@ -318,13 +322,16 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                             ) { backStackEntry ->
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
                                 val courseDueFlashcards by viewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
+                                val courseAheadCards = allFlashcards.filter { it.courseId == courseId && it.dueDate > System.currentTimeMillis() }
 
                                 ReviewScreen(
                                     dueCards = courseDueFlashcards,
+                                    aheadCount = courseAheadCards.size,
                                     reviewQueue = reviewQueue,
                                     autoTtsEnabled = preferences.autoTtsEnabled,
                                     onReviewCard = { card, rating, time -> viewModel.rateCurrentCard(card, rating, time) },
                                     onStartSession = { limit -> viewModel.startReviewSession(courseDueFlashcards, limit) },
+                                    onStartAheadSession = { viewModel.startReviewSession(courseAheadCards, null) },
                                     onEndSession = { viewModel.endReviewSession() },
                                     onFinishReview = { navController.popBackStack() }
                                 )

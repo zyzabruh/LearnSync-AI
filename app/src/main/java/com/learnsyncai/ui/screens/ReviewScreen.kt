@@ -42,10 +42,12 @@ import java.util.Locale
 @Composable
 fun ReviewScreen(
     dueCards: List<Flashcard>,
+    aheadCount: Int,
     reviewQueue: List<Flashcard>?,
     autoTtsEnabled: Boolean,
     onReviewCard: (Flashcard, Int, Long) -> Unit,
     onStartSession: (Int?) -> Unit,
+    onStartAheadSession: () -> Unit,
     onEndSession: () -> Unit,
     onFinishReview: () -> Unit
 ) {
@@ -57,20 +59,29 @@ fun ReviewScreen(
     var easyCount by remember { mutableIntStateOf(0) }
     var sessionStartTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
+    val resetStats = {
+        sessionTotal = 0
+        totalReviewedCount = 0
+        againCount = 0
+        hardCount = 0
+        goodCount = 0
+        easyCount = 0
+        sessionStartTime = System.currentTimeMillis()
+    }
+
     when {
-        // Aucune session active : écran de choix (tout réviser / cible de session)
+        // Aucune session active : écran de choix (tout réviser / cible / à l'avance)
         reviewQueue == null -> {
             ReviewSessionStartScreen(
                 dueCount = dueCards.size,
+                aheadCount = aheadCount,
                 onStart = { limit ->
-                    sessionTotal = 0
-                    totalReviewedCount = 0
-                    againCount = 0
-                    hardCount = 0
-                    goodCount = 0
-                    easyCount = 0
-                    sessionStartTime = System.currentTimeMillis()
+                    resetStats()
                     onStartSession(limit)
+                },
+                onStartAhead = {
+                    resetStats()
+                    onStartAheadSession()
                 },
                 onFinishReview = onFinishReview
             )
@@ -116,12 +127,14 @@ fun ReviewScreen(
     }
 }
 
-/** Écran de départ : choisit une session complète ou une cible de 20 cartes. */
+/** Écran de départ : session complète, cible de 20 cartes, ou révision à l'avance. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReviewSessionStartScreen(
     dueCount: Int,
+    aheadCount: Int,
     onStart: (Int?) -> Unit,
+    onStartAhead: () -> Unit,
     onFinishReview: () -> Unit
 ) {
     Scaffold(
@@ -147,10 +160,10 @@ private fun ReviewSessionStartScreen(
                 .padding(LearnSyncSpacing.xxl),
             contentAlignment = Alignment.Center
         ) {
-            if (dueCount == 0) {
+            if (dueCount == 0 && aheadCount == 0) {
                 EmptyState(
-                    title = "Rien à réviser !",
-                    description = "Aucune carte n'est due pour le moment. Reviens plus tard ou génère du contenu pour tes cours.",
+                    title = "Aucune carte à réviser",
+                    description = "Génère du contenu pour tes cours pour créer des flashcards, puis reviens ici.",
                     icon = Icons.Default.CheckCircle,
                     actionLabel = "Retour à l'accueil",
                     onActionClick = onFinishReview
@@ -186,32 +199,55 @@ private fun ReviewSessionStartScreen(
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "$dueCount carte${if (dueCount > 1) "s" else ""} à réviser",
+                                text = if (dueCount == 0) "Rien à réviser aujourd'hui" else "$dueCount carte${if (dueCount > 1) "s" else ""} à réviser",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Révision complète de tous tes cours, dans un ordre aléatoire.",
+                                text = if (dueCount == 0)
+                                    "Aucune carte n'est due pour le moment. Tu peux quand même réviser à l'avance."
+                                else
+                                    "Révision complète de tous tes cours, dans un ordre aléatoire.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
                             )
                         }
 
-                        LearnSyncButton(
-                            text = "Tout réviser ($dueCount)",
-                            icon = Icons.Default.PlayArrow,
-                            onClick = { onStart(null) },
-                            modifier = Modifier.fillMaxWidth().testTag("start_session_button")
-                        )
-
-                        if (dueCount > SESSION_TARGET_SIZE) {
-                            LearnSyncSecondaryButton(
-                                text = "Réviser $SESSION_TARGET_SIZE cartes",
-                                onClick = { onStart(SESSION_TARGET_SIZE) },
-                                modifier = Modifier.fillMaxWidth()
+                        if (dueCount > 0) {
+                            LearnSyncButton(
+                                text = "Tout réviser ($dueCount)",
+                                icon = Icons.Default.PlayArrow,
+                                onClick = { onStart(null) },
+                                modifier = Modifier.fillMaxWidth().testTag("start_session_button")
                             )
+
+                            if (dueCount > SESSION_TARGET_SIZE) {
+                                LearnSyncSecondaryButton(
+                                    text = "Réviser $SESSION_TARGET_SIZE cartes",
+                                    onClick = { onStart(SESSION_TARGET_SIZE) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
+                        // Révision anticipée : possible même quand rien n'est dû
+                        if (aheadCount > 0) {
+                            if (dueCount == 0) {
+                                LearnSyncButton(
+                                    text = "Réviser à l'avance ($aheadCount carte${if (aheadCount > 1) "s" else ""})",
+                                    icon = Icons.Default.FastForward,
+                                    onClick = onStartAhead,
+                                    modifier = Modifier.fillMaxWidth().testTag("start_ahead_button")
+                                )
+                            } else {
+                                LearnSyncSecondaryButton(
+                                    text = "Réviser à l'avance (+$aheadCount à venir)",
+                                    onClick = onStartAhead,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                 }
