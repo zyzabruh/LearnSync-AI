@@ -15,12 +15,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FlashcardEntity::class,
         QuizQuestionEntity::class,
         ReviewLogEntity::class,
+        ReviewSessionEntity::class,
         UserPreferencesEntity::class,
         CalendarEventEntity::class,
-        AiProfileEntity::class
+        AiProfileEntity::class,
+        TombstoneEntity::class
     ],
-    version = 10,
-    exportSchema = false
+    version = 11,
+    exportSchema = true
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
     abstract fun courseDao(): CourseDao
@@ -28,9 +30,11 @@ abstract class LearnSyncDatabase : RoomDatabase() {
     abstract fun flashcardDao(): FlashcardDao
     abstract fun quizQuestionDao(): QuizQuestionDao
     abstract fun reviewLogDao(): ReviewLogDao
+    abstract fun reviewSessionDao(): ReviewSessionDao
     abstract fun userPreferencesDao(): UserPreferencesDao
     abstract fun calendarEventDao(): CalendarEventDao
     abstract fun aiProfileDao(): AiProfileDao
+    abstract fun tombstoneDao(): TombstoneDao
 
     @Transaction
     open suspend fun replaceCourseContentAtomically(
@@ -43,12 +47,33 @@ abstract class LearnSyncDatabase : RoomDatabase() {
         // satisfont leur clé étrangère vers la ligne déjà à jour.
         courseDao().insertCourse(course)
 
+        // Report de l'état FSRS : une carte régénérée posant la même question
+        // (casse/espacements ignorés) reprend la stabilité, la difficulté et
+        // l'échéance de l'ancienne, au lieu de repartir de zéro. L'historique
+        // (review_logs) survit de toute façon : plus de FK CASCADE.
+        val previousByQuestion = flashcardDao()
+            .getFlashcardsForCourseSync(course.id)
+            .associateBy { normalizeQuestion(it.question) }
+        val withCarriedState = flashcards.map { card ->
+            val previous = previousByQuestion[normalizeQuestion(card.question)]
+            if (previous != null && previous.repetitions > 0) card.copy(
+                difficulty = previous.difficulty,
+                box = previous.box,
+                dueDate = previous.dueDate,
+                interval = previous.interval,
+                easeFactor = previous.easeFactor,
+                repetitions = previous.repetitions,
+                lapses = previous.lapses,
+                lastReviewedAt = previous.lastReviewedAt
+            ) else card
+        }
+
         studyMaterialDao().deleteMaterialsForCourse(course.id)
         flashcardDao().deleteFlashcardsForCourse(course.id)
         quizQuestionDao().deleteQuizQuestionsForCourse(course.id)
 
         studyMaterialDao().insertMaterial(material)
-        flashcardDao().insertFlashcards(flashcards)
+        flashcardDao().insertFlashcards(withCarriedState)
         quizQuestionDao().insertQuizQuestions(quizQuestions)
 
         android.util.Log.d("LearnSyncAI", "commit Room: courseId=${course.id}")
@@ -190,6 +215,64 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v11 : review_logs détaché des flashcards (plus de FK CASCADE →
+         * l'historique survit aux régénérations), colonne courseId backfillée
+         * depuis les flashcards existantes ; tables review_sessions et
+         * tombstones ajoutées.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `_new_review_logs` (
+                        `id` TEXT NOT NULL,
+                        `courseId` TEXT NOT NULL,
+                        `flashcardId` TEXT NOT NULL,
+                        `reviewedAt` INTEGER NOT NULL,
+                        `rating` INTEGER NOT NULL,
+                        `previousInterval` INTEGER NOT NULL,
+                        `newInterval` INTEGER NOT NULL,
+                        `responseTime` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO `_new_review_logs` (`id`, `courseId`, `flashcardId`, `reviewedAt`, `rating`, `previousInterval`, `newInterval`, `responseTime`)
+                    SELECT r.`id`, COALESCE(f.`courseId`, ''), r.`flashcardId`, r.`reviewedAt`, r.`rating`, r.`previousInterval`, r.`newInterval`, r.`responseTime`
+                    FROM `review_logs` r LEFT JOIN `flashcards` f ON r.`flashcardId` = f.`id`
+                """.trimIndent())
+                db.execSQL("DROP TABLE `review_logs`")
+                db.execSQL("ALTER TABLE `_new_review_logs` RENAME TO `review_logs`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_review_logs_flashcardId` ON `review_logs` (`flashcardId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_review_logs_courseId` ON `review_logs` (`courseId`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `review_sessions` (
+                        `id` TEXT NOT NULL,
+                        `courseId` TEXT,
+                        `startedAt` INTEGER NOT NULL,
+                        `endedAt` INTEGER,
+                        `cardsReviewed` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_review_sessions_courseId` ON `review_sessions` (`courseId`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `tombstones` (
+                        `entityType` TEXT NOT NULL,
+                        `entityId` TEXT NOT NULL,
+                        `deletedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`entityType`, `entityId`)
+                    )
+                """.trimIndent())
+            }
+        }
+
+        /** Clé de rapprochement des questions entre deux générations (casse/espacements ignorés). */
+        internal fun normalizeQuestion(question: String): String =
+            question.trim().lowercase().replace(Regex("\\s+"), " ")
+
         fun getDatabase(context: Context): LearnSyncDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -197,7 +280,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .build()
                 INSTANCE = instance
                 instance

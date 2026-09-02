@@ -160,18 +160,38 @@ class QuizRepositoryImpl(private val quizQuestionDao: QuizQuestionDao) : QuizRep
         quizQuestionDao.deleteQuizQuestionsForCourse(courseId)
 }
 
-class ReviewRepositoryImpl(private val reviewLogDao: ReviewLogDao) : ReviewRepository {
+class ReviewRepositoryImpl(
+    private val reviewLogDao: ReviewLogDao,
+    private val reviewSessionDao: ReviewSessionDao? = null
+) : ReviewRepository {
     override fun getAllReviewLogs(): Flow<List<ReviewLog>> =
         reviewLogDao.getAllReviewLogs().map { list -> list.map { it.toDomain() } }
 
     override fun getReviewLogsSince(startTime: Long): Flow<List<ReviewLog>> =
         reviewLogDao.getReviewLogsSince(startTime).map { list -> list.map { it.toDomain() } }
 
+    override fun getReviewLogsForCourse(courseId: String): Flow<List<ReviewLog>> =
+        reviewLogDao.getReviewLogsForCourse(courseId).map { list -> list.map { it.toDomain() } }
+
     override suspend fun logReview(log: ReviewLog) =
         reviewLogDao.insertReviewLog(log.toEntity())
 
     override suspend fun insertReviewLogs(logs: List<ReviewLog>) =
         reviewLogDao.insertReviewLogs(logs.map { it.toEntity() })
+
+    override fun getAllSessions(): Flow<List<ReviewSession>> =
+        (reviewSessionDao ?: throw IllegalStateException("reviewSessionDao requis pour les sessions"))
+            .getAllSessions().map { list -> list.map { it.toDomain() } }
+
+    override fun getSessionsSince(startTime: Long): Flow<List<ReviewSession>> =
+        (reviewSessionDao ?: throw IllegalStateException("reviewSessionDao requis pour les sessions"))
+            .getSessionsSince(startTime).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun insertSession(session: ReviewSession) =
+        reviewSessionDao?.insertSession(session.toEntity()) ?: Unit
+
+    override suspend fun updateSession(session: ReviewSession) =
+        reviewSessionDao?.updateSession(session.toEntity()) ?: Unit
 }
 
 class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : PreferencesRepository {
@@ -252,8 +272,11 @@ fun QuizQuestion.toEntity(): QuizQuestionEntity {
     return QuizQuestionEntity(id, courseId, question, options.joinToString("\u001F"), correctAnswer, explanation, difficulty)
 }
 
-fun ReviewLogEntity.toDomain() = ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
-fun ReviewLog.toEntity() = ReviewLogEntity(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
+fun ReviewLogEntity.toDomain() = ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime, courseId)
+fun ReviewLog.toEntity() = ReviewLogEntity(id, courseId, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
+
+fun ReviewSessionEntity.toDomain() = ReviewSession(id, courseId, startedAt, endedAt, cardsReviewed)
+fun ReviewSession.toEntity() = ReviewSessionEntity(id, courseId, startedAt, endedAt, cardsReviewed)
 
 fun UserPreferencesEntity.toDomain() = UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled)
 fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled)

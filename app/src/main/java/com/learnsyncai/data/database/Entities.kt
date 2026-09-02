@@ -94,26 +94,48 @@ data class QuizQuestionEntity(
     val difficulty: String
 )
 
+// Pas de clé étrangère vers flashcards : l'historique de révision doit
+// survivre à la suppression/régénération des cartes (streak et stats).
+// Le rattachement au cours via courseId reste indexé.
 @Entity(
     tableName = "review_logs",
-    foreignKeys = [
-        ForeignKey(
-            entity = FlashcardEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["flashcardId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    indices = [Index(value = ["flashcardId"])]
+    indices = [Index(value = ["flashcardId"]), Index(value = ["courseId"])]
 )
 data class ReviewLogEntity(
     @PrimaryKey val id: String,
+    val courseId: String,
     val flashcardId: String,
     val reviewedAt: Long,
     val rating: Int, // 1: Again, 2: Hard, 3: Good, 4: Easy
     val previousInterval: Int,
     val newInterval: Int,
     val responseTime: Long
+)
+
+// Une session de révision réelle (durée complète, cartes vues) : permet
+// des stats de temps d'étude fidèles et un historique calendrier.
+@Entity(
+    tableName = "review_sessions",
+    indices = [Index(value = ["courseId"])]
+)
+data class ReviewSessionEntity(
+    @PrimaryKey val id: String,
+    val courseId: String?, // null = session tous cours confondus
+    val startedAt: Long,
+    val endedAt: Long?,
+    val cardsReviewed: Int
+)
+
+// Mémorialise les suppressions locales pour les propager à Firestore
+// (sinon les entités supprimées reviennent en doublon à la sync suivante).
+@Entity(
+    tableName = "tombstones",
+    primaryKeys = ["entityType", "entityId"]
+)
+data class TombstoneEntity(
+    val entityType: String, // "COURSE", "FLASHCARD", "QUIZ_QUESTION", "STUDY_MATERIAL"
+    val entityId: String,
+    val deletedAt: Long
 )
 
 @Entity(tableName = "user_preferences")

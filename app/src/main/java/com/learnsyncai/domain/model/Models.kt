@@ -60,7 +60,19 @@ data class ReviewLog(
     val rating: Int,
     val previousInterval: Int,
     val newInterval: Int,
-    val responseTime: Long
+    val responseTime: Long,
+    // Cours d'origine de la carte notée : l'historique survit à la
+    // régénération/suppression des cartes, on le rattache donc au cours.
+    // "" = logs anciens (pré-v11) ou distants sans cette information.
+    val courseId: String = ""
+)
+
+data class ReviewSession(
+    val id: String,
+    val courseId: String?,
+    val startedAt: Long,
+    val endedAt: Long?,
+    val cardsReviewed: Int
 )
 
 data class UserPreferences(

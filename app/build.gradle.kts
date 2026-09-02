@@ -64,6 +64,11 @@ android {
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
+ksp {
+  // Historique de schéma Room : indispensable pour tester les futures migrations.
+  arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
@@ -119,6 +124,7 @@ dependencies {
   testImplementation("org.mockito:mockito-core:5.11.0")
   testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
   testImplementation(libs.robolectric)
+  testImplementation("androidx.room:room-testing:2.7.0")
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)

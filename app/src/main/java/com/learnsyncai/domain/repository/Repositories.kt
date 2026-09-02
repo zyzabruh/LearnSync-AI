@@ -61,8 +61,14 @@ interface QuizRepository {
 interface ReviewRepository {
     fun getAllReviewLogs(): Flow<List<ReviewLog>>
     fun getReviewLogsSince(startTime: Long): Flow<List<ReviewLog>>
+    fun getReviewLogsForCourse(courseId: String): Flow<List<ReviewLog>>
     suspend fun logReview(log: ReviewLog)
     suspend fun insertReviewLogs(logs: List<ReviewLog>)
+
+    fun getAllSessions(): Flow<List<ReviewSession>>
+    fun getSessionsSince(startTime: Long): Flow<List<ReviewSession>>
+    suspend fun insertSession(session: ReviewSession)
+    suspend fun updateSession(session: ReviewSession)
 }
 
 interface AiRepository {

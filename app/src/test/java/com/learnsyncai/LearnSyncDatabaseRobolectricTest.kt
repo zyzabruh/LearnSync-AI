@@ -222,5 +222,91 @@ class LearnSyncDatabaseRobolectricTest {
         quizDao.deleteQuizQuestionById("q-to-delete")
         assertEquals(0, quizDao.getQuizQuestionsForCourse(courseId).first().size)
     }
+
+    @Test
+    fun testReplaceCourseContentCarriesFsrsState() = runBlocking {
+        val courseId = "course-regen-test"
+        courseDao.insertCourse(CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 0L, 0f, "#000", "COMPLETED"))
+
+        // Carte déjà bien avancée dans FSRS (question avec casse/espacements irréguliers)
+        val reviewedCard = FlashcardEntity(
+            id = "old-card", courseId = courseId,
+            question = "  Complexité de   dijkstra ? ", answer = "O(E log V)", explanation = "",
+            difficulty = 4.2f, box = 3, dueDate = 123_456L, interval = 7, easeFactor = 2.6f,
+            repetitions = 4, lapses = 1, lastReviewedAt = 999L, createdAt = 0L
+        )
+        flashcardDao.insertFlashcard(reviewedCard)
+
+        val regenerated = listOf(
+            // Même question (casse/espacements différents) : doit reprendre l'état FSRS
+            FlashcardEntity(
+                id = "new-uuid-1", courseId = courseId,
+                question = "Complexité de Dijkstra ?", answer = "O(E log V)", explanation = "",
+                difficulty = 5.0f, box = 1, dueDate = System.currentTimeMillis(), interval = 0,
+                easeFactor = 1.0f, repetitions = 0, lapses = 0, lastReviewedAt = null, createdAt = 1L
+            ),
+            // Question inédite : doit rester aux valeurs par défaut
+            FlashcardEntity(
+                id = "new-uuid-2", courseId = courseId,
+                question = "Question toute nouvelle", answer = "Réponse", explanation = "",
+                difficulty = 5.0f, box = 1, dueDate = System.currentTimeMillis(), interval = 0,
+                easeFactor = 1.0f, repetitions = 0, lapses = 0, lastReviewedAt = null, createdAt = 1L
+            )
+        )
+        val material = StudyMaterialEntity("mat-regen", courseId, "S", "", "", 1L, 2)
+
+        db.replaceCourseContentAtomically(
+            CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 1L, 100f, "#000", "COMPLETED"),
+            material, regenerated, emptyList()
+        )
+
+        val cards = flashcardDao.getFlashcardsForCourseSync(courseId)
+        assertEquals(2, cards.size)
+
+        val carried = cards.first { it.id == "new-uuid-1" }
+        assertEquals(4.2f, carried.difficulty)
+        assertEquals(3, carried.box)
+        assertEquals(123_456L, carried.dueDate)
+        assertEquals(7, carried.interval)
+        assertEquals(2.6f, carried.easeFactor)
+        assertEquals(4, carried.repetitions)
+        assertEquals(1, carried.lapses)
+        assertEquals(999L, carried.lastReviewedAt)
+
+        val fresh = cards.first { it.id == "new-uuid-2" }
+        assertEquals(0, fresh.repetitions)
+        assertEquals(5.0f, fresh.difficulty)
+    }
+
+    @Test
+    fun testReviewLogsSurviveFlashcardDeletionAndRegeneration() = runBlocking {
+        val courseId = "course-logs-test"
+        courseDao.insertCourse(CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 0L, 0f, "#000", "COMPLETED"))
+        flashcardDao.insertFlashcard(
+            FlashcardEntity("c-1", courseId, "Q", "A", "E", 5f, 1, 0L, 1, 2.5f, 2, 0, 500L, 0L)
+        )
+        val reviewDao = db.reviewLogDao()
+        reviewDao.insertReviewLog(
+            ReviewLogEntity("log-1", courseId, "c-1", 1000L, 3, 1, 6, 500L)
+        )
+
+        // Suppression directe d'une carte : le log doit rester (plus de FK CASCADE)
+        flashcardDao.deleteFlashcardById("c-1")
+        assertEquals(1, reviewDao.getAllReviewLogs().first().size)
+
+        // Régénération complète du cours : le log doit toujours rester
+        db.replaceCourseContentAtomically(
+            CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 1L, 100f, "#000", "COMPLETED"),
+            StudyMaterialEntity("mat-logs", courseId, "S", "", "", 1L, 2),
+            listOf(
+                FlashcardEntity("c-regen", courseId, "Q régénérée", "A", "E", 5f, 1, 0L, 1, 2.5f, 0, 0, null, 1L)
+            ),
+            emptyList()
+        )
+        val logs = reviewDao.getAllReviewLogs().first()
+        assertEquals(1, logs.size)
+        assertEquals(courseId, logs.first().courseId)
+        assertEquals(1, flashcardDao.getFlashcardsForCourseSync(courseId).size)
+    }
 }
 

@@ -49,7 +49,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     private val studyMaterialRepo = StudyMaterialRepositoryImpl(db.studyMaterialDao())
     private val flashcardRepo = FlashcardRepositoryImpl(db.flashcardDao())
     private val quizRepo = QuizRepositoryImpl(db.quizQuestionDao())
-    private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao())
+    private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao(), db.reviewSessionDao())
     private val prefsRepo = PreferencesRepositoryImpl(db.userPreferencesDao())
     private val calendarRepo = CalendarEventRepositoryImpl(db.calendarEventDao())
     private val aiProfileRepo = AiProfileRepositoryImpl(db.aiProfileDao())
@@ -610,6 +610,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             val log = ReviewLog(
                 id = UUID.randomUUID().toString(),
                 flashcardId = card.id,
+                courseId = card.courseId,
                 reviewedAt = System.currentTimeMillis(),
                 rating = rating,
                 previousInterval = card.interval,

@@ -55,6 +55,9 @@ interface FlashcardDao {
     @Query("SELECT * FROM flashcards WHERE courseId = :courseId")
     fun getFlashcardsForCourse(courseId: String): Flow<List<FlashcardEntity>>
 
+    @Query("SELECT * FROM flashcards WHERE courseId = :courseId")
+    suspend fun getFlashcardsForCourseSync(courseId: String): List<FlashcardEntity>
+
     @Query("SELECT * FROM flashcards WHERE dueDate <= :currentTime")
     fun getDueFlashcards(currentTime: Long): Flow<List<FlashcardEntity>>
 
@@ -109,11 +112,50 @@ interface ReviewLogDao {
     @Query("SELECT * FROM review_logs WHERE reviewedAt >= :startTime")
     fun getReviewLogsSince(startTime: Long): Flow<List<ReviewLogEntity>>
 
+    @Query("SELECT * FROM review_logs WHERE courseId = :courseId ORDER BY reviewedAt DESC")
+    fun getReviewLogsForCourse(courseId: String): Flow<List<ReviewLogEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReviewLog(log: ReviewLogEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReviewLogs(logs: List<ReviewLogEntity>)
+}
+
+@Dao
+interface ReviewSessionDao {
+    @Query("SELECT * FROM review_sessions ORDER BY startedAt DESC")
+    fun getAllSessions(): Flow<List<ReviewSessionEntity>>
+
+    @Query("SELECT * FROM review_sessions WHERE startedAt >= :startTime ORDER BY startedAt DESC")
+    fun getSessionsSince(startTime: Long): Flow<List<ReviewSessionEntity>>
+
+    @Query("SELECT * FROM review_sessions WHERE id = :id LIMIT 1")
+    suspend fun getSessionById(id: String): ReviewSessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSession(session: ReviewSessionEntity)
+
+    @Update
+    suspend fun updateSession(session: ReviewSessionEntity)
+}
+
+@Dao
+interface TombstoneDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTombstone(tombstone: TombstoneEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTombstones(tombstones: List<TombstoneEntity>)
+
+    @Query("SELECT * FROM tombstones")
+    suspend fun getAllTombstones(): List<TombstoneEntity>
+
+    @Query("SELECT entityId FROM tombstones WHERE entityType = :entityType")
+    suspend fun getTombstonedIds(entityType: String): List<String>
+
+    @Query("DELETE FROM tombstones WHERE entityType = :entityType AND entityId IN (:entityIds)")
+    suspend fun clearTombstones(entityType: String, entityIds: List<String>)
 }
 
 @Dao
