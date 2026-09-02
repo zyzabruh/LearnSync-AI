@@ -35,6 +35,7 @@ interface StudyMaterialRepository {
     suspend fun insertMaterial(material: StudyMaterial)
     suspend fun insertMaterials(materials: List<StudyMaterial>)
     suspend fun deleteMaterialsForCourse(courseId: String)
+    suspend fun deleteMaterialById(materialId: String)
 }
 
 interface FlashcardRepository {
@@ -107,5 +108,12 @@ interface AiProfileRepository {
     suspend fun updateProfile(profile: AiProfile)
     suspend fun deleteProfile(profileId: String)
     suspend fun setActiveProfile(profileId: String)
+}
+
+interface TombstoneRepository {
+    suspend fun record(entityType: String, entityId: String)
+    suspend fun recordAll(tombstones: List<Tombstone>)
+    suspend fun getAll(): List<Tombstone>
+    suspend fun getIds(entityType: String): List<String>
 }
 

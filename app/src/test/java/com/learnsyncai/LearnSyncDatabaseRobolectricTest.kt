@@ -308,5 +308,40 @@ class LearnSyncDatabaseRobolectricTest {
         assertEquals(courseId, logs.first().courseId)
         assertEquals(1, flashcardDao.getFlashcardsForCourseSync(courseId).size)
     }
+
+    @Test
+    fun testDeletionsRecordTombstones() = runBlocking {
+        val tombstoneDao = db.tombstoneDao()
+        val courseId = "course-tomb-test"
+        courseDao.insertCourse(CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 0L, 0f, "#000", "COMPLETED"))
+        materialDao.insertMaterial(StudyMaterialEntity("mat-t1", courseId, "S", "", "", 1L, 1))
+        flashcardDao.insertFlashcard(FlashcardEntity("c-t1", courseId, "Q", "A", "E", 5f, 1, 0L, 1, 2.5f, 0, 0, null, 0L))
+        quizDao.insertQuizQuestion(QuizQuestionEntity("q-t1", courseId, "Q ?", "A\u001FB\u001FC\u001FD", "A", "", "easy"))
+
+        // Suppression du cours : tombstones pour le cours ET tout son contenu
+        db.deleteCourseAtomically(courseId)
+        val allTombstones = tombstoneDao.getAllTombstones()
+        val types = allTombstones.associate { it.entityId to it.entityType }
+        assertEquals("COURSE", types[courseId])
+        assertEquals("STUDY_MATERIAL", types["mat-t1"])
+        assertEquals("FLASHCARD", types["c-t1"])
+        assertEquals("QUIZ_QUESTION", types["q-t1"])
+
+        // Régénération : l'ancien contenu part en tombstone, le nouveau pas
+        courseDao.insertCourse(CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 1L, 0f, "#000", "COMPLETED"))
+        flashcardDao.insertFlashcard(FlashcardEntity("c-t2", courseId, "Q2", "A", "E", 5f, 1, 0L, 1, 2.5f, 0, 0, null, 1L))
+        db.replaceCourseContentAtomically(
+            CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 2L, 100f, "#000", "COMPLETED"),
+            StudyMaterialEntity("mat-t2", courseId, "S", "", "", 2L, 1),
+            listOf(FlashcardEntity("c-t3", courseId, "Q3", "A", "E", 5f, 1, 0L, 1, 2.5f, 0, 0, null, 2L)),
+            emptyList()
+        )
+        val flashcardTombs = tombstoneDao.getTombstonedIds("FLASHCARD")
+        assertTrue(flashcardTombs.contains("c-t2"))
+        assertTrue(flashcardTombs.contains("c-t1")) // du test précédent, conservé
+        assertFalse(flashcardTombs.contains("c-t3")) // la nouvelle carte est vivante
+        val materialTombs = tombstoneDao.getTombstonedIds("STUDY_MATERIAL")
+        assertFalse(materialTombs.contains("mat-t2")) // la nouvelle matière est vivante
+    }
 }
 

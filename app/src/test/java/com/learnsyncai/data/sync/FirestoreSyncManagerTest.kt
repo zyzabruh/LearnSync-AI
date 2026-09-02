@@ -1,6 +1,7 @@
 package com.learnsyncai.data.sync
 
 import com.learnsyncai.domain.model.Course
+import com.learnsyncai.domain.model.Tombstone
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -13,10 +14,24 @@ import org.robolectric.annotation.Config
 class FirestoreSyncManagerTest {
 
     @Test
-    fun testUnauthenticatedDeleteGracefullySucceedsLocally() = runBlocking {
+    fun testUnauthenticatedFetchDeletedIdsReturnsFailure() = runBlocking {
         val syncManager = FirestoreSyncManager(customFirestore = null, customAuth = null)
-        val result = syncManager.deleteCourseInCloud("course-123")
-        // Should succeed gracefully so local deletion is never blocked when not signed in
+        val result = syncManager.fetchRemoteDeletedIds()
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun testUnauthenticatedMarkDeletedReturnsFailure() = runBlocking {
+        val syncManager = FirestoreSyncManager(customFirestore = null, customAuth = null)
+        val result = syncManager.markDeletedInCloud(listOf(Tombstone(Tombstone.TYPE_COURSE, "course-123")))
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun testMarkDeletedWithEmptyListSucceedsWithoutFirebase() = runBlocking {
+        val syncManager = FirestoreSyncManager(customFirestore = null, customAuth = null)
+        // Aucun tombstone : rien à propager, succès immédiat sans toucher à Firebase
+        val result = syncManager.markDeletedInCloud(emptyList())
         assertTrue(result.isSuccess)
     }
 

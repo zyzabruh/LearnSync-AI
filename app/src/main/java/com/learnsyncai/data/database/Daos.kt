@@ -31,6 +31,9 @@ interface StudyMaterialDao {
     @Query("SELECT * FROM study_materials WHERE courseId = :courseId ORDER BY version DESC")
     fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterialEntity>>
 
+    @Query("SELECT id FROM study_materials WHERE courseId = :courseId")
+    suspend fun getMaterialIdsForCourse(courseId: String): List<String>
+
     @Query("SELECT * FROM study_materials ORDER BY generatedAt DESC")
     fun getAllMaterials(): Flow<List<StudyMaterialEntity>>
 
@@ -48,6 +51,9 @@ interface StudyMaterialDao {
 
     @Query("DELETE FROM study_materials WHERE courseId = :courseId")
     suspend fun deleteMaterialsForCourse(courseId: String)
+
+    @Query("DELETE FROM study_materials WHERE id = :materialId")
+    suspend fun deleteMaterialById(materialId: String)
 }
 
 @Dao
@@ -87,6 +93,9 @@ interface FlashcardDao {
 interface QuizQuestionDao {
     @Query("SELECT * FROM quiz_questions WHERE courseId = :courseId")
     fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestionEntity>>
+
+    @Query("SELECT id FROM quiz_questions WHERE courseId = :courseId")
+    suspend fun getQuizQuestionIdsForCourse(courseId: String): List<String>
 
     @Query("SELECT * FROM quiz_questions")
     fun getAllQuizQuestions(): Flow<List<QuizQuestionEntity>>
@@ -153,9 +162,6 @@ interface TombstoneDao {
 
     @Query("SELECT entityId FROM tombstones WHERE entityType = :entityType")
     suspend fun getTombstonedIds(entityType: String): List<String>
-
-    @Query("DELETE FROM tombstones WHERE entityType = :entityType AND entityId IN (:entityIds)")
-    suspend fun clearTombstones(entityType: String, entityIds: List<String>)
 }
 
 @Dao

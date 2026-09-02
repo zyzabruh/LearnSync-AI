@@ -13,6 +13,11 @@ import org.json.JSONArray
 /**
  * Note: calendar_events are intentionally excluded from cloud synchronization and remain
  * local-only, managed exclusively via CalendarHelper and the Android system calendar contract.
+ *
+ * Les suppressions sont propagées en marqueur `deletedAt` (soft delete) plutôt
+ * qu'en hard delete : un document effacé de Firestore serait ré-uploade par les
+ * autres appareils qui l'ont encore en local ; un document marqué est ignoré
+ * par la sync descendante et déclenche la suppression locale correspondante.
  */
 class FirestoreSyncManager(
     private val customFirestore: FirebaseFirestore? = null,
@@ -210,6 +215,7 @@ class FirestoreSyncManager(
                     val map = hashMapOf(
                         "id" to log.id,
                         "flashcardId" to log.flashcardId,
+                        "courseId" to log.courseId,
                         "reviewedAt" to log.reviewedAt,
                         "rating" to log.rating,
                         "previousInterval" to log.previousInterval,
@@ -259,6 +265,8 @@ class FirestoreSyncManager(
             val snapshot = fs.collection("users").document(uid).collection("courses").get().await()
             val courses = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
+                // Soft delete : les documents marqués sont exclus de la sync descendante.
+                if ((doc.getLong("deletedAt") ?: 0L) > 0L) return@mapNotNull null
                 val title = doc.getString("title") ?: return@mapNotNull null
                 val description = doc.getString("description") ?: ""
                 val sourceFileName = doc.getString("sourceFileName") ?: ""
@@ -286,6 +294,8 @@ class FirestoreSyncManager(
             val snapshot = fs.collection("users").document(uid).collection("study_materials").get().await()
             val materials = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
+                // Soft delete : les documents marqués sont exclus de la sync descendante.
+                if ((doc.getLong("deletedAt") ?: 0L) > 0L) return@mapNotNull null
                 val courseId = doc.getString("courseId") ?: return@mapNotNull null
                 val summary = doc.getString("summary") ?: ""
                 @Suppress("UNCHECKED_CAST")
@@ -310,6 +320,8 @@ class FirestoreSyncManager(
             val snapshot = fs.collection("users").document(uid).collection("flashcards").get().await()
             val flashcards = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
+                // Soft delete : les documents marqués sont exclus de la sync descendante.
+                if ((doc.getLong("deletedAt") ?: 0L) > 0L) return@mapNotNull null
                 val courseId = doc.getString("courseId") ?: return@mapNotNull null
                 val question = doc.getString("question") ?: ""
                 val answer = doc.getString("answer") ?: ""
@@ -339,6 +351,8 @@ class FirestoreSyncManager(
             val snapshot = fs.collection("users").document(uid).collection("quiz_questions").get().await()
             val questions = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
+                // Soft delete : les documents marqués sont exclus de la sync descendante.
+                if ((doc.getLong("deletedAt") ?: 0L) > 0L) return@mapNotNull null
                 val courseId = doc.getString("courseId") ?: return@mapNotNull null
                 val question = doc.getString("question") ?: ""
                 @Suppress("UNCHECKED_CAST")
@@ -363,13 +377,14 @@ class FirestoreSyncManager(
             val logs = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
                 val flashcardId = doc.getString("flashcardId") ?: return@mapNotNull null
+                val courseId = doc.getString("courseId") ?: ""
                 val reviewedAt = doc.getLong("reviewedAt") ?: System.currentTimeMillis()
                 val rating = doc.getLong("rating")?.toInt() ?: 3
                 val previousInterval = doc.getLong("previousInterval")?.toInt() ?: 0
                 val newInterval = doc.getLong("newInterval")?.toInt() ?: 1
                 val responseTime = doc.getLong("responseTime") ?: 0L
 
-                ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime)
+                ReviewLog(id, flashcardId, reviewedAt, rating, previousInterval, newInterval, responseTime, courseId)
             }
             Result.success(logs)
         } catch (e: Exception) {
@@ -410,65 +425,68 @@ class FirestoreSyncManager(
         }
     }
 
-    suspend fun deleteCourseInCloud(courseId: String): Result<Unit> {
-        // Note: calendar_events are intentionally NOT synchronized to Firestore,
-        // as they are managed exclusively locally via CalendarHelper and the Android system calendar contract.
-        val fs = firestore ?: return Result.success(Unit)
-        val uid = getCurrentUserId() ?: return Result.success(Unit)
+    /**
+     * Identifiants des documents supprimés sur le cloud (marqueur deletedAt),
+     * par type d'entité : la sync descendante s'en sert pour répliquer la
+     * suppression en local (et y enregistrer les tombstones correspondants).
+     */
+    suspend fun fetchRemoteDeletedIds(): Result<Map<String, List<String>>> {
+        val fs = firestore ?: return Result.failure(IllegalStateException("Firebase Firestore non configuré."))
+        val uid = getCurrentUserId() ?: return Result.failure(IllegalStateException("Non authentifié."))
         return try {
-            val batch = fs.batch()
-            val userDoc = fs.collection("users").document(uid)
-
-            // 1. Supprimer le cours
-            batch.delete(userDoc.collection("courses").document(courseId))
-
-            // 2. Supprimer les study_materials du cours
-            val studyMaterialsSnapshot = userDoc.collection("study_materials")
-                .whereEqualTo("courseId", courseId)
-                .get()
-                .await()
-
-            for (doc in studyMaterialsSnapshot.documents) {
-                batch.delete(doc.reference)
-            }
-
-            // 3. Supprimer les quiz_questions du cours
-            val quizSnapshot = userDoc.collection("quiz_questions")
-                .whereEqualTo("courseId", courseId)
-                .get()
-                .await()
-
-            for (doc in quizSnapshot.documents) {
-                batch.delete(doc.reference)
-            }
-
-            // 4. Récupérer et supprimer les flashcards du cours
-            val flashcardsSnapshot = userDoc.collection("flashcards")
-                .whereEqualTo("courseId", courseId)
-                .get()
-                .await()
-
-            val flashcardIds = mutableListOf<String>()
-            for (doc in flashcardsSnapshot.documents) {
-                batch.delete(doc.reference)
-                val fid = doc.getString("id") ?: doc.id
-                flashcardIds.add(fid)
-            }
-
-            // 5. Supprimer les review_logs liés aux flashcards (par chunks de 10 pour whereIn)
-            if (flashcardIds.isNotEmpty()) {
-                for (chunk in flashcardIds.chunked(10)) {
-                    val reviewLogsSnapshot = userDoc.collection("review_logs")
-                        .whereIn("flashcardId", chunk)
-                        .get()
-                        .await()
-                    for (doc in reviewLogsSnapshot.documents) {
-                        batch.delete(doc.reference)
-                    }
+            val collections = mapOf(
+                Tombstone.TYPE_COURSE to "courses",
+                Tombstone.TYPE_STUDY_MATERIAL to "study_materials",
+                Tombstone.TYPE_FLASHCARD to "flashcards",
+                Tombstone.TYPE_QUIZ_QUESTION to "quiz_questions"
+            )
+            val deleted = mutableMapOf<String, List<String>>()
+            for ((type, collection) in collections) {
+                val snapshot = fs.collection("users").document(uid)
+                    .collection(collection)
+                    .whereGreaterThan("deletedAt", 0L)
+                    .get()
+                    .await()
+                deleted[type] = snapshot.documents.mapNotNull { doc ->
+                    doc.getString("id") ?: doc.id
                 }
             }
+            Result.success(deleted)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
-            batch.commit().await()
+    /**
+     * Applique les tombstones locaux sur Firestore en marqueur deletedAt
+     * (soft delete) : idempotent, et perceptible par tous les appareils.
+     */
+    suspend fun markDeletedInCloud(tombstones: List<Tombstone>): Result<Unit> {
+        // Rien à propager : succès immédiat, sans exiger Firebase.
+        if (tombstones.isEmpty()) return Result.success(Unit)
+        val fs = firestore ?: return Result.failure(
+            IllegalStateException("Firebase Firestore n'est pas configuré.")
+        )
+        val uid = getCurrentUserId() ?: return Result.failure(
+            IllegalStateException("Veuillez vous connecter pour propager vos suppressions.")
+        )
+        return try {
+            val collections = mapOf(
+                Tombstone.TYPE_COURSE to "courses",
+                Tombstone.TYPE_STUDY_MATERIAL to "study_materials",
+                Tombstone.TYPE_FLASHCARD to "flashcards",
+                Tombstone.TYPE_QUIZ_QUESTION to "quiz_questions"
+            )
+            for (chunk in tombstones.chunked(400)) {
+                val batch = fs.batch()
+                for (tombstone in chunk) {
+                    val collection = collections[tombstone.entityType] ?: continue
+                    val docRef = fs.collection("users").document(uid)
+                        .collection(collection).document(tombstone.entityId)
+                    batch.set(docRef, mapOf("id" to tombstone.entityId, "deletedAt" to tombstone.deletedAt), SetOptions.merge())
+                }
+                batch.commit().await()
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

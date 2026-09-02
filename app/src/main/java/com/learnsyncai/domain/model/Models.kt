@@ -145,4 +145,23 @@ data class AiProfile(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+/**
+ * Mémorialise une suppression locale pour la propager à Firestore : sans lui,
+ * une entité supprimée localement est réinsérée à la sync suivante (doublon).
+ * Les tombstones sont conservés indéfiniment : ils servent aussi de filtre
+ * anti-résurrection à chaque sync descendante.
+ */
+data class Tombstone(
+    val entityType: String,
+    val entityId: String,
+    val deletedAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        const val TYPE_COURSE = "COURSE"
+        const val TYPE_STUDY_MATERIAL = "STUDY_MATERIAL"
+        const val TYPE_FLASHCARD = "FLASHCARD"
+        const val TYPE_QUIZ_QUESTION = "QUIZ_QUESTION"
+    }
+}
+
 

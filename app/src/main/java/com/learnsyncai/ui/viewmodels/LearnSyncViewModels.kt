@@ -46,13 +46,14 @@ data class LocalModelInfo(
 class LearnSyncViewModel(application: Application) : AndroidViewModel(application) {
     private val db = LearnSyncDatabase.getDatabase(application)
     private val courseRepo = CourseRepositoryImpl(db.courseDao(), db)
-    private val studyMaterialRepo = StudyMaterialRepositoryImpl(db.studyMaterialDao())
-    private val flashcardRepo = FlashcardRepositoryImpl(db.flashcardDao())
-    private val quizRepo = QuizRepositoryImpl(db.quizQuestionDao())
+    private val studyMaterialRepo = StudyMaterialRepositoryImpl(db.studyMaterialDao(), db.tombstoneDao())
+    private val flashcardRepo = FlashcardRepositoryImpl(db.flashcardDao(), db.tombstoneDao())
+    private val quizRepo = QuizRepositoryImpl(db.quizQuestionDao(), db.tombstoneDao())
     private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao(), db.reviewSessionDao())
     private val prefsRepo = PreferencesRepositoryImpl(db.userPreferencesDao())
     private val calendarRepo = CalendarEventRepositoryImpl(db.calendarEventDao())
     private val aiProfileRepo = AiProfileRepositoryImpl(db.aiProfileDao())
+    private val tombstoneRepo = TombstoneRepositoryImpl(db.tombstoneDao())
     private val openAiClient = com.learnsyncai.data.ai.OpenAiCompatibleClient()
     private val localLlmClient = com.learnsyncai.data.ai.LocalLlmClient(application)
     private val aiRepo = AiRepositoryImpl(
@@ -670,12 +671,19 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 // 1. Delete local extracted text file
                 courseContentStorage.deleteExtractedText(courseId)
-                // 2. Cascading delete handles sub-entities in Room
+                // 2. Cascading delete + tombstones (cours et contenus enfants)
                 courseRepo.deleteCourse(courseId)
-                // 3. Clean up in cloud replica and storage
+                // 3. Propage les suppressions vers le cloud en marqueurs deletedAt
+                //    et nettoie les fichiers sources dans Storage (best effort).
                 launch {
-                    firestoreSyncManager.deleteCourseInCloud(courseId)
-                    firestoreSyncManager.deleteCourseFiles(courseId)
+                    val markResult = firestoreSyncManager.markDeletedInCloud(tombstoneRepo.getAll())
+                    if (markResult.isFailure) {
+                        android.util.Log.w("LearnSyncAI", "Propagation cloud des suppressions différée : ${markResult.exceptionOrNull()?.message}")
+                    }
+                    val filesResult = firestoreSyncManager.deleteCourseFiles(courseId)
+                    if (filesResult.isFailure) {
+                        android.util.Log.w("LearnSyncAI", "Nettoyage Storage échoué : ${filesResult.exceptionOrNull()?.message}")
+                    }
                 }
                 _uiState.value = UiState.Success("Cours supprimé avec succès.")
             } catch (e: Exception) {
@@ -721,14 +729,40 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _uiState.value = UiState.Loading("Synchronisation complète avec Firebase...")
             try {
-                val currentCourses = courses.value
-                val currentFlashcards = allFlashcards.value
-                val currentLogs = reviewLogs.value
+                // 0. Tombstones locaux : propagés vers le cloud, et filtre
+                // anti-résurrection pour la sync descendante.
+                var localTombstones = tombstoneRepo.getAll()
+
+                // 1. DOWN : appliquer d'abord les suppressions distantes en local
+                // (chaque suppression enregistre son tombstone, donc se repropage).
+                val remoteDeleted = firestoreSyncManager.fetchRemoteDeletedIds()
+                    .getOrDefault(emptyMap())
+                val remoteDeletionsApplied = remoteDeleted.values.any { it.isNotEmpty() }
+                for (courseId in remoteDeleted[Tombstone.TYPE_COURSE].orEmpty()) {
+                    courseRepo.deleteCourse(courseId)
+                }
+                for (materialId in remoteDeleted[Tombstone.TYPE_STUDY_MATERIAL].orEmpty()) {
+                    studyMaterialRepo.deleteMaterialById(materialId)
+                }
+                for (cardId in remoteDeleted[Tombstone.TYPE_FLASHCARD].orEmpty()) {
+                    flashcardRepo.deleteFlashcard(cardId)
+                }
+                for (quizId in remoteDeleted[Tombstone.TYPE_QUIZ_QUESTION].orEmpty()) {
+                    quizRepo.deleteQuizQuestion(quizId)
+                }
+                if (remoteDeletionsApplied) {
+                    localTombstones = tombstoneRepo.getAll()
+                }
+
+                // 2. État local frais (les StateFlow UI peuvent ne pas avoir
+                // encore ré-émis après les suppressions ci-dessus).
+                val currentCourses = courseRepo.getAllCourses().firstOrNull() ?: emptyList()
+                val currentFlashcards = flashcardRepo.getAllFlashcards().firstOrNull() ?: emptyList()
+                val currentLogs = reviewRepo.getAllReviewLogs().firstOrNull() ?: emptyList()
                 val currentMaterials = studyMaterialRepo.getAllMaterials().firstOrNull() ?: emptyList()
                 val currentQuizQuestions = quizRepo.getAllQuizQuestions().firstOrNull() ?: emptyList()
-                val currentPrefs = prefsRepo.getPreferencesSync()
 
-                // 1. Fetch remote data (DOWN)
+                // 3. Fetch remote data (DOWN) — les docs marqués deletedAt sont exclus
                 val remoteCoursesResult = firestoreSyncManager.fetchRemoteCourses()
                 val remoteMaterialsResult = firestoreSyncManager.fetchRemoteMaterials()
                 val remoteCardsResult = firestoreSyncManager.fetchRemoteFlashcards()
@@ -736,7 +770,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 val remoteLogsResult = firestoreSyncManager.fetchRemoteReviewLogs()
                 val remotePrefsResult = firestoreSyncManager.fetchRemotePreferences()
 
-                // 2. Reconcile Courses with timestamp conflict resolution
+                // 4. Reconcile Courses with timestamp conflict resolution
                 val localCourseMap = currentCourses.associateBy { it.id }.toMutableMap()
                 for (remote in remoteCoursesResult.getOrDefault(emptyList())) {
                     val local = localCourseMap[remote.id]
@@ -747,7 +781,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                // 3. Reconcile StudyMaterials
+                // 5. Reconcile StudyMaterials
                 val localMaterialMap = currentMaterials.associateBy { it.id }.toMutableMap()
                 for (remote in remoteMaterialsResult.getOrDefault(emptyList())) {
                     val local = localMaterialMap[remote.id]
@@ -757,7 +791,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                // 4. Reconcile Flashcards
+                // 6. Reconcile Flashcards
                 val localCardMap = currentFlashcards.associateBy { it.id }.toMutableMap()
                 for (remote in remoteCardsResult.getOrDefault(emptyList())) {
                     val local = localCardMap[remote.id]
@@ -769,7 +803,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                // 5. Reconcile Quiz Questions
+                // 7. Reconcile Quiz Questions
                 val localQuizMap = currentQuizQuestions.associateBy { it.id }.toMutableMap()
                 val newQuizQuestions = remoteQuizResult.getOrDefault(emptyList()).filter { it.id !in localQuizMap }
                 if (newQuizQuestions.isNotEmpty()) {
@@ -777,32 +811,38 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     localQuizMap.putAll(newQuizQuestions.associateBy { it.id })
                 }
 
-                // 6. Reconcile Review Logs
+                // 8. Reconcile Review Logs — en filtrant les logs de cartes/cours
+                // supprimés (sans quoi ils reviendraient à chaque sync).
+                val tombstonedCardIds = localTombstones.filter { it.entityType == Tombstone.TYPE_FLASHCARD }.map { it.entityId }.toSet()
+                val tombstonedCourseIds = localTombstones.filter { it.entityType == Tombstone.TYPE_COURSE }.map { it.entityId }.toSet()
                 val localLogMap = currentLogs.associateBy { it.id }.toMutableMap()
-                val newReviewLogs = remoteLogsResult.getOrDefault(emptyList()).filter { it.id !in localLogMap }
+                val newReviewLogs = remoteLogsResult.getOrDefault(emptyList())
+                    .filter { it.id !in localLogMap }
+                    .filter { it.flashcardId !in tombstonedCardIds && it.courseId !in tombstonedCourseIds }
                 if (newReviewLogs.isNotEmpty()) {
                     reviewRepo.insertReviewLogs(newReviewLogs)
                     localLogMap.putAll(newReviewLogs.associateBy { it.id })
                 }
 
-                // 7. Reconcile User Preferences (keeping local AI config intact!)
+                // 9. Reconcile User Preferences (keeping local AI config intact!)
+                //    et mémorise le résultat fusionné : c'est LUI qu'on upload,
+                //    sinon le cloud est écrasé par les anciennes valeurs.
+                var mergedPrefs = prefsRepo.getPreferencesSync()
                 if (remotePrefsResult.isSuccess) {
                     val remotePrefs = remotePrefsResult.getOrNull()
                     if (remotePrefs != null) {
-                        val currentLocalPrefs = prefsRepo.getPreferencesSync()
-                        prefsRepo.updatePreferences(
-                            currentLocalPrefs.copy(
-                                notificationsEnabled = remotePrefs.notificationsEnabled,
-                                dailyGoal = remotePrefs.dailyGoal,
-                                reminderTime = remotePrefs.reminderTime,
-                                theme = remotePrefs.theme,
-                                language = remotePrefs.language
-                            )
+                        mergedPrefs = mergedPrefs.copy(
+                            notificationsEnabled = remotePrefs.notificationsEnabled,
+                            dailyGoal = remotePrefs.dailyGoal,
+                            reminderTime = remotePrefs.reminderTime,
+                            theme = remotePrefs.theme,
+                            language = remotePrefs.language
                         )
+                        prefsRepo.updatePreferences(mergedPrefs)
                     }
                 }
 
-                // 8. Sync Up newest combined state to Firestore (UP)
+                // 10. Sync Up newest combined state to Firestore (UP)
                 val upCourses = localCourseMap.values.toList()
                 val upMaterials = localMaterialMap.values.toList()
                 val upCards = localCardMap.values.toList()
@@ -814,12 +854,13 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 val res3 = firestoreSyncManager.syncUpFlashcards(upCards)
                 val res4 = firestoreSyncManager.syncUpQuizQuestions(upQuiz)
                 val res5 = firestoreSyncManager.syncUpReviewLogs(upLogs)
-                val res6 = firestoreSyncManager.syncUpPreferences(currentPrefs)
+                val res6 = firestoreSyncManager.syncUpPreferences(mergedPrefs)
+                val res7 = firestoreSyncManager.markDeletedInCloud(localTombstones)
 
-                if (res1.isSuccess && res2.isSuccess && res3.isSuccess && res4.isSuccess && res5.isSuccess && res6.isSuccess) {
+                if (res1.isSuccess && res2.isSuccess && res3.isSuccess && res4.isSuccess && res5.isSuccess && res6.isSuccess && res7.isSuccess) {
                     _uiState.value = UiState.Success("Synchronisation bidirectionnelle terminée avec succès (${upCourses.size} cours, ${upCards.size} flashcards) !")
                 } else {
-                    val error = res1.exceptionOrNull() ?: res2.exceptionOrNull() ?: res3.exceptionOrNull() ?: res4.exceptionOrNull() ?: res5.exceptionOrNull() ?: res6.exceptionOrNull()
+                    val error = res1.exceptionOrNull() ?: res2.exceptionOrNull() ?: res3.exceptionOrNull() ?: res4.exceptionOrNull() ?: res5.exceptionOrNull() ?: res6.exceptionOrNull() ?: res7.exceptionOrNull()
                     _uiState.value = UiState.Error("Erreur Cloud : ${error?.localizedMessage ?: "Vérifiez votre connexion"}")
                 }
             } catch (e: Exception) {

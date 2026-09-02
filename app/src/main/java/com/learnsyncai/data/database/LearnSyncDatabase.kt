@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.learnsyncai.domain.model.Tombstone
 
 @Database(
     entities = [
@@ -68,6 +69,19 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             ) else card
         }
 
+        // Les entités remplacées partent en tombstone : sans cela, la sync
+        // réinsérerait l'ancien contenu depuis Firestore (doublons).
+        val now = System.currentTimeMillis()
+        tombstoneDao().insertTombstones(
+            studyMaterialDao().getMaterialIdsForCourse(course.id).map {
+                TombstoneEntity(Tombstone.TYPE_STUDY_MATERIAL, it, now)
+            } + flashcardDao().getFlashcardsForCourseSync(course.id).map {
+                TombstoneEntity(Tombstone.TYPE_FLASHCARD, it.id, now)
+            } + quizQuestionDao().getQuizQuestionIdsForCourse(course.id).map {
+                TombstoneEntity(Tombstone.TYPE_QUIZ_QUESTION, it, now)
+            }
+        )
+
         studyMaterialDao().deleteMaterialsForCourse(course.id)
         flashcardDao().deleteFlashcardsForCourse(course.id)
         quizQuestionDao().deleteQuizQuestionsForCourse(course.id)
@@ -81,6 +95,19 @@ abstract class LearnSyncDatabase : RoomDatabase() {
 
     @Transaction
     open suspend fun deleteCourseAtomically(courseId: String) {
+        // Tombstones pour le cours et tout son contenu : la sync descendante
+        // et les autres appareils doivent apprendre la suppression.
+        val now = System.currentTimeMillis()
+        tombstoneDao().insertTombstones(
+            listOf(TombstoneEntity(Tombstone.TYPE_COURSE, courseId, now)) +
+                studyMaterialDao().getMaterialIdsForCourse(courseId).map {
+                    TombstoneEntity(Tombstone.TYPE_STUDY_MATERIAL, it, now)
+                } + flashcardDao().getFlashcardsForCourseSync(courseId).map {
+                    TombstoneEntity(Tombstone.TYPE_FLASHCARD, it.id, now)
+                } + quizQuestionDao().getQuizQuestionIdsForCourse(courseId).map {
+                    TombstoneEntity(Tombstone.TYPE_QUIZ_QUESTION, it, now)
+                }
+        )
         studyMaterialDao().deleteMaterialsForCourse(courseId)
         flashcardDao().deleteFlashcardsForCourse(courseId)
         quizQuestionDao().deleteQuizQuestionsForCourse(courseId)

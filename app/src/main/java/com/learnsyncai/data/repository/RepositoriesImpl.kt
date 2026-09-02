@@ -76,7 +76,10 @@ class CalendarEventRepositoryImpl(private val calendarEventDao: CalendarEventDao
 }
 
 
-class StudyMaterialRepositoryImpl(private val studyMaterialDao: StudyMaterialDao) : StudyMaterialRepository {
+class StudyMaterialRepositoryImpl(
+    private val studyMaterialDao: StudyMaterialDao,
+    private val tombstoneDao: TombstoneDao? = null
+) : StudyMaterialRepository {
     override fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>> =
         studyMaterialDao.getMaterialsForCourse(courseId).map { list ->
             val domainList = list.map { it.toDomain() }
@@ -101,9 +104,19 @@ class StudyMaterialRepositoryImpl(private val studyMaterialDao: StudyMaterialDao
 
     override suspend fun deleteMaterialsForCourse(courseId: String) =
         studyMaterialDao.deleteMaterialsForCourse(courseId)
+
+    override suspend fun deleteMaterialById(materialId: String) {
+        tombstoneDao?.insertTombstone(
+            TombstoneEntity(Tombstone.TYPE_STUDY_MATERIAL, materialId, System.currentTimeMillis())
+        )
+        studyMaterialDao.deleteMaterialById(materialId)
+    }
 }
 
-class FlashcardRepositoryImpl(private val flashcardDao: FlashcardDao) : FlashcardRepository {
+class FlashcardRepositoryImpl(
+    private val flashcardDao: FlashcardDao,
+    private val tombstoneDao: TombstoneDao? = null
+) : FlashcardRepository {
     override fun getFlashcardsForCourse(courseId: String): Flow<List<Flashcard>> =
         flashcardDao.getFlashcardsForCourse(courseId).map { list ->
             val domainList = list.map { it.toDomain() }
@@ -129,14 +142,21 @@ class FlashcardRepositoryImpl(private val flashcardDao: FlashcardDao) : Flashcar
     override suspend fun updateFlashcard(flashcard: Flashcard) =
         flashcardDao.updateFlashcard(flashcard.toEntity())
 
-    override suspend fun deleteFlashcard(cardId: String) =
+    override suspend fun deleteFlashcard(cardId: String) {
+        tombstoneDao?.insertTombstone(
+            TombstoneEntity(Tombstone.TYPE_FLASHCARD, cardId, System.currentTimeMillis())
+        )
         flashcardDao.deleteFlashcardById(cardId)
+    }
 
     override suspend fun deleteFlashcardsForCourse(courseId: String) =
         flashcardDao.deleteFlashcardsForCourse(courseId)
 }
 
-class QuizRepositoryImpl(private val quizQuestionDao: QuizQuestionDao) : QuizRepository {
+class QuizRepositoryImpl(
+    private val quizQuestionDao: QuizQuestionDao,
+    private val tombstoneDao: TombstoneDao? = null
+) : QuizRepository {
     override fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestion>> =
         quizQuestionDao.getQuizQuestionsForCourse(courseId).map { list ->
             val domainList = list.map { it.toDomain() }
@@ -153,8 +173,12 @@ class QuizRepositoryImpl(private val quizQuestionDao: QuizQuestionDao) : QuizRep
     override suspend fun insertQuizQuestions(questions: List<QuizQuestion>) =
         quizQuestionDao.insertQuizQuestions(questions.map { it.toEntity() })
 
-    override suspend fun deleteQuizQuestion(questionId: String) =
+    override suspend fun deleteQuizQuestion(questionId: String) {
+        tombstoneDao?.insertTombstone(
+            TombstoneEntity(Tombstone.TYPE_QUIZ_QUESTION, questionId, System.currentTimeMillis())
+        )
         quizQuestionDao.deleteQuizQuestionById(questionId)
+    }
 
     override suspend fun deleteQuizQuestionsForCourse(courseId: String) =
         quizQuestionDao.deleteQuizQuestionsForCourse(courseId)
@@ -225,6 +249,20 @@ class AiProfileRepositoryImpl(private val aiProfileDao: AiProfileDao) : AiProfil
         aiProfileDao.setActiveProfile(profileId)
 }
 
+class TombstoneRepositoryImpl(private val tombstoneDao: TombstoneDao) : TombstoneRepository {
+    override suspend fun record(entityType: String, entityId: String) =
+        tombstoneDao.insertTombstone(TombstoneEntity(entityType, entityId, System.currentTimeMillis()))
+
+    override suspend fun recordAll(tombstones: List<Tombstone>) =
+        tombstoneDao.insertTombstones(tombstones.map { it.toEntity() })
+
+    override suspend fun getAll(): List<Tombstone> =
+        tombstoneDao.getAllTombstones().map { it.toDomain() }
+
+    override suspend fun getIds(entityType: String): List<String> =
+        tombstoneDao.getTombstonedIds(entityType)
+}
+
 // Mappers
 fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, language)
 fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, language)
@@ -286,5 +324,8 @@ fun CalendarEvent.toEntity() = CalendarEventEntity(id, courseId, title, schedule
 
 fun AiProfileEntity.toDomain() = AiProfile(id, name, provider, baseUrl, apiKey, modelName, isActive, createdAt)
 fun AiProfile.toEntity() = AiProfileEntity(id, name, provider, baseUrl, apiKey, modelName, isActive, createdAt)
+
+fun TombstoneEntity.toDomain() = Tombstone(entityType, entityId, deletedAt)
+fun Tombstone.toEntity() = TombstoneEntity(entityType, entityId, deletedAt)
 
 
