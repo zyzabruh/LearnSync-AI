@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -157,7 +158,7 @@ fun CourseDetailScreen(
                     ) {
                         DropdownMenuItem(
                             text = { Text("Générer plus de contenu") },
-                            leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
                             onClick = {
                                 showMenu = false
                                 onGenerateMore()
