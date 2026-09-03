@@ -184,8 +184,14 @@ interface CalendarEventDao {
     @Query("SELECT * FROM calendar_events WHERE courseId = :courseId ORDER BY scheduledDate ASC")
     fun getEventsForCourse(courseId: String): Flow<List<CalendarEventEntity>>
 
+    @Query("SELECT * FROM calendar_events WHERE courseId = :courseId ORDER BY scheduledDate ASC")
+    suspend fun getEventsForCourseOnce(courseId: String): List<CalendarEventEntity>
+
     @Query("SELECT * FROM calendar_events ORDER BY scheduledDate ASC")
     fun getAllCalendarEvents(): Flow<List<CalendarEventEntity>>
+
+    @Query("SELECT * FROM calendar_events")
+    suspend fun getAllCalendarEventsOnce(): List<CalendarEventEntity>
 
     @Query("SELECT * FROM calendar_events WHERE courseId = :courseId AND scheduledDate = :scheduledDate LIMIT 1")
     suspend fun getEventForCourseAndDate(courseId: String, scheduledDate: Long): CalendarEventEntity?

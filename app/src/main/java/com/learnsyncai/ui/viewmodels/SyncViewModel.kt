@@ -39,11 +39,13 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 // État local frais (les StateFlow UI peuvent être en retard d'une émission).
                 val currentCourses = courseRepo.getAllCourses().firstOrNull() ?: emptyList()
-                val due = flashcardRepo.getDueFlashcards().firstOrNull() ?: emptyList()
+                val allCards = flashcardRepo.getAllFlashcards().firstOrNull() ?: emptyList()
+                val preferences = prefsRepo.getPreferencesSync()
                 val count = CalendarHelper.syncReviewsToCalendar(
                     context = getApplication(),
                     courses = currentCourses,
-                    dueCards = due,
+                    allCards = allCards,
+                    preferences = preferences,
                     calendarEventDao = container.database.calendarEventDao()
                 )
                 if (count > 0) {
@@ -168,7 +170,11 @@ class SyncViewModel(application: Application) : AndroidViewModel(application) {
                             dailyGoal = remotePrefs.dailyGoal,
                             reminderTime = remotePrefs.reminderTime,
                             theme = remotePrefs.theme,
-                            language = remotePrefs.language
+                            language = remotePrefs.language,
+                            calendarHorizonDays = remotePrefs.calendarHorizonDays,
+                            calendarStartTime = remotePrefs.calendarStartTime,
+                            calendarDurationMinutes = remotePrefs.calendarDurationMinutes,
+                            calendarReminderMinutes = remotePrefs.calendarReminderMinutes
                         )
                         prefsRepo.updatePreferences(mergedPrefs)
                     }

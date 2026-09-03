@@ -247,6 +247,10 @@ class FirestoreSyncManager(
                 "reminderTime" to prefs.reminderTime,
                 "theme" to prefs.theme,
                 "language" to prefs.language,
+                "calendarHorizonDays" to prefs.calendarHorizonDays,
+                "calendarStartTime" to prefs.calendarStartTime,
+                "calendarDurationMinutes" to prefs.calendarDurationMinutes,
+                "calendarReminderMinutes" to prefs.calendarReminderMinutes,
                 "updatedAt" to System.currentTimeMillis()
             )
             docRef.set(map, SetOptions.merge()).await()
@@ -404,8 +408,20 @@ class FirestoreSyncManager(
             val reminderTime = doc.getString("reminderTime") ?: "08:00"
             val theme = doc.getString("theme") ?: "system"
             val language = doc.getString("language") ?: "fr"
+            val calendarHorizonDays = doc.getLong("calendarHorizonDays")?.toInt() ?: 14
+            val calendarStartTime = doc.getString("calendarStartTime") ?: ""
+            val calendarDurationMinutes = doc.getLong("calendarDurationMinutes")?.toInt() ?: 30
+            val calendarReminderMinutes = doc.getLong("calendarReminderMinutes")?.toInt() ?: 15
 
-            Result.success(UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language))
+            Result.success(
+                UserPreferences(
+                    notificationsEnabled, dailyGoal, reminderTime, theme, language,
+                    calendarHorizonDays = calendarHorizonDays,
+                    calendarStartTime = calendarStartTime,
+                    calendarDurationMinutes = calendarDurationMinutes,
+                    calendarReminderMinutes = calendarReminderMinutes
+                )
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }

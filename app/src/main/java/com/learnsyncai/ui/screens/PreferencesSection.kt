@@ -30,6 +30,7 @@ import androidx.core.content.ContextCompat
 import com.learnsyncai.domain.model.UserPreferences
 import com.learnsyncai.ui.components.LearnSyncSecondaryButton
 import com.learnsyncai.ui.theme.*
+import kotlin.math.roundToInt
 
 private fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -223,6 +224,106 @@ internal fun NotificationsSection(
                     )
                 }
             }
+        }
+    }
+}
+
+/** Calendar plan controls: horizon, start time, duration, and reminder. */
+@Composable
+internal fun CalendarSettingsSection(
+    preferences: UserPreferences,
+    onUpdatePreferences: (UserPreferences) -> Unit
+) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = LearnSyncShapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(LearnSyncSpacing.large),
+            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+        ) {
+            ProfileSectionTitle(icon = Icons.Default.CalendarMonth, title = "Agenda Android")
+
+            Text(
+                text = "Les échéances futures sont regroupées par cours et par jour.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = "Horizon : ${preferences.calendarHorizonDays} jours",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Slider(
+                value = preferences.calendarHorizonDays.toFloat(),
+                onValueChange = { value ->
+                    onUpdatePreferences(preferences.copy(calendarHorizonDays = value.roundToInt().coerceIn(1, 365)))
+                },
+                valueRange = 1f..90f,
+                steps = 88
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Heure des sessions", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        preferences.calendarStartTime.ifBlank { preferences.reminderTime },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                LearnSyncSecondaryButton(
+                    text = "Modifier",
+                    icon = Icons.Default.AccessTime,
+                    onClick = {
+                        val parts = (preferences.calendarStartTime.ifBlank { preferences.reminderTime }).split(":")
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute ->
+                                onUpdatePreferences(preferences.copy(calendarStartTime = "%02d:%02d".format(hour, minute)))
+                            },
+                            parts.getOrNull(0)?.toIntOrNull() ?: 8,
+                            parts.getOrNull(1)?.toIntOrNull() ?: 0,
+                            true
+                        ).show()
+                    }
+                )
+            }
+
+            OutlinedTextField(
+                value = preferences.calendarDurationMinutes.toString(),
+                onValueChange = { value ->
+                    value.toIntOrNull()?.let {
+                        onUpdatePreferences(preferences.copy(calendarDurationMinutes = it.coerceIn(5, 240)))
+                    }
+                },
+                label = { Text("Durée (minutes)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            )
+
+            OutlinedTextField(
+                value = preferences.calendarReminderMinutes.toString(),
+                onValueChange = { value ->
+                    value.toIntOrNull()?.let {
+                        onUpdatePreferences(preferences.copy(calendarReminderMinutes = it.coerceIn(0, 1440)))
+                    }
+                },
+                label = { Text("Rappel avant (minutes, 0 = aucun)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            )
         }
     }
 }

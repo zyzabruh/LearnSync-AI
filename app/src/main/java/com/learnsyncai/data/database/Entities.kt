@@ -156,7 +156,11 @@ data class UserPreferencesEntity(
     val quizCustomCount: Int = 5,
     val mnemonicTipsMode: String = "auto",
     val mnemonicTipsCustomCount: Int = 3,
-    val autoTtsEnabled: Boolean = false
+    val autoTtsEnabled: Boolean = false,
+    val calendarHorizonDays: Int = 14,
+    val calendarStartTime: String = "",
+    val calendarDurationMinutes: Int = 30,
+    val calendarReminderMinutes: Int = 15
 )
 
 @Entity(

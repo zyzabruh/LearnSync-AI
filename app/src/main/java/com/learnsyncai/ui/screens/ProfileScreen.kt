@@ -243,6 +243,13 @@ fun ProfileScreen(
 
             // SECTION: Paramètres de génération IA (Quantités)
             item {
+                CalendarSettingsSection(
+                    preferences = preferences,
+                    onUpdatePreferences = onUpdatePreferences
+                )
+            }
+
+            item {
                 GenerationQuantitiesSection(
                     preferences = preferences,
                     onUpdatePreferences = onUpdatePreferences

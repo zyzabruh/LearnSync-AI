@@ -79,6 +79,9 @@ class CalendarEventRepositoryImpl(private val calendarEventDao: CalendarEventDao
     override fun getAllCalendarEvents(): Flow<List<CalendarEvent>> =
         calendarEventDao.getAllCalendarEvents().map { list -> list.map { it.toDomain() } }
 
+    override suspend fun getEventsForCourseOnce(courseId: String): List<CalendarEvent> =
+        calendarEventDao.getEventsForCourseOnce(courseId).map { it.toDomain() }
+
     override suspend fun insertEvent(event: CalendarEvent) =
         calendarEventDao.insertEvent(event.toEntity())
 
@@ -360,8 +363,18 @@ fun ReviewLog.toEntity() = ReviewLogEntity(id, courseId, flashcardId, reviewedAt
 fun ReviewSessionEntity.toDomain() = ReviewSession(id, courseId, startedAt, endedAt, cardsReviewed)
 fun ReviewSession.toEntity() = ReviewSessionEntity(id, courseId, startedAt, endedAt, cardsReviewed)
 
-fun UserPreferencesEntity.toDomain() = UserPreferences(notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled)
-fun UserPreferences.toEntity() = UserPreferencesEntity(1, notificationsEnabled, dailyGoal, reminderTime, theme, language, aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount, quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled)
+fun UserPreferencesEntity.toDomain() = UserPreferences(
+    notificationsEnabled, dailyGoal, reminderTime, theme, language,
+    aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount,
+    quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled,
+    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes
+)
+fun UserPreferences.toEntity() = UserPreferencesEntity(
+    1, notificationsEnabled, dailyGoal, reminderTime, theme, language,
+    aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount,
+    quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled,
+    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes
+)
 
 fun CalendarEventEntity.toDomain() = CalendarEvent(id, courseId, title, scheduledDate, androidEventId, updatedAt)
 fun CalendarEvent.toEntity() = CalendarEventEntity(id, courseId, title, scheduledDate, androidEventId, updatedAt)

@@ -24,6 +24,7 @@ interface CalendarEventRepository {
     suspend fun insertEvents(events: List<CalendarEvent>)
     suspend fun deleteEvent(id: String)
     suspend fun deleteEventsForCourse(courseId: String)
+    suspend fun getEventsForCourseOnce(courseId: String): List<CalendarEvent>
 }
 
 

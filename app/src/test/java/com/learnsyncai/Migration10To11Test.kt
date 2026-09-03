@@ -83,6 +83,27 @@ class Migration10To11Test {
                         )
                     """.trimIndent())
                     db.execSQL("CREATE INDEX IF NOT EXISTS `index_review_logs_flashcardId` ON `review_logs` (`flashcardId`)")
+                    db.execSQL("""
+                        CREATE TABLE IF NOT EXISTS `user_preferences` (
+                            `id` INTEGER NOT NULL PRIMARY KEY,
+                            `notificationsEnabled` INTEGER NOT NULL,
+                            `dailyGoal` INTEGER NOT NULL,
+                            `reminderTime` TEXT NOT NULL,
+                            `theme` TEXT NOT NULL,
+                            `language` TEXT NOT NULL,
+                            `aiProvider` TEXT NOT NULL,
+                            `aiBaseUrl` TEXT NOT NULL,
+                            `aiApiKey` TEXT NOT NULL,
+                            `aiModelName` TEXT NOT NULL,
+                            `flashcardsMode` TEXT NOT NULL,
+                            `flashcardsCustomCount` INTEGER NOT NULL,
+                            `quizMode` TEXT NOT NULL,
+                            `quizCustomCount` INTEGER NOT NULL,
+                            `mnemonicTipsMode` TEXT NOT NULL,
+                            `mnemonicTipsCustomCount` INTEGER NOT NULL,
+                            `autoTtsEnabled` INTEGER NOT NULL
+                        )
+                    """.trimIndent())
                 }
 
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
@@ -134,6 +155,24 @@ class Migration10To11Test {
         val rowsAfterDelete = logRows(db)
         assertTrue(rowsAfterDelete.containsKey("log-1"))
 
+        db.close()
+    }
+
+    @Test
+    fun migration11To12AddsCalendarPreferences() {
+        val db = openV10Database()
+        insertV10Data(db)
+        LearnSyncDatabase.MIGRATION_10_11.migrate(db)
+        LearnSyncDatabase.MIGRATION_11_12.migrate(db)
+
+        db.query("PRAGMA table_info(user_preferences)").use { cursor ->
+            val columns = mutableSetOf<String>()
+            while (cursor.moveToNext()) columns += cursor.getString(1)
+            assertTrue(columns.contains("calendarHorizonDays"))
+            assertTrue(columns.contains("calendarStartTime"))
+            assertTrue(columns.contains("calendarDurationMinutes"))
+            assertTrue(columns.contains("calendarReminderMinutes"))
+        }
         db.close()
     }
 
