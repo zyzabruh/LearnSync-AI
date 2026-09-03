@@ -160,7 +160,8 @@ data class UserPreferencesEntity(
     val calendarHorizonDays: Int = 14,
     val calendarStartTime: String = "",
     val calendarDurationMinutes: Int = 30,
-    val calendarReminderMinutes: Int = 15
+    val calendarReminderMinutes: Int = 15,
+    val periodicSyncEnabled: Boolean = false
 )
 
 @Entity(
@@ -182,6 +183,14 @@ data class CalendarEventEntity(
     val scheduledDate: Long,
     val androidEventId: Long?,
     val updatedAt: Long
+)
+
+@Entity(tableName = "sync_status")
+data class SyncStatusEntity(
+    @PrimaryKey val id: Int = 1,
+    val lastSyncAt: Long?,
+    val pending: Boolean,
+    val lastError: String?
 )
 
 @Entity(tableName = "ai_profiles")

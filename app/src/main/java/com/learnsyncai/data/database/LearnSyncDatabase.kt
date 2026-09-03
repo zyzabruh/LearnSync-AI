@@ -20,9 +20,10 @@ import com.learnsyncai.domain.model.Tombstone
         UserPreferencesEntity::class,
         CalendarEventEntity::class,
         AiProfileEntity::class,
-        TombstoneEntity::class
+        TombstoneEntity::class,
+        SyncStatusEntity::class
     ],
-    version = 12,
+    version = 14,
     exportSchema = true
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
     abstract fun calendarEventDao(): CalendarEventDao
     abstract fun aiProfileDao(): AiProfileDao
     abstract fun tombstoneDao(): TombstoneDao
+    abstract fun syncStatusDao(): SyncStatusDao
 
     @Transaction
     open suspend fun replaceCourseContentAtomically(
@@ -323,6 +325,26 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `sync_status` (
+                        `id` INTEGER NOT NULL PRIMARY KEY,
+                        `lastSyncAt` INTEGER,
+                        `pending` INTEGER NOT NULL,
+                        `lastError` TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("INSERT OR IGNORE INTO `sync_status` (`id`, `lastSyncAt`, `pending`, `lastError`) VALUES (1, NULL, 0, NULL)")
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN periodicSyncEnabled INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         /** Clé de rapprochement des questions entre deux générations (casse/espacements ignorés). */
         internal fun normalizeQuestion(question: String): String =
             question.trim().lowercase().replace(Regex("\\s+"), " ")
@@ -334,7 +356,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .build()
                 INSTANCE = instance
                 instance

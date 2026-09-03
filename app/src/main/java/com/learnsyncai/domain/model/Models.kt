@@ -95,7 +95,8 @@ data class UserPreferences(
     val calendarHorizonDays: Int = 14,
     val calendarStartTime: String = "",
     val calendarDurationMinutes: Int = 30,
-    val calendarReminderMinutes: Int = 15
+    val calendarReminderMinutes: Int = 15,
+    val periodicSyncEnabled: Boolean = false
 ) {
     companion object {
         val DEFAULT = UserPreferences(
@@ -137,6 +138,13 @@ data class CalendarEvent(
     val scheduledDate: Long,
     val androidEventId: Long?,
     val updatedAt: Long
+)
+
+data class SyncStatus(
+    val id: Int = 1,
+    val lastSyncAt: Long? = null,
+    val pending: Boolean = false,
+    val lastError: String? = null
 )
 
 data class AiProfile(

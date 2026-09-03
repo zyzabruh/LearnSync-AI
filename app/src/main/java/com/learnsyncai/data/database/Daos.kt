@@ -210,6 +210,18 @@ interface CalendarEventDao {
 }
 
 @Dao
+interface SyncStatusDao {
+    @Query("SELECT * FROM sync_status WHERE id = 1")
+    fun getStatus(): Flow<SyncStatusEntity?>
+
+    @Query("SELECT * FROM sync_status WHERE id = 1")
+    suspend fun getStatusSync(): SyncStatusEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(status: SyncStatusEntity)
+}
+
+@Dao
 interface AiProfileDao {
     @Query("SELECT * FROM ai_profiles ORDER BY createdAt ASC")
     fun getAllProfiles(): Flow<List<AiProfileEntity>>

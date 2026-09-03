@@ -125,3 +125,11 @@ interface TombstoneRepository {
     suspend fun getIds(entityType: String): List<String>
 }
 
+interface SyncStatusRepository {
+    fun getStatus(): Flow<SyncStatus>
+    suspend fun getStatusSync(): SyncStatus
+    suspend fun markPending()
+    suspend fun markSuccess(timestamp: Long = System.currentTimeMillis())
+    suspend fun markFailure(message: String)
+}
+

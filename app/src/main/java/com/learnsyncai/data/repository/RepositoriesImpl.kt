@@ -296,6 +296,23 @@ class AiProfileRepositoryImpl(private val aiProfileDao: AiProfileDao) : AiProfil
         aiProfileDao.setActiveProfile(profileId)
 }
 
+class SyncStatusRepositoryImpl(private val syncStatusDao: SyncStatusDao) : SyncStatusRepository {
+    override fun getStatus(): Flow<SyncStatus> =
+        syncStatusDao.getStatus().map { it?.toDomain() ?: SyncStatus() }
+
+    override suspend fun getStatusSync(): SyncStatus =
+        syncStatusDao.getStatusSync()?.toDomain() ?: SyncStatus()
+
+    override suspend fun markPending() =
+        syncStatusDao.upsert(SyncStatusEntity(lastSyncAt = getStatusSync().lastSyncAt, pending = true, lastError = null))
+
+    override suspend fun markSuccess(timestamp: Long) =
+        syncStatusDao.upsert(SyncStatusEntity(lastSyncAt = timestamp, pending = false, lastError = null))
+
+    override suspend fun markFailure(message: String) =
+        syncStatusDao.upsert(SyncStatusEntity(lastSyncAt = getStatusSync().lastSyncAt, pending = true, lastError = message))
+}
+
 class TombstoneRepositoryImpl(private val tombstoneDao: TombstoneDao) : TombstoneRepository {
     override suspend fun record(entityType: String, entityId: String) =
         tombstoneDao.insertTombstone(TombstoneEntity(entityType, entityId, System.currentTimeMillis()))
@@ -367,13 +384,13 @@ fun UserPreferencesEntity.toDomain() = UserPreferences(
     notificationsEnabled, dailyGoal, reminderTime, theme, language,
     aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount,
     quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled,
-    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes
+    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes, periodicSyncEnabled
 )
 fun UserPreferences.toEntity() = UserPreferencesEntity(
     1, notificationsEnabled, dailyGoal, reminderTime, theme, language,
     aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount,
     quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled,
-    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes
+    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes, periodicSyncEnabled
 )
 
 fun CalendarEventEntity.toDomain() = CalendarEvent(id, courseId, title, scheduledDate, androidEventId, updatedAt)
@@ -384,5 +401,8 @@ fun AiProfile.toEntity() = AiProfileEntity(id, name, provider, baseUrl, apiKey, 
 
 fun TombstoneEntity.toDomain() = Tombstone(entityType, entityId, deletedAt)
 fun Tombstone.toEntity() = TombstoneEntity(entityType, entityId, deletedAt)
+
+fun SyncStatusEntity.toDomain() = SyncStatus(id, lastSyncAt, pending, lastError)
+fun SyncStatus.toEntity() = SyncStatusEntity(id, lastSyncAt, pending, lastError)
 
 
