@@ -108,6 +108,13 @@ class LearnSyncTest {
 
 
     @Test
+    fun testWidgetIntentResolvesToReviewRoute() {
+        assertEquals("review", navigationRouteFromExtra("review"))
+        assertNull(navigationRouteFromExtra(null))
+        assertNull(navigationRouteFromExtra("calendar"))
+    }
+
+    @Test
     fun testStudyDurationUsesRealSessionBounds() {
         val sessions = listOf(
             ReviewSession("s1", "course1", 1_000L, 61_000L, 2),

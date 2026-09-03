@@ -36,7 +36,10 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 }
 
 @Composable
-fun LearnSyncNavigation() {
+fun LearnSyncNavigation(
+    requestedRoute: String? = null,
+    requestId: Int = 0
+) {
     val libraryViewModel: LibraryViewModel = viewModel()
     val reviewViewModel: ReviewViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
@@ -62,6 +65,17 @@ fun LearnSyncNavigation() {
     val generationProgress by libraryViewModel.generationProgress.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(requestId, requestedRoute) {
+        if (requestedRoute != null && navController.currentDestination?.route != requestedRoute) {
+            navController.navigate(requestedRoute) {
+                launchSingleTop = true
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+            }
+        }
+    }
 
     UiStateSnackbarEffect(uiState, libraryViewModel::clearState, snackbarHostState)
     UiStateSnackbarEffect(profileUiState, profileViewModel::clearState, snackbarHostState)
