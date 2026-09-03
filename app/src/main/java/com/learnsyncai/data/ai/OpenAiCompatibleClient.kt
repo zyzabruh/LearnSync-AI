@@ -55,7 +55,7 @@ class OpenAiCompatibleClient(
         prompt: String,
         systemPrompt: String? = null,
         temperature: Double = 0.2,
-        maxTokens: Int = 131072
+        maxTokens: Int = 262144
     ): String = withContext(Dispatchers.IO) {
         val cleanBaseUrl = baseUrl.trim().trimEnd('/')
         if (cleanBaseUrl.isBlank()) {
@@ -84,7 +84,9 @@ class OpenAiCompatibleClient(
 
         val hasJsonFormat = cleanBaseUrl.contains("googleapis.com") || cleanBaseUrl.contains("openai.com") || cleanBaseUrl.contains("openrouter.ai")
 
-        val fallbacks = (MAX_TOKENS_FALLBACKS.toList() + maxTokens).distinct().filter { it <= maxTokens }
+        val fallbacks = (listOf(maxTokens) + MAX_TOKENS_FALLBACKS.toList())
+            .distinct()
+            .filter { it <= maxTokens }
         var lastError: IOException? = null
         var success: String? = null
         for (attemptMaxTokens in fallbacks) {
@@ -144,7 +146,6 @@ class OpenAiCompatibleClient(
         }
 
         val response = try {
-            android.util.Log.d("LearnSyncAI", "requête commencée: model=$model, endpoint=$endpoint, maxTokens=$maxTokens")
             client.newCall(requestBuilder.build()).execute()
         } catch (e: IOException) {
             throw e
@@ -155,7 +156,6 @@ class OpenAiCompatibleClient(
         var shouldRetryWithoutJsonFormat = false
         val content = response.use { resp ->
             val responseBodyString = resp.body?.string() ?: ""
-            android.util.Log.d("LearnSyncAI", "réponse reçue: statusCode=${resp.code}, length=${responseBodyString.length}")
             if (!resp.isSuccessful) {
                 if (resp.code == 400 && isMaxTokensError(responseBodyString)) {
                     throw MaxTokensExceededException("max_tokens dépasse le plafond du modèle : $maxTokens")
@@ -167,9 +167,7 @@ class OpenAiCompatibleClient(
                     throw IOException(errorMessage)
                 }
             } else {
-                val extracted = extractContentFromResponse(responseBodyString)
-                android.util.Log.d("LearnSyncAI", "longueur réponse: ${extracted.length}")
-                extracted
+                extractContentFromResponse(responseBodyString)
             }
         }
 
@@ -266,7 +264,6 @@ class OpenAiCompatibleClient(
 
             val firstChoice = choices.getJSONObject(0)
             val finishReason = firstChoice.optString("finish_reason", "")
-            android.util.Log.d("LearnSyncAI", "finish_reason: $finishReason")
             if (finishReason.equals("length", ignoreCase = true)) {
                 throw IllegalStateException("réponse tronquée, réessayez avec une quantité plus faible")
             }

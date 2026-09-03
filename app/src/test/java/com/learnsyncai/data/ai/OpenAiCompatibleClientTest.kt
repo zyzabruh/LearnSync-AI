@@ -67,6 +67,43 @@ class OpenAiCompatibleClientTest {
     }
 
     @Test
+    fun testConfiguredMaxTokensIsTriedBeforeFallbacks() = runBlocking {
+        val requestedTokens = mutableListOf<Int>()
+        val successJson = """
+            {"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}
+        """.trimIndent()
+        val maxTokensError = """
+            {"error":{"message":"max_tokens exceeds the model maximum"}}
+        """.trimIndent()
+        val mockClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val body = chain.request().body
+                val buffer = okio.Buffer()
+                body?.writeTo(buffer)
+                val tokens = org.json.JSONObject(buffer.readUtf8()).getInt("max_tokens")
+                requestedTokens += tokens
+                val responseBody = if (tokens > 8192) maxTokensError else successJson
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(if (tokens > 8192) 400 else 200)
+                    .message(if (tokens > 8192) "Bad Request" else "OK")
+                    .body(responseBody.toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+
+        val client = OpenAiCompatibleClient(mockClient)
+        assertEquals("ok", client.generateChatCompletion(
+            baseUrl = "https://api.example.com/v1",
+            apiKey = "test_key",
+            modelName = "test-model",
+            prompt = "Say hello"
+        ))
+        assertEquals(listOf(262144, 131072, 65535, 32768, 8192), requestedTokens)
+    }
+
+    @Test
     fun testHttpErrorHandlingExtractsMessage() = runBlocking {
         val errorJson = """
             {
