@@ -3,9 +3,26 @@ package com.learnsyncai.data.repository
 import com.learnsyncai.data.database.*
 import com.learnsyncai.domain.model.*
 import com.learnsyncai.domain.repository.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
+
+/**
+ * Ré-émet l'heure courante à intervalle régulier : permet aux requêtes
+ * dépendantes du temps (cartes dues) de se recalculer sans écriture en base —
+ * sinon le seuil est figé à la construction du Flow et une carte devenue due
+ * « pendant » la session n'apparaît jamais.
+ */
+private fun currentTimeTickFlow(intervalMs: Long = 60_000L): Flow<Long> = flow {
+    while (true) {
+        emit(System.currentTimeMillis())
+        delay(intervalMs)
+    }
+}
 
 class CourseRepositoryImpl(
     private val courseDao: CourseDao,
@@ -124,11 +141,17 @@ class FlashcardRepositoryImpl(
             domainList
         }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getDueFlashcards(): Flow<List<Flashcard>> =
-        flashcardDao.getDueFlashcards(System.currentTimeMillis()).map { list -> list.map { it.toDomain() } }
+        currentTimeTickFlow().flatMapLatest { now ->
+            flashcardDao.getDueFlashcards(now).map { list -> list.map { it.toDomain() } }
+        }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getDueFlashcardsForCourse(courseId: String): Flow<List<Flashcard>> =
-        flashcardDao.getDueFlashcardsForCourse(courseId, System.currentTimeMillis()).map { list -> list.map { it.toDomain() } }
+        currentTimeTickFlow().flatMapLatest { now ->
+            flashcardDao.getDueFlashcardsForCourse(courseId, now).map { list -> list.map { it.toDomain() } }
+        }
 
     override fun getAllFlashcards(): Flow<List<Flashcard>> =
         flashcardDao.getAllFlashcards().map { list -> list.map { it.toDomain() } }
