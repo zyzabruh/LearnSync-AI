@@ -147,6 +147,9 @@ interface ReviewSessionDao {
 
     @Update
     suspend fun updateSession(session: ReviewSessionEntity)
+
+    @Query("UPDATE review_sessions SET cardsReviewed = cardsReviewed + 1 WHERE id = :sessionId")
+    suspend fun incrementCardsReviewed(sessionId: String)
 }
 
 @Dao

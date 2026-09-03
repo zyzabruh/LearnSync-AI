@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.learnsyncai.data.database.*
+import com.learnsyncai.data.repository.ReviewRepositoryImpl
+import com.learnsyncai.data.repository.toDomain
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -342,6 +344,56 @@ class LearnSyncDatabaseRobolectricTest {
         assertFalse(flashcardTombs.contains("c-t3")) // la nouvelle carte est vivante
         val materialTombs = tombstoneDao.getTombstonedIds("STUDY_MATERIAL")
         assertFalse(materialTombs.contains("mat-t2")) // la nouvelle matière est vivante
+    }
+
+    @Test
+    fun testRateCardAtomicallyUpdatesCardLogAndSession() = runBlocking {
+        val courseId = "course-rate-test"
+        courseDao.insertCourse(CourseEntity(courseId, "Title", "Desc", "f.pdf", "uri", 0L, 0L, 0f, "#000", "COMPLETED"))
+        flashcardDao.insertFlashcard(
+            FlashcardEntity("c-r1", courseId, "Q", "A", "E", 5f, 1, 0L, 1, 2.5f, 0, 0, null, 0L)
+        )
+        val sessionDao = db.reviewSessionDao()
+        sessionDao.insertSession(ReviewSessionEntity("s-1", courseId, 1000L, null, 0))
+
+        val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao(), sessionDao, flashcardDao, db)
+        val original = flashcardDao.getFlashcardsForCourseSync(courseId).first()
+        val updated = original.copy(
+            difficulty = 4.0f, dueDate = 999_999L, interval = 6,
+            easeFactor = 2.6f, repetitions = 1, lastReviewedAt = 123_456L
+        )
+        reviewRepo.rateCardAtomically(
+            updated.toDomain(),
+            com.learnsyncai.domain.model.ReviewLog(
+                id = "log-r1", flashcardId = "c-r1", courseId = courseId,
+                reviewedAt = 123_456L, rating = 3, previousInterval = 1, newInterval = 6, responseTime = 500L
+            ),
+            sessionId = "s-1"
+        )
+        // Deuxième notation dans la même session (re-queue "Again")
+        reviewRepo.rateCardAtomically(
+            updated.copy(repetitions = 2).toDomain(),
+            com.learnsyncai.domain.model.ReviewLog(
+                id = "log-r2", flashcardId = "c-r1", courseId = courseId,
+                reviewedAt = 124_456L, rating = 1, previousInterval = 6, newInterval = 0, responseTime = 800L
+            ),
+            sessionId = "s-1"
+        )
+
+        val card = flashcardDao.getFlashcardsForCourseSync(courseId).first()
+        assertEquals(2, card.repetitions)
+        assertEquals(999_999L, card.dueDate)
+
+        val logs = db.reviewLogDao().getAllReviewLogs().first()
+        assertEquals(2, logs.size)
+        assertEquals(courseId, logs[0].courseId)
+
+        assertEquals(2, sessionDao.getSessionById("s-1")?.cardsReviewed)
+
+        reviewRepo.endSession("s-1", 200_000L)
+        val session = sessionDao.getSessionById("s-1")!!
+        assertEquals(200_000L, session.endedAt)
+        assertEquals(2, session.cardsReviewed)
     }
 }
 

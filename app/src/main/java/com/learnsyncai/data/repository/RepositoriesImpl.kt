@@ -186,7 +186,9 @@ class QuizRepositoryImpl(
 
 class ReviewRepositoryImpl(
     private val reviewLogDao: ReviewLogDao,
-    private val reviewSessionDao: ReviewSessionDao? = null
+    private val reviewSessionDao: ReviewSessionDao? = null,
+    private val flashcardDao: FlashcardDao? = null,
+    private val database: LearnSyncDatabase? = null
 ) : ReviewRepository {
     override fun getAllReviewLogs(): Flow<List<ReviewLog>> =
         reviewLogDao.getAllReviewLogs().map { list -> list.map { it.toDomain() } }
@@ -216,6 +218,25 @@ class ReviewRepositoryImpl(
 
     override suspend fun updateSession(session: ReviewSession) =
         reviewSessionDao?.updateSession(session.toEntity()) ?: Unit
+
+    override suspend fun endSession(sessionId: String, endedAt: Long) {
+        val sessionDao = reviewSessionDao ?: return
+        sessionDao.getSessionById(sessionId)?.let { existing ->
+            sessionDao.updateSession(existing.copy(endedAt = endedAt))
+        }
+    }
+
+    override suspend fun rateCardAtomically(updatedCard: Flashcard, log: ReviewLog, sessionId: String?) {
+        val cardDao = flashcardDao ?: throw IllegalStateException("flashcardDao requis pour la notation atomique")
+        val cardEntity = updatedCard.toEntity()
+        val logEntity = log.toEntity()
+        if (database != null) {
+            database.rateCardAtomically(cardEntity, logEntity, sessionId)
+        } else {
+            cardDao.updateFlashcard(cardEntity)
+            reviewLogDao.insertReviewLog(logEntity)
+        }
+    }
 }
 
 class PreferencesRepositoryImpl(private val prefsDao: UserPreferencesDao) : PreferencesRepository {

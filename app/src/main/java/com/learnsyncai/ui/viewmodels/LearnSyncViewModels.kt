@@ -49,7 +49,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     private val studyMaterialRepo = StudyMaterialRepositoryImpl(db.studyMaterialDao(), db.tombstoneDao())
     private val flashcardRepo = FlashcardRepositoryImpl(db.flashcardDao(), db.tombstoneDao())
     private val quizRepo = QuizRepositoryImpl(db.quizQuestionDao(), db.tombstoneDao())
-    private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao(), db.reviewSessionDao())
+    private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao(), db.reviewSessionDao(), db.flashcardDao(), db)
     private val prefsRepo = PreferencesRepositoryImpl(db.userPreferencesDao())
     private val calendarRepo = CalendarEventRepositoryImpl(db.calendarEventDao())
     private val aiProfileRepo = AiProfileRepositoryImpl(db.aiProfileDao())
@@ -603,11 +603,14 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         createdAt = System.currentTimeMillis()
     )
 
-    fun reviewCard(card: Flashcard, rating: Int, responseTimeMs: Long) {
+    /**
+     * Notation atomique d'une carte : état FSRS + log (+ compteur de session)
+     * dans une seule transaction Room, puis rafraîchissement du widget.
+     */
+    fun rateCurrentCard(card: Flashcard, rating: Int, responseTimeMs: Long) {
+        val sessionId = currentSessionId
         viewModelScope.launch {
             val reviewResult = SpacedRepetition.calculateReview(card, rating, responseTimeMs)
-            flashcardRepo.updateFlashcard(reviewResult.updatedCard)
-
             val log = ReviewLog(
                 id = UUID.randomUUID().toString(),
                 flashcardId = card.id,
@@ -618,10 +621,19 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 newInterval = reviewResult.newInterval,
                 responseTime = responseTimeMs
             )
-            reviewRepo.logReview(log)
-
+            try {
+                reviewRepo.rateCardAtomically(reviewResult.updatedCard, log, sessionId)
+            } catch (e: Exception) {
+                android.util.Log.e("LearnSyncAI", "Notation atomique échouée pour la carte ${card.id}", e)
+            }
             // Rafraîchit le widget (nombre de cartes dues)
             DueCardsWidgetProvider.updateAll(getApplication())
+        }
+        _reviewQueue.update { queue ->
+            queue?.let { q ->
+                val rest = q.dropWhile { it.id == card.id }
+                if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
+            }
         }
     }
 
@@ -636,23 +648,35 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     private val _reviewQueue = MutableStateFlow<List<Flashcard>?>(null)
     val reviewQueue: StateFlow<List<Flashcard>?> = _reviewQueue.asStateFlow()
 
+    /** Session Room en cours (null = pas de session, ou session héritée d'un crash). */
+    private var currentSessionId: String? = null
+
     /** Démarre une session mélangée sur les cartes fournies (limit = 20, 30... ou null = tout). */
     fun startReviewSession(cards: List<Flashcard>, limit: Int? = null) {
         val shuffled = cards.distinctBy { it.id }.shuffled()
         _reviewQueue.value = if (limit != null) shuffled.take(limit) else shuffled
+
+        // Trace la session en base (durée réelle + volume) pour stats et calendrier.
+        val session = ReviewSession(
+            id = UUID.randomUUID().toString(),
+            courseId = cards.map { it.courseId }.distinct().singleOrNull(),
+            startedAt = System.currentTimeMillis(),
+            endedAt = null,
+            cardsReviewed = 0
+        )
+        currentSessionId = session.id
+        viewModelScope.launch {
+            runCatching { reviewRepo.insertSession(session) }
+        }
     }
 
     fun endReviewSession() {
         _reviewQueue.value = null
-    }
-
-    /** Note la carte en tête de file : la retire, et la replace en fin de file si "Again". */
-    fun rateCurrentCard(card: Flashcard, rating: Int, responseTimeMs: Long) {
-        reviewCard(card, rating, responseTimeMs)
-        _reviewQueue.update { queue ->
-            queue?.let { q ->
-                val rest = q.dropWhile { it.id == card.id }
-                if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
+        val sessionId = currentSessionId
+        currentSessionId = null
+        if (sessionId != null) {
+            viewModelScope.launch {
+                runCatching { reviewRepo.endSession(sessionId, System.currentTimeMillis()) }
             }
         }
     }

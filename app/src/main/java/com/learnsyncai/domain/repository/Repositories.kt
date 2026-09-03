@@ -70,6 +70,13 @@ interface ReviewRepository {
     fun getSessionsSince(startTime: Long): Flow<List<ReviewSession>>
     suspend fun insertSession(session: ReviewSession)
     suspend fun updateSession(session: ReviewSession)
+    suspend fun endSession(sessionId: String, endedAt: Long)
+
+    /**
+     * Notation atomique : mise à jour FSRS de la carte + insertion du log
+     * (+ compteur de session) dans une seule transaction Room.
+     */
+    suspend fun rateCardAtomically(updatedCard: Flashcard, log: ReviewLog, sessionId: String?)
 }
 
 interface AiRepository {

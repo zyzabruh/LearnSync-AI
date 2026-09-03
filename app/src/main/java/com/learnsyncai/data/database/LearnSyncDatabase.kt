@@ -93,6 +93,24 @@ abstract class LearnSyncDatabase : RoomDatabase() {
         android.util.Log.d("LearnSyncAI", "commit Room: courseId=${course.id}")
     }
 
+    /**
+     * Notation d'une carte en une seule transaction : l'état FSRS, le log de
+     * révision et le compteur de session sont écrits ensemble — un crash
+     * entre deux ne peut plus laisser un état incohérent.
+     */
+    @Transaction
+    open suspend fun rateCardAtomically(
+        updatedCard: FlashcardEntity,
+        log: ReviewLogEntity,
+        sessionId: String?
+    ) {
+        flashcardDao().updateFlashcard(updatedCard)
+        reviewLogDao().insertReviewLog(log)
+        if (sessionId != null) {
+            reviewSessionDao().incrementCardsReviewed(sessionId)
+        }
+    }
+
     @Transaction
     open suspend fun deleteCourseAtomically(courseId: String) {
         // Tombstones pour le cours et tout son contenu : la sync descendante
