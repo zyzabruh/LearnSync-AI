@@ -44,47 +44,24 @@ data class LocalModelInfo(
 )
 
 class LearnSyncViewModel(application: Application) : AndroidViewModel(application) {
-    private val db = LearnSyncDatabase.getDatabase(application)
-    private val courseRepo = CourseRepositoryImpl(db.courseDao(), db)
-    private val studyMaterialRepo = StudyMaterialRepositoryImpl(db.studyMaterialDao(), db.tombstoneDao())
-    private val flashcardRepo = FlashcardRepositoryImpl(db.flashcardDao(), db.tombstoneDao())
-    private val quizRepo = QuizRepositoryImpl(db.quizQuestionDao(), db.tombstoneDao())
-    private val reviewRepo = ReviewRepositoryImpl(db.reviewLogDao(), db.reviewSessionDao(), db.flashcardDao(), db)
-    private val prefsRepo = PreferencesRepositoryImpl(db.userPreferencesDao())
-    private val calendarRepo = CalendarEventRepositoryImpl(db.calendarEventDao())
-    private val aiProfileRepo = AiProfileRepositoryImpl(db.aiProfileDao())
-    private val tombstoneRepo = TombstoneRepositoryImpl(db.tombstoneDao())
-    private val openAiClient = com.learnsyncai.data.ai.OpenAiCompatibleClient()
-    private val localLlmClient = com.learnsyncai.data.ai.LocalLlmClient(application)
-    private val aiRepo = AiRepositoryImpl(
-        openAiClient = openAiClient,
-        localLlmClient = localLlmClient,
-        configProvider = {
-            val active = aiProfileRepo.getActiveProfile()
-            if (active != null) {
-                com.learnsyncai.data.ai.AiConfig(
-                    baseUrl = active.baseUrl,
-                    apiKey = active.apiKey,
-                    modelName = active.modelName,
-                    isLocal = active.provider == "LOCAL_GEMMA"
-                )
-            } else {
-                val currentPrefs = prefsRepo.getPreferencesSync()
-                com.learnsyncai.data.ai.AiConfig(
-                    baseUrl = currentPrefs.aiBaseUrl,
-                    apiKey = currentPrefs.aiApiKey,
-                    modelName = currentPrefs.aiModelName
-                )
-            }
-        },
-        preferencesProvider = {
-            prefsRepo.getPreferencesSync()
-        }
-    )
-    private val documentParser = DocumentParser(application)
-    private val firestoreSyncManager = FirestoreSyncManager()
-    private val courseContentStorage = com.learnsyncai.data.storage.CourseContentStorage(application)
-    private val offlineMaterialGenerator = OfflineMaterialGenerator()
+    // Câblage délégué au conteneur d'injection de l'Application.
+    private val container = (application as com.learnsyncai.LearnSyncApplication).container
+    private val courseRepo = container.courseRepository
+    private val studyMaterialRepo = container.studyMaterialRepository
+    private val flashcardRepo = container.flashcardRepository
+    private val quizRepo = container.quizRepository
+    private val reviewRepo = container.reviewRepository
+    private val prefsRepo = container.preferencesRepository
+    private val calendarRepo = container.calendarEventRepository
+    private val aiProfileRepo = container.aiProfileRepository
+    private val tombstoneRepo = container.tombstoneRepository
+    private val openAiClient = container.openAiClient
+    private val aiRepo = container.aiRepository
+    private val documentParser = container.documentParser
+    private val firestoreSyncManager = container.firestoreSyncManager
+    private val courseContentStorage = container.courseContentStorage
+    private val offlineMaterialGenerator = container.offlineMaterialGenerator
+    private val db = container.database
 
     init {
         // Initialize daily background reminder if enabled

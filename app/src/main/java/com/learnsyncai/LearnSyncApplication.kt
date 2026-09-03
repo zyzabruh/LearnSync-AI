@@ -3,9 +3,13 @@ package com.learnsyncai
 import android.app.Application
 import com.google.firebase.FirebaseApp
 import com.learnsyncai.data.sync.FirebaseHelper
+import com.learnsyncai.di.AppContainer
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
 class LearnSyncApplication : Application() {
+
+    /** Conteneur d'injection : unique point de câblage des dépendances. */
+    val container: AppContainer by lazy { AppContainer(this) }
 
     override fun onCreate() {
         super.onCreate()
