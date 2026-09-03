@@ -2,26 +2,21 @@ package com.learnsyncai.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.learnsyncai.domain.model.AiProfile
 import com.learnsyncai.domain.model.Course
 import com.learnsyncai.domain.model.Flashcard
@@ -483,625 +478,72 @@ fun CourseDetailScreen(
 
             // Tab Content
             when (selectedTabIndex) {
-                0 -> { // Résumé
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Synthèse du cours",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            FilledTonalButton(
-                                onClick = { showEditSummaryDialog = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(if (latestMaterial?.summary?.isNotBlank() == true) "Modifier" else "Rédiger")
-                            }
-                        }
-                    }
+                0 -> CourseSummaryTab(
+                    latestMaterial = latestMaterial,
+                    onEditSummary = { showEditSummaryDialog = true },
+                    onRegenerate = onRegenerate
+                )
 
-                    if (latestMaterial != null && latestMaterial.summary.isNotBlank()) {
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = LearnSyncShapes.large,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(LearnSyncSpacing.large),
-                                    verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.Article,
-                                            contentDescription = null,
-                                            tint = IndigoPrimary
-                                        )
-                                        Text(
-                                            text = "Contenu de la synthèse",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                    Text(
-                                        text = latestMaterial.summary,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        lineHeight = 22.sp
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        item {
-                            EmptyState(
-                                title = "Aucun résumé",
-                                description = "Rédigez manuellement votre synthèse ou lancez la génération IA.",
-                                icon = Icons.AutoMirrored.Filled.Article,
-                                actionLabel = "Générer avec l'IA",
-                                onActionClick = onRegenerate
-                            )
-                        }
-                    }
-                }
+                1 -> CourseKeyPointsTab(
+                    keyPoints = latestMaterial?.keyPoints ?: emptyList(),
+                    onAddKeyPoint = { showAddKeyPointDialog = true },
+                    onRemoveKeyPoint = onRemoveKeyPoint,
+                    onRegenerate = onRegenerate
+                )
 
-                1 -> { // Notions clés
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Points d'ancrage essentiels",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            FilledTonalButton(
-                                onClick = { showAddKeyPointDialog = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Ajouter")
-                            }
-                        }
-                    }
+                2 -> CourseFlashcardsTab(
+                    flashcards = flashcards,
+                    onAddFlashcard = { showAddFlashcardDialog = true },
+                    onDeleteFlashcard = onDeleteFlashcard,
+                    onRegenerate = onRegenerate
+                )
 
-                    val keyPoints = latestMaterial?.keyPoints ?: emptyList()
-                    if (keyPoints.isNotEmpty()) {
-                        items(keyPoints) { point ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = LearnSyncShapes.medium,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(LearnSyncSpacing.medium),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(IndigoPrimary)
-                                    )
-                                    Text(
-                                        text = point,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    IconButton(
-                                        onClick = { onRemoveKeyPoint(point) },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = "Supprimer la notion",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        item {
-                            EmptyState(
-                                title = "Aucune notion clé",
-                                description = "Ajoutez manuellement vos points clés ou laissez l'IA les extraire.",
-                                icon = Icons.Default.Lightbulb,
-                                actionLabel = "Générer avec l'IA",
-                                onActionClick = onRegenerate
-                            )
-                        }
-                    }
-                }
-
-                2 -> { // Flashcards List Preview
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Cartes de révision (${flashcards.size})",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            FilledTonalButton(
-                                onClick = { showAddFlashcardDialog = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Ajouter")
-                            }
-                        }
-                    }
-
-                    if (flashcards.isNotEmpty()) {
-                        items(flashcards) { card ->
-                            var expanded by remember { mutableStateOf(false) }
-                            val isDue = card.dueDate <= System.currentTimeMillis()
-
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { expanded = !expanded },
-                                shape = LearnSyncShapes.medium,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(LearnSyncSpacing.large),
-                                    verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Q: ${card.question}",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (isDue) {
-                                                Surface(
-                                                    shape = LearnSyncShapes.pill,
-                                                    color = AmberSoftBg
-                                                ) {
-                                                    Text(
-                                                        text = "Due",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = AmberDark,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                            }
-                                            IconButton(
-                                                onClick = { onDeleteFlashcard(card.id) },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.DeleteOutline,
-                                                    contentDescription = "Supprimer",
-                                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    if (expanded) {
-                                        HorizontalDivider(
-                                            color = MaterialTheme.colorScheme.outlineVariant,
-                                            modifier = Modifier.padding(vertical = 4.dp)
-                                        )
-                                        Text(
-                                            text = "R: ${card.answer}",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
-                                            color = EmeraldDark
-                                        )
-                                        if (card.explanation.isNotBlank()) {
-                                            Text(
-                                                text = "Note: ${card.explanation}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        item {
-                            EmptyState(
-                                title = "Aucune flashcard",
-                                description = "Créez vos propres flashcards ou générez-les avec l'IA.",
-                                icon = Icons.Default.School,
-                                actionLabel = "Générer avec l'IA",
-                                onActionClick = onRegenerate
-                            )
-                        }
-                    }
-                }
-
-                3 -> { // QCM List Preview
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Questions de QCM (${quizQuestions.size})",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            FilledTonalButton(
-                                onClick = { showAddQuizDialog = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Ajouter")
-                            }
-                        }
-                    }
-
-                    if (quizQuestions.isNotEmpty()) {
-                        items(quizQuestions) { qcm ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = LearnSyncShapes.medium,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(LearnSyncSpacing.large),
-                                    verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        Text(
-                                            text = qcm.question,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        IconButton(
-                                            onClick = { onDeleteQuizQuestion(qcm.id) },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.DeleteOutline,
-                                                contentDescription = "Supprimer",
-                                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = EmeraldSuccess,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Text(
-                                            text = "Bonne réponse : ${qcm.correctAnswer}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = EmeraldDark
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        item {
-                            EmptyState(
-                                title = "Aucun QCM",
-                                description = "Créez vos propres questions ou laissez l'IA générer l'évaluation.",
-                                icon = Icons.Default.Quiz,
-                                actionLabel = "Générer avec l'IA",
-                                onActionClick = onRegenerate
-                            )
-                        }
-                    }
-                }
+                3 -> CourseQuizTab(
+                    quizQuestions = quizQuestions,
+                    onAddQuizQuestion = { showAddQuizDialog = true },
+                    onDeleteQuizQuestion = onDeleteQuizQuestion,
+                    onRegenerate = onRegenerate
+                )
             }
         }
     }
 
     // --- DIALOGS FOR MANUAL CONTENT CREATION ---
 
-    // 1. Add Flashcard Dialog
     if (showAddFlashcardDialog) {
-        var cardQuestion by remember { mutableStateOf("") }
-        var cardAnswer by remember { mutableStateOf("") }
-        var cardExplanation by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = { showAddFlashcardDialog = false },
-            title = { Text("Nouvelle Flashcard", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
-                ) {
-                    OutlinedTextField(
-                        value = cardQuestion,
-                        onValueChange = { cardQuestion = it },
-                        label = { Text("Question *") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = cardAnswer,
-                        onValueChange = { cardAnswer = it },
-                        label = { Text("Réponse *") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = cardExplanation,
-                        onValueChange = { cardExplanation = it },
-                        label = { Text("Explication / Astuce (facultatif)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (cardQuestion.isNotBlank() && cardAnswer.isNotBlank()) {
-                            onAddFlashcard(cardQuestion, cardAnswer, cardExplanation)
-                            showAddFlashcardDialog = false
-                        }
-                    },
-                    enabled = cardQuestion.isNotBlank() && cardAnswer.isNotBlank()
-                ) {
-                    Text("Ajouter")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddFlashcardDialog = false }) {
-                    Text("Annuler")
-                }
-            },
-            shape = LearnSyncShapes.large
+        AddFlashcardDialog(
+            onDismiss = { showAddFlashcardDialog = false },
+            onConfirm = onAddFlashcard
         )
     }
 
-    // 2. Add Quiz Question Dialog
     if (showAddQuizDialog) {
-        var quizQuestionText by remember { mutableStateOf("") }
-        var optA by remember { mutableStateOf("") }
-        var optB by remember { mutableStateOf("") }
-        var optC by remember { mutableStateOf("") }
-        var optD by remember { mutableStateOf("") }
-        var correctOptionIndex by remember { mutableIntStateOf(0) }
-        var quizExplanation by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = { showAddQuizDialog = false },
-            title = { Text("Nouveau QCM", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
-                ) {
-                    OutlinedTextField(
-                        value = quizQuestionText,
-                        onValueChange = { quizQuestionText = it },
-                        label = { Text("Question *") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = optA,
-                        onValueChange = { optA = it },
-                        label = { Text("Option A *") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = optB,
-                        onValueChange = { optB = it },
-                        label = { Text("Option B *") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = optC,
-                        onValueChange = { optC = it },
-                        label = { Text("Option C *") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = optD,
-                        onValueChange = { optD = it },
-                        label = { Text("Option D *") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Text(
-                        text = "Bonne réponse :",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceAround
-                    ) {
-                        listOf("A", "B", "C", "D").forEachIndexed { index, label ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(
-                                    selected = correctOptionIndex == index,
-                                    onClick = { correctOptionIndex = index }
-                                )
-                                Text(label)
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = quizExplanation,
-                        onValueChange = { quizExplanation = it },
-                        label = { Text("Explication (facultatif)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                val opts = listOf(optA, optB, optC, optD)
-                val isValid = quizQuestionText.isNotBlank() && opts.all { it.isNotBlank() } && opts.distinct().size == 4
-                Button(
-                    onClick = {
-                        if (isValid) {
-                            val correctAnswer = opts[correctOptionIndex]
-                            onAddQuizQuestion(quizQuestionText, opts, correctAnswer, quizExplanation)
-                            showAddQuizDialog = false
-                        }
-                    },
-                    enabled = isValid
-                ) {
-                    Text("Ajouter")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddQuizDialog = false }) {
-                    Text("Annuler")
-                }
-            },
-            shape = LearnSyncShapes.large
+        AddQuizQuestionDialog(
+            onDismiss = { showAddQuizDialog = false },
+            onConfirm = onAddQuizQuestion
         )
     }
 
-    // 3. Edit Summary Dialog
     if (showEditSummaryDialog) {
-        var summaryText by remember { mutableStateOf(latestMaterial?.summary ?: "") }
-
-        AlertDialog(
-            onDismissRequest = { showEditSummaryDialog = false },
-            title = { Text("Synthèse du cours", fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = summaryText,
-                    onValueChange = { summaryText = it },
-                    label = { Text("Texte du résumé") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(240.dp),
-                    maxLines = 15
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onSaveSummary(summaryText)
-                        showEditSummaryDialog = false
-                    }
-                ) {
-                    Text("Enregistrer")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEditSummaryDialog = false }) {
-                    Text("Annuler")
-                }
-            },
-            shape = LearnSyncShapes.large
+        EditSummaryDialog(
+            initialSummary = latestMaterial?.summary ?: "",
+            onDismiss = { showEditSummaryDialog = false },
+            onConfirm = onSaveSummary
         )
     }
 
-    // 4. Add Key Point Dialog
     if (showAddKeyPointDialog) {
-        var keyPointText by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = { showAddKeyPointDialog = false },
-            title = { Text("Nouvelle notion clé", fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = keyPointText,
-                    onValueChange = { keyPointText = it },
-                    label = { Text("Point d'ancrage / Notion essentielle *") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (keyPointText.isNotBlank()) {
-                            onAddKeyPoint(keyPointText)
-                            showAddKeyPointDialog = false
-                        }
-                    },
-                    enabled = keyPointText.isNotBlank()
-                ) {
-                    Text("Ajouter")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddKeyPointDialog = false }) {
-                    Text("Annuler")
-                }
-            },
-            shape = LearnSyncShapes.large
+        AddKeyPointDialog(
+            onDismiss = { showAddKeyPointDialog = false },
+            onConfirm = onAddKeyPoint
         )
     }
 
     if (showDeleteConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = false },
-            title = { Text("Supprimer ce cours ?", fontWeight = FontWeight.Bold) },
-            text = { Text("Cette action supprimera définitivement le cours « ${course.title} » ainsi que toutes ses flashcards et QCMs.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteConfirmDialog = false
-                        onDeleteCourse()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = RoseError,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text("Supprimer")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                    Text("Annuler")
-                }
-            },
-            shape = LearnSyncShapes.large
+        DeleteCourseConfirmDialog(
+            courseTitle = course.title,
+            onDismiss = { showDeleteConfirmDialog = false },
+            onConfirm = onDeleteCourse
         )
     }
 }
-
