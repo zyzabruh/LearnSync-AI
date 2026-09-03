@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 
@@ -23,6 +24,23 @@ class FirestoreSyncManager(
     private val customFirestore: FirebaseFirestore? = null,
     private val customAuth: FirebaseAuth? = null
 ) {
+
+    private suspend fun <T> withFirestoreRetry(
+        attempts: Int = 3,
+        initialDelayMs: Long = 1_000L,
+        operation: suspend () -> T
+    ): T {
+        var lastError: Exception? = null
+        repeat(attempts) { attempt ->
+            try {
+                return operation()
+            } catch (error: Exception) {
+                lastError = error
+                if (attempt < attempts - 1) delay(initialDelayMs * (1L shl attempt))
+            }
+        }
+        throw lastError ?: IllegalStateException("Opération Firestore échouée.")
+    }
 
     private val firestore: FirebaseFirestore?
         get() = customFirestore ?: FirebaseHelper.getFirestore()
@@ -92,7 +110,7 @@ class FirestoreSyncManager(
                     )
                     batch.set(docRef, map, SetOptions.merge())
                 }
-                batch.commit().await()
+                withFirestoreRetry { batch.commit().await() }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -123,7 +141,7 @@ class FirestoreSyncManager(
                     )
                     batch.set(docRef, map, SetOptions.merge())
                 }
-                batch.commit().await()
+                withFirestoreRetry { batch.commit().await() }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -161,7 +179,7 @@ class FirestoreSyncManager(
                     )
                     batch.set(docRef, map, SetOptions.merge())
                 }
-                batch.commit().await()
+                withFirestoreRetry { batch.commit().await() }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -192,7 +210,7 @@ class FirestoreSyncManager(
                     )
                     batch.set(docRef, map, SetOptions.merge())
                 }
-                batch.commit().await()
+                withFirestoreRetry { batch.commit().await() }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -224,7 +242,7 @@ class FirestoreSyncManager(
                     )
                     batch.set(docRef, map, SetOptions.merge())
                 }
-                batch.commit().await()
+                withFirestoreRetry { batch.commit().await() }
             }
             Result.success(Unit)
         } catch (e: Exception) {
@@ -251,9 +269,10 @@ class FirestoreSyncManager(
                 "calendarStartTime" to prefs.calendarStartTime,
                 "calendarDurationMinutes" to prefs.calendarDurationMinutes,
                 "calendarReminderMinutes" to prefs.calendarReminderMinutes,
+                "periodicSyncEnabled" to prefs.periodicSyncEnabled,
                 "updatedAt" to System.currentTimeMillis()
             )
-            docRef.set(map, SetOptions.merge()).await()
+            withFirestoreRetry { docRef.set(map, SetOptions.merge()).await() }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -266,7 +285,7 @@ class FirestoreSyncManager(
         val fs = firestore ?: return Result.failure(IllegalStateException("Firebase Firestore non configuré."))
         val uid = getCurrentUserId() ?: return Result.failure(IllegalStateException("Non authentifié."))
         return try {
-            val snapshot = fs.collection("users").document(uid).collection("courses").get().await()
+            val snapshot = fs.collection("users").document(uid).collection("courses").let { query -> withFirestoreRetry { query.get().await() } }
             val courses = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
                 // Soft delete : les documents marqués sont exclus de la sync descendante.
@@ -295,7 +314,7 @@ class FirestoreSyncManager(
         val fs = firestore ?: return Result.failure(IllegalStateException("Firebase Firestore non configuré."))
         val uid = getCurrentUserId() ?: return Result.failure(IllegalStateException("Non authentifié."))
         return try {
-            val snapshot = fs.collection("users").document(uid).collection("study_materials").get().await()
+            val snapshot = fs.collection("users").document(uid).collection("study_materials").let { query -> withFirestoreRetry { query.get().await() } }
             val materials = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
                 // Soft delete : les documents marqués sont exclus de la sync descendante.
@@ -321,7 +340,7 @@ class FirestoreSyncManager(
         val fs = firestore ?: return Result.failure(IllegalStateException("Firebase Firestore non configuré."))
         val uid = getCurrentUserId() ?: return Result.failure(IllegalStateException("Non authentifié."))
         return try {
-            val snapshot = fs.collection("users").document(uid).collection("flashcards").get().await()
+            val snapshot = fs.collection("users").document(uid).collection("flashcards").let { query -> withFirestoreRetry { query.get().await() } }
             val flashcards = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
                 // Soft delete : les documents marqués sont exclus de la sync descendante.
@@ -352,7 +371,7 @@ class FirestoreSyncManager(
         val fs = firestore ?: return Result.failure(IllegalStateException("Firebase Firestore non configuré."))
         val uid = getCurrentUserId() ?: return Result.failure(IllegalStateException("Non authentifié."))
         return try {
-            val snapshot = fs.collection("users").document(uid).collection("quiz_questions").get().await()
+            val snapshot = fs.collection("users").document(uid).collection("quiz_questions").let { query -> withFirestoreRetry { query.get().await() } }
             val questions = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
                 // Soft delete : les documents marqués sont exclus de la sync descendante.
@@ -377,7 +396,7 @@ class FirestoreSyncManager(
         val fs = firestore ?: return Result.failure(IllegalStateException("Firebase Firestore non configuré."))
         val uid = getCurrentUserId() ?: return Result.failure(IllegalStateException("Non authentifié."))
         return try {
-            val snapshot = fs.collection("users").document(uid).collection("review_logs").get().await()
+            val snapshot = fs.collection("users").document(uid).collection("review_logs").let { query -> withFirestoreRetry { query.get().await() } }
             val logs = snapshot.documents.mapNotNull { doc ->
                 val id = doc.getString("id") ?: doc.id
                 val flashcardId = doc.getString("flashcardId") ?: return@mapNotNull null
@@ -400,7 +419,7 @@ class FirestoreSyncManager(
         val fs = firestore ?: return Result.failure(IllegalStateException("Firebase Firestore non configuré."))
         val uid = getCurrentUserId() ?: return Result.failure(IllegalStateException("Non authentifié."))
         return try {
-            val doc = fs.collection("users").document(uid).collection("settings").document("user_preferences").get().await()
+            val doc = fs.collection("users").document(uid).collection("settings").document("user_preferences").let { query -> withFirestoreRetry { query.get().await() } }
             if (!doc.exists()) return Result.success(null)
 
             val notificationsEnabled = doc.getBoolean("notificationsEnabled") ?: true
@@ -412,6 +431,7 @@ class FirestoreSyncManager(
             val calendarStartTime = doc.getString("calendarStartTime") ?: ""
             val calendarDurationMinutes = doc.getLong("calendarDurationMinutes")?.toInt() ?: 30
             val calendarReminderMinutes = doc.getLong("calendarReminderMinutes")?.toInt() ?: 15
+            val periodicSyncEnabled = doc.getBoolean("periodicSyncEnabled") ?: false
 
             Result.success(
                 UserPreferences(
@@ -419,7 +439,8 @@ class FirestoreSyncManager(
                     calendarHorizonDays = calendarHorizonDays,
                     calendarStartTime = calendarStartTime,
                     calendarDurationMinutes = calendarDurationMinutes,
-                    calendarReminderMinutes = calendarReminderMinutes
+                    calendarReminderMinutes = calendarReminderMinutes,
+                    periodicSyncEnabled = periodicSyncEnabled
                 )
             )
         } catch (e: Exception) {
@@ -458,11 +479,13 @@ class FirestoreSyncManager(
             )
             val deleted = mutableMapOf<String, List<String>>()
             for ((type, collection) in collections) {
-                val snapshot = fs.collection("users").document(uid)
-                    .collection(collection)
-                    .whereGreaterThan("deletedAt", 0L)
-                    .get()
-                    .await()
+                val snapshot = withFirestoreRetry {
+                    fs.collection("users").document(uid)
+                        .collection(collection)
+                        .whereGreaterThan("deletedAt", 0L)
+                        .get()
+                        .await()
+                }
                 deleted[type] = snapshot.documents.mapNotNull { doc ->
                     doc.getString("id") ?: doc.id
                 }
@@ -501,7 +524,7 @@ class FirestoreSyncManager(
                         .collection(collection).document(tombstone.entityId)
                     batch.set(docRef, mapOf("id" to tombstone.entityId, "deletedAt" to tombstone.deletedAt), SetOptions.merge())
                 }
-                batch.commit().await()
+                withFirestoreRetry { batch.commit().await() }
             }
             Result.success(Unit)
         } catch (e: Exception) {
