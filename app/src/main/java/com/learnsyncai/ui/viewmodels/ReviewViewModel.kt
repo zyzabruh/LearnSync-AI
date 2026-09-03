@@ -8,10 +8,12 @@ import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.ReviewLog
 import com.learnsyncai.domain.model.ReviewSession
 import com.learnsyncai.domain.usecase.SpacedRepetition
+import com.learnsyncai.tts.TtsController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -19,13 +21,41 @@ import java.util.UUID
 
 /**
  * Session de révision : file de cartes, notation FSRS (transactionnelle),
- * traçage des sessions en base et rafraîchissement du widget.
+ * traçage des sessions en base, lecture vocale (TtsController) et
+ * rafraîchissement du widget.
  */
 class ReviewViewModel(application: Application) : AndroidViewModel(application) {
     // Câblage délégué au conteneur d'injection de l'Application.
     private val container = (application as com.learnsyncai.LearnSyncApplication).container
     private val flashcardRepo = container.flashcardRepository
     private val reviewRepo = container.reviewRepository
+    private val prefsRepo = container.preferencesRepository
+
+    /** Lecture vocale possédée par ce ViewModel (moteur initialisé paresseusement). */
+    private val ttsController by lazy { TtsController(getApplication()) }
+
+    /** Dernière carte dont la question a été lue automatiquement (anti-doublon). */
+    private var lastAutoSpokenCardId: String? = null
+
+    init {
+        // Lecture vocale automatique de la question à chaque nouvelle carte
+        // en tête de file (option autoTtsEnabled), arrêt dès qu'il n'y a plus
+        // de session active.
+        viewModelScope.launch {
+            combine(_reviewQueue, prefsRepo.getPreferences()) { queue, prefs ->
+                queue to prefs.autoTtsEnabled
+            }.collect { (queue, autoTtsEnabled) ->
+                val headCard = queue?.firstOrNull()
+                if (headCard == null) {
+                    ttsController.stop()
+                    lastAutoSpokenCardId = null
+                } else if (autoTtsEnabled && headCard.id != lastAutoSpokenCardId) {
+                    lastAutoSpokenCardId = headCard.id
+                    ttsController.speak(headCard.question, utteranceId = "auto_question")
+                }
+            }
+        }
+    }
 
     val dueFlashcards: StateFlow<List<Flashcard>> = flashcardRepo.getDueFlashcards()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -110,5 +140,20 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
                 if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
             }
         }
+    }
+
+    /** Lit une question à voix haute (bouton de l'écran de révision). */
+    fun speakQuestion(text: String) {
+        ttsController.speak(text, utteranceId = "question")
+    }
+
+    /** Lit une réponse à voix haute (bouton de l'écran de révision). */
+    fun speakAnswer(text: String) {
+        ttsController.speak(text, utteranceId = "answer")
+    }
+
+    override fun onCleared() {
+        ttsController.release()
+        super.onCleared()
     }
 }

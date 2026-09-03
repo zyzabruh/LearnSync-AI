@@ -1,6 +1,5 @@
 package com.learnsyncai.ui.screens
 
-import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.*
@@ -25,7 +24,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -36,7 +34,6 @@ import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,8 +41,9 @@ fun ReviewScreen(
     dueCards: List<Flashcard>,
     aheadCount: Int,
     reviewQueue: List<Flashcard>?,
-    autoTtsEnabled: Boolean,
     onReviewCard: (Flashcard, Int, Long) -> Unit,
+    onSpeakQuestion: (String) -> Unit,
+    onSpeakAnswer: (String) -> Unit,
     onStartSession: (Int?) -> Unit,
     onStartAheadSession: () -> Unit,
     onEndSession: () -> Unit,
@@ -108,7 +106,6 @@ fun ReviewScreen(
             ReviewSessionScreen(
                 queue = reviewQueue,
                 sessionTotal = sessionTotal,
-                autoTtsEnabled = autoTtsEnabled,
                 onRate = { card, rating, reviewTime ->
                     totalReviewedCount++
                     when (rating) {
@@ -119,6 +116,8 @@ fun ReviewScreen(
                     }
                     onReviewCard(card, rating, reviewTime)
                 },
+                onSpeakQuestion = onSpeakQuestion,
+                onSpeakAnswer = onSpeakAnswer,
                 onNewSession = onEndSession,
                 onFinishReview = onFinishReview,
                 onSessionSizeInitialized = { size -> if (sessionTotal == 0) sessionTotal = size }
@@ -265,8 +264,9 @@ const val SESSION_TARGET_SIZE = 20
 private fun ReviewSessionScreen(
     queue: List<Flashcard>,
     sessionTotal: Int,
-    autoTtsEnabled: Boolean,
     onRate: (Flashcard, Int, Long) -> Unit,
+    onSpeakQuestion: (String) -> Unit,
+    onSpeakAnswer: (String) -> Unit,
     onNewSession: () -> Unit,
     onFinishReview: () -> Unit,
     onSessionSizeInitialized: (Int) -> Unit
@@ -285,22 +285,8 @@ private fun ReviewSessionScreen(
     var lastRatedId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentCard?.id) { lastRatedId = null }
 
-    // Synthèse vocale locale (lecture des questions / réponses)
-    val ttsContext = LocalContext.current
-    val tts = remember { mutableStateOf<TextToSpeech?>(null) }
-    DisposableEffect(ttsContext) {
-        var engine: TextToSpeech? = null
-        engine = TextToSpeech(ttsContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                engine?.language = Locale.FRANCE
-            }
-        }
-        tts.value = engine
-        onDispose {
-            engine?.stop()
-            engine?.shutdown()
-        }
-    }
+    // La synthèse vocale (moteur, file d'attente, auto-speak) est gérée par
+    // le ReviewViewModel : l'écran ne fait que demander les lectures.
 
     fun rate(rating: Int) {
         val card = currentCard
@@ -311,13 +297,6 @@ private fun ReviewSessionScreen(
         isAnswerRevealed = false
         cardStartTime = System.currentTimeMillis()
         onRate(card, rating, reviewTime)
-    }
-
-    // Lecture vocale automatique de la question (option activée)
-    LaunchedEffect(currentCard.id) {
-        if (autoTtsEnabled) {
-            tts.value?.speak(currentCard.question, TextToSpeech.QUEUE_FLUSH, null, "auto_question")
-        }
     }
 
     // Intervalle "Again" : étape d'apprentissage de 10 minutes
@@ -512,9 +491,7 @@ private fun ReviewSessionScreen(
                     )
 
                     IconButton(
-                        onClick = {
-                            tts.value?.speak(currentCard.question, TextToSpeech.QUEUE_FLUSH, null, "question")
-                        },
+                        onClick = { onSpeakQuestion(currentCard.question) },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -562,9 +539,7 @@ private fun ReviewSessionScreen(
                             )
 
                             IconButton(
-                                onClick = {
-                                    tts.value?.speak(currentCard.answer, TextToSpeech.QUEUE_FLUSH, null, "answer")
-                                },
+                                onClick = { onSpeakAnswer(currentCard.answer) },
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(
