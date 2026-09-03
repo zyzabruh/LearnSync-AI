@@ -98,6 +98,7 @@ dependencies {
   implementation(libs.androidx.work.runtime.ktx)
   // IA 100% locale : moteur MediaPipe LLM (Gemma .task / .litertlm)
   implementation(libs.mediapipe.tasks.genai)
+  implementation(libs.mlkit.text.recognition)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)

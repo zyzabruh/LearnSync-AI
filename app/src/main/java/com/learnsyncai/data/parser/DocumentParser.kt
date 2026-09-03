@@ -21,6 +21,14 @@ data class ParseResult(
     val isScanOrEmpty: Boolean = false
 )
 
+class ScannedPdfException(
+    val uri: Uri,
+    val displayName: String,
+    val pageCount: Int
+) : IllegalStateException(
+    "Ce PDF semble être un scan sans couche de texte. Vous pouvez lancer l'OCR pour l'importer."
+)
+
 class DocumentParser(private val context: Context) {
 
     init {
@@ -204,9 +212,7 @@ class DocumentParser(private val context: Context) {
                 // Validate if text is genuinely present (not just whitespace or unparseable chars)
                 val alphanumericCount = extractedText.count { it.isLetterOrDigit() }
                 if (alphanumericCount < 20) {
-                    throw IllegalStateException(
-                        "Ce document PDF ne contient aucun texte sélectionnable. Il semble s'agir d'un scan ou d'images scannées sans couche de texte. Veuillez importer un document textuel ou appliquer un OCR."
-                    )
+                    throw ScannedPdfException(uri, fileName, pageCount)
                 }
 
                 ParseResult(

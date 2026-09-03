@@ -37,6 +37,7 @@ pdfboxAndroid = "2.0.27.0"
 desugarJdkLibs = "2.1.4"
 workRuntimeKtx = "2.10.0"
 mediapipeTasksGenai = "0.10.24"
+mlkitTextRecognition = "19.0.1"
 mockk = "1.13.16"
 mockitoCore = "5.11.0"
 mockitoKotlin = "5.4.0"
@@ -90,6 +91,7 @@ androidx-credentials-play-services = { group = "androidx.credentials", name = "c
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfboxAndroid" }
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeTasksGenai" }
+mlkit-text-recognition = { group = "com.google.android.gms", name = "play-services-mlkit-text-recognition", version.ref = "mlkitTextRecognition" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockitoCore" }

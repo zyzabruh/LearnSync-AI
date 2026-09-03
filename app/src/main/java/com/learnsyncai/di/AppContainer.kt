@@ -8,6 +8,7 @@ import com.learnsyncai.data.ai.OfflineMaterialGenerator
 import com.learnsyncai.data.ai.OpenAiCompatibleClient
 import com.learnsyncai.data.database.LearnSyncDatabase
 import com.learnsyncai.data.parser.DocumentParser
+import com.learnsyncai.data.parser.PdfOcrService
 import com.learnsyncai.data.repository.*
 import com.learnsyncai.data.storage.CourseContentStorage
 import com.learnsyncai.data.sync.CloudSyncCoordinator
@@ -73,6 +74,7 @@ class AppContainer(application: Application) {
     )
 
     val documentParser: DocumentParser = DocumentParser(appContext)
+    val pdfOcrService: PdfOcrService = PdfOcrService(appContext)
     val firestoreSyncManager: FirestoreSyncManager = FirestoreSyncManager()
     val cloudSyncCoordinator: CloudSyncCoordinator = CloudSyncCoordinator(
         courseRepo = courseRepository,
