@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.learnsyncai.data.sync.CloudSyncWorker
 import com.learnsyncai.data.sync.ReviewNotificationWorker
 import com.learnsyncai.domain.model.AiProfile
 import com.learnsyncai.domain.model.UserPreferences
@@ -58,6 +59,9 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
                 if (prefs != null && prefs.notificationsEnabled) {
                     ReviewNotificationWorker.scheduleDailyReminder(application, prefs.reminderTime)
                 }
+                if (prefs?.periodicSyncEnabled == true) {
+                    CloudSyncWorker.schedulePeriodic(application)
+                }
             } catch (e: Throwable) {
                 android.util.Log.w("LearnSyncAI", "Planification du rappel quotidien impossible : ${e.message}")
             }
@@ -102,12 +106,21 @@ class ProfileViewModel(application: Application) : AndroidViewModel(application)
     fun updatePreferences(prefs: UserPreferences) {
         viewModelScope.launch {
             prefsRepo.updatePreferences(prefs)
+            if (prefs.periodicSyncEnabled) {
+                CloudSyncWorker.schedulePeriodic(getApplication())
+            } else {
+                CloudSyncWorker.cancelPeriodic(getApplication())
+            }
             if (prefs.notificationsEnabled) {
                 ReviewNotificationWorker.scheduleDailyReminder(getApplication(), prefs.reminderTime)
             } else {
                 ReviewNotificationWorker.cancelDailyReminder(getApplication())
             }
         }
+    }
+
+    fun updatePeriodicSync(enabled: Boolean) {
+        updatePreferences(preferences.value.copy(periodicSyncEnabled = enabled))
     }
 
     suspend fun testAiConnection(baseUrl: String, apiKey: String, modelName: String): Result<String> {

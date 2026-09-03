@@ -29,6 +29,12 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name="androidx.work.impl.background.systemjob.SystemJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true"
+            tools:node="merge" />
+
         <receiver
             android:name=".data.widget.DueCardsWidgetProvider"
             android:exported="false">

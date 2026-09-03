@@ -12,12 +12,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.ui.theme.LearnSyncShapes
 import com.learnsyncai.ui.theme.LearnSyncSpacing
+import com.learnsyncai.domain.model.SyncStatus
 
 /** Carte « Synchronisation » : Google Agenda et Cloud Firestore. */
 @Composable
 internal fun SyncSection(
     onSyncCloud: () -> Unit,
-    onNavigateToCalendar: () -> Unit
+    onNavigateToCalendar: () -> Unit,
+    syncStatus: SyncStatus = SyncStatus(),
+    periodicSyncEnabled: Boolean = false,
+    onUpdatePeriodicSync: (Boolean) -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -51,6 +55,31 @@ internal fun SyncSection(
                 FilledTonalButton(onClick = onNavigateToCalendar) {
                     Text("Voir")
                 }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Synchronisation quotidienne",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (syncStatus.pending) "Synchronisation en attente" else syncStatus.lastSyncAt?.let { "Dernière synchronisation : ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it))}" } ?: "Aucune synchronisation réussie",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (syncStatus.lastError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = periodicSyncEnabled,
+                    onCheckedChange = onUpdatePeriodicSync
+                )
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

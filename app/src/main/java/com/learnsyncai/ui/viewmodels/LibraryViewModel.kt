@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.parser.DocumentParser
+import com.learnsyncai.data.sync.CloudSyncWorker
 import com.learnsyncai.data.sync.FirestoreSyncManager
 import com.learnsyncai.data.sync.GenerationNotifier
 import com.learnsyncai.domain.model.*
@@ -266,6 +267,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 onSuccess = { genResult ->
                     val message = persistGenerationResult(course, genResult, "IA")
                     _uiState.value = UiState.Success(message)
+                    CloudSyncWorker.enqueueNow(getApplication())
                     _generationProgress.value = ""
                 },
                 onFailure = { err ->
@@ -420,6 +422,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val message = persistGenerationResult(course, genResult, "hors-ligne")
 
             _uiState.value = UiState.Success(message)
+            CloudSyncWorker.enqueueNow(getApplication())
             _generationProgress.value = ""
         } catch (e: Exception) {
             courseRepo.insertCourse(

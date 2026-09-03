@@ -10,6 +10,7 @@ import com.learnsyncai.data.database.LearnSyncDatabase
 import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.repository.*
 import com.learnsyncai.data.storage.CourseContentStorage
+import com.learnsyncai.data.sync.CloudSyncCoordinator
 import com.learnsyncai.data.sync.FirestoreSyncManager
 import com.learnsyncai.domain.repository.*
 
@@ -41,6 +42,8 @@ class AppContainer(application: Application) {
         AiProfileRepositoryImpl(database.aiProfileDao())
     val tombstoneRepository: TombstoneRepository =
         TombstoneRepositoryImpl(database.tombstoneDao())
+    val syncStatusRepository: SyncStatusRepository =
+        SyncStatusRepositoryImpl(database.syncStatusDao())
 
     val openAiClient: OpenAiCompatibleClient = OpenAiCompatibleClient()
     val localLlmClient: LocalLlmClient = LocalLlmClient(appContext)
@@ -71,6 +74,17 @@ class AppContainer(application: Application) {
 
     val documentParser: DocumentParser = DocumentParser(appContext)
     val firestoreSyncManager: FirestoreSyncManager = FirestoreSyncManager()
+    val cloudSyncCoordinator: CloudSyncCoordinator = CloudSyncCoordinator(
+        courseRepo = courseRepository,
+        studyMaterialRepo = studyMaterialRepository,
+        flashcardRepo = flashcardRepository,
+        quizRepo = quizRepository,
+        reviewRepo = reviewRepository,
+        prefsRepo = preferencesRepository,
+        tombstoneRepo = tombstoneRepository,
+        syncStatusRepo = syncStatusRepository,
+        firestoreSyncManager = firestoreSyncManager
+    )
     val courseContentStorage: CourseContentStorage = CourseContentStorage(appContext)
     val offlineMaterialGenerator: OfflineMaterialGenerator = OfflineMaterialGenerator()
 }

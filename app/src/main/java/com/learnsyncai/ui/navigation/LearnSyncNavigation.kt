@@ -62,6 +62,7 @@ fun LearnSyncNavigation(
     val uiState by libraryViewModel.uiState.collectAsState()
     val profileUiState by profileViewModel.uiState.collectAsState()
     val syncUiState by syncViewModel.uiState.collectAsState()
+    val syncStatus by syncViewModel.syncStatus.collectAsState()
     val generationProgress by libraryViewModel.generationProgress.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -370,6 +371,8 @@ fun LearnSyncNavigation(
                                     onDeleteAiProfile = { profileId -> profileViewModel.deleteAiProfile(profileId) },
                                     onSetActiveAiProfile = { profileId -> profileViewModel.setActiveAiProfile(profileId) },
                                     onSyncCloud = { syncViewModel.syncWithCloud() },
+                                    syncStatus = syncStatus,
+                                    onUpdatePeriodicSync = { enabled -> profileViewModel.updatePeriodicSync(enabled) },
                                     onSyncCalendar = { syncViewModel.syncToCalendar() },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onTestAiConnection = { baseUrl, apiKey, modelName ->

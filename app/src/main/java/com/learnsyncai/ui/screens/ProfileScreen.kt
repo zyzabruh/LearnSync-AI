@@ -40,6 +40,8 @@ fun ProfileScreen(
     onDeleteAiProfile: (profileId: String) -> Unit = {},
     onSetActiveAiProfile: (profileId: String) -> Unit = {},
     onSyncCloud: () -> Unit,
+    syncStatus: com.learnsyncai.domain.model.SyncStatus = com.learnsyncai.domain.model.SyncStatus(),
+    onUpdatePeriodicSync: (Boolean) -> Unit = {},
     onSyncCalendar: () -> Unit,
     onNavigateToCalendar: () -> Unit = {},
     onTestAiConnection: suspend (baseUrl: String, apiKey: String, modelName: String) -> Result<String> = { _, _, _ -> Result.success("OK") },
@@ -260,6 +262,9 @@ fun ProfileScreen(
             item {
                 SyncSection(
                     onSyncCloud = onSyncCloud,
+                    syncStatus = syncStatus,
+                    periodicSyncEnabled = preferences.periodicSyncEnabled,
+                    onUpdatePeriodicSync = onUpdatePeriodicSync,
                     onNavigateToCalendar = onNavigateToCalendar
                 )
             }
