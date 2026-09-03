@@ -5,11 +5,13 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.parser.DocumentParser
+import com.learnsyncai.data.parser.ScannedPdfException
 import com.learnsyncai.data.sync.CloudSyncWorker
 import com.learnsyncai.data.sync.FirestoreSyncManager
 import com.learnsyncai.data.sync.GenerationNotifier
 import com.learnsyncai.domain.model.*
 import com.learnsyncai.domain.usecase.QuizValidator
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -31,6 +33,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val tombstoneRepo = container.tombstoneRepository
     private val aiRepo = container.aiRepository
     private val documentParser = container.documentParser
+    private val pdfOcrService = container.pdfOcrService
     private val firestoreSyncManager = container.firestoreSyncManager
     private val courseContentStorage = container.courseContentStorage
     private val offlineMaterialGenerator = container.offlineMaterialGenerator
@@ -85,6 +88,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _generationProgress = MutableStateFlow<String>("")
     val generationProgress: StateFlow<String> = _generationProgress.asStateFlow()
 
+    private val _ocrRequest = MutableStateFlow<ScannedPdfException?>(null)
+    val ocrRequest: StateFlow<ScannedPdfException?> = _ocrRequest.asStateFlow()
+
+    private val _ocrProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val ocrProgress: StateFlow<Pair<Int, Int>?> = _ocrProgress.asStateFlow()
+    private var ocrJob: Job? = null
+
     fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>> =
         studyMaterialRepo.getMaterialsForCourse(courseId)
 
@@ -124,10 +134,62 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 _uiState.value = UiState.Success("Cours importé avec succès (${parseResult.pageCount} pages)")
+            } catch (e: ScannedPdfException) {
+                _ocrRequest.value = e
+                _uiState.value = UiState.Idle
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Erreur d'import : ${e.localizedMessage}")
             }
         }
+    }
+
+    fun runPdfOcr(request: ScannedPdfException) {
+        ocrJob?.cancel()
+        ocrJob = viewModelScope.launch {
+            _ocrRequest.value = request
+            _ocrProgress.value = 0 to request.pageCount.coerceAtMost(com.learnsyncai.data.parser.PdfOcrService.MAX_PAGES)
+            _uiState.value = UiState.Loading("Préparation de l'OCR...")
+            try {
+                val result = pdfOcrService.extractText(request.uri, request.pageCount) { completed, total ->
+                    _ocrProgress.value = completed to total
+                    _uiState.value = UiState.Loading("OCR de la page $completed/$total...")
+                }.getOrThrow()
+                val courseId = UUID.randomUUID().toString()
+                courseContentStorage.saveExtractedText(courseId, result)
+                val course = Course(
+                    id = courseId,
+                    title = request.displayName.substringBeforeLast('.'),
+                    description = "Importé depuis ${request.displayName} (${request.pageCount} pages, OCR)",
+                    sourceFileName = request.displayName,
+                    sourceFileUri = request.uri.toString(),
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    progress = 0f,
+                    color = "#3B82F6",
+                    generationStatus = "NONE"
+                )
+                courseRepo.insertCourse(course)
+                _ocrRequest.value = null
+                _uiState.value = UiState.Success("PDF OCR importé avec succès (${request.pageCount} pages)")
+                CloudSyncWorker.enqueueNow(getApplication())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _uiState.value = UiState.Idle
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("OCR impossible : ${e.localizedMessage ?: "modèle ML Kit indisponible"}")
+            } finally {
+                // Keep the request after an OCR error so the user can retry.
+                _ocrProgress.value = null
+            }
+        }
+    }
+
+    fun cancelPdfOcr() {
+        ocrJob?.cancel()
+        ocrJob = null
+        _ocrProgress.value = null
+        _ocrRequest.value = null
+        _uiState.value = UiState.Idle
     }
 
     fun importCourseFromUrl(url: String) {

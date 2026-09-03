@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.domain.model.Course
 import com.learnsyncai.domain.model.Flashcard
+import com.learnsyncai.data.parser.ScannedPdfException
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
 
@@ -47,7 +48,11 @@ fun CoursesScreen(
     onNavigateToCalendar: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
-    onReviewCourse: (String) -> Unit = {}
+    onReviewCourse: (String) -> Unit = {},
+    ocrRequest: ScannedPdfException? = null,
+    ocrProgress: Pair<Int, Int>? = null,
+    onRunPdfOcr: (ScannedPdfException) -> Unit = {},
+    onCancelPdfOcr: () -> Unit = {}
 ) {
     var courseToDelete by remember { mutableStateOf<Course?>(null) }
     var courseToTag by remember { mutableStateOf<Course?>(null) }
@@ -212,6 +217,41 @@ fun CoursesScreen(
                 }
             }
         }
+    }
+
+    if (ocrRequest != null) {
+        AlertDialog(
+            onDismissRequest = { onCancelPdfOcr() },
+            icon = { Icon(Icons.Default.DocumentScanner, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("PDF scanné détecté") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)) {
+                    Text("Ce document ne contient pas de couche texte. Lancez l'OCR local pour récupérer le contenu avant la génération.")
+                    if (ocrProgress != null) {
+                        val (completed, total) = ocrProgress
+                        LinearProgressIndicator(
+                            progress = { if (total > 0) completed.toFloat() / total else 0f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text("Page $completed/$total", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                if (ocrProgress == null) {
+                    Button(onClick = { onRunPdfOcr(ocrRequest) }) {
+                        Text("Lancer l'OCR")
+                    }
+                } else {
+                    TextButton(onClick = onCancelPdfOcr) { Text("Annuler") }
+                }
+            },
+            dismissButton = {
+                if (ocrProgress == null) {
+                    TextButton(onClick = onCancelPdfOcr) { Text("Ignorer") }
+                }
+            }
+        )
     }
 
     // Delete Confirmation Dialog

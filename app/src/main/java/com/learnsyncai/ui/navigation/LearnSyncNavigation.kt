@@ -64,6 +64,8 @@ fun LearnSyncNavigation(
     val syncUiState by syncViewModel.uiState.collectAsState()
     val syncStatus by syncViewModel.syncStatus.collectAsState()
     val generationProgress by libraryViewModel.generationProgress.collectAsState()
+    val ocrRequest by libraryViewModel.ocrRequest.collectAsState()
+    val ocrProgress by libraryViewModel.ocrProgress.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -221,7 +223,11 @@ fun LearnSyncNavigation(
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onNavigateToSearch = { navController.navigate("search") },
                                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                                    onReviewCourse = { courseId -> navController.navigate("course_review/$courseId") }
+                                    onReviewCourse = { courseId -> navController.navigate("course_review/$courseId") },
+                                    ocrRequest = ocrRequest,
+                                    ocrProgress = ocrProgress,
+                                    onRunPdfOcr = { libraryViewModel.runPdfOcr(it) },
+                                    onCancelPdfOcr = { libraryViewModel.cancelPdfOcr() }
                                 )
                             }
 
