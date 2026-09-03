@@ -4,78 +4,37 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.learnsyncai.data.ai.AiRepositoryImpl
-import com.learnsyncai.data.ai.OfflineMaterialGenerator
-import com.learnsyncai.data.database.LearnSyncDatabase
 import com.learnsyncai.data.parser.DocumentParser
-import com.learnsyncai.data.repository.*
-import com.learnsyncai.data.sync.CalendarHelper
 import com.learnsyncai.data.sync.FirestoreSyncManager
 import com.learnsyncai.data.sync.GenerationNotifier
-import com.learnsyncai.data.sync.ReviewNotificationWorker
-import com.learnsyncai.data.widget.DueCardsWidgetProvider
 import com.learnsyncai.domain.model.*
 import com.learnsyncai.domain.usecase.QuizValidator
-import com.learnsyncai.domain.usecase.SpacedRepetition
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * Levée quand le téléchargement d'un modèle échoue pour cause de licence
- * non acceptée (HTTP 401/403) : [pageUrl] pointe vers la page Hugging Face
- * du modèle où accepter la licence.
+ * Cours et contenu pédagogique : import (fichier / URL), génération IA et
+ * hors-ligne, régénération, CRUD manuel (flashcards, QCM, résumé, notions
+ * clés), export CSV, suppression de cours.
  */
-class LicenseRequiredException(val pageUrl: String) : IllegalStateException(
-    "Accès refusé avec ce token : acceptez la licence du modèle sur sa page Hugging Face (gratuit), puis réessayez."
-)
-
-/** Levée quand aucun token Hugging Face n'a été fourni : les modèles Google exigent une authentification. */
-class HfAuthenticationRequiredException(val pageUrl: String) : IllegalStateException(
-    "Authentification requise : collez un token Hugging Face dans le champ prévu (gratuit), puis réessayez."
-)
-
-/** Un fichier modèle local (Gemma) présent dans le stockage privé de l'app. */
-data class LocalModelInfo(
-    val path: String,
-    val name: String,
-    val sizeBytes: Long,
-    val usedByActiveProfile: Boolean
-)
-
-class LearnSyncViewModel(application: Application) : AndroidViewModel(application) {
+class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     // Câblage délégué au conteneur d'injection de l'Application.
     private val container = (application as com.learnsyncai.LearnSyncApplication).container
     private val courseRepo = container.courseRepository
     private val studyMaterialRepo = container.studyMaterialRepository
     private val flashcardRepo = container.flashcardRepository
     private val quizRepo = container.quizRepository
-    private val reviewRepo = container.reviewRepository
     private val prefsRepo = container.preferencesRepository
-    private val calendarRepo = container.calendarEventRepository
     private val aiProfileRepo = container.aiProfileRepository
     private val tombstoneRepo = container.tombstoneRepository
-    private val openAiClient = container.openAiClient
     private val aiRepo = container.aiRepository
     private val documentParser = container.documentParser
     private val firestoreSyncManager = container.firestoreSyncManager
     private val courseContentStorage = container.courseContentStorage
     private val offlineMaterialGenerator = container.offlineMaterialGenerator
-    private val db = container.database
 
     init {
-        // Initialize daily background reminder if enabled
-        viewModelScope.launch {
-            try {
-                val prefs = prefsRepo.getPreferences().firstOrNull()
-                if (prefs != null && prefs.notificationsEnabled) {
-                    ReviewNotificationWorker.scheduleDailyReminder(application, prefs.reminderTime)
-                }
-            } catch (e: Throwable) {
-                android.util.Log.w("LearnSyncAI", "Planification du rappel quotidien impossible : ${e.message}")
-            }
-        }
-
         // Reset stale GENERATING status from a previous session (app killed mid-generation)
         viewModelScope.launch {
             try {
@@ -90,51 +49,13 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 android.util.Log.w("LearnSyncAI", "Reset des statuts GENERATING orphelins impossible : ${e.message}")
             }
         }
-
-        // Seed initial AI profile if none exists
-        viewModelScope.launch {
-            try {
-                val existing = aiProfileRepo.getAllProfiles().firstOrNull() ?: emptyList()
-                if (existing.isEmpty()) {
-                    val currentPrefs = prefsRepo.getPreferencesSync()
-                    val defaultProfile = AiProfile(
-                        id = UUID.randomUUID().toString(),
-                        name = "Profil Principal",
-                        provider = currentPrefs.aiProvider,
-                        baseUrl = currentPrefs.aiBaseUrl,
-                        apiKey = currentPrefs.aiApiKey,
-                        modelName = currentPrefs.aiModelName,
-                        isActive = true
-                    )
-                    aiProfileRepo.insertProfile(defaultProfile)
-                }
-            } catch (e: Throwable) {
-                android.util.Log.w("LearnSyncAI", "Initialisation du profil IA par défaut impossible : ${e.message}")
-            }
-        }
     }
-
-    val aiProfiles: StateFlow<List<AiProfile>> = aiProfileRepo.getAllProfiles()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val activeAiProfile: StateFlow<AiProfile?> = aiProfileRepo.getAllProfiles()
-        .map { list -> list.find { it.isActive } ?: list.firstOrNull() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val courses: StateFlow<List<Course>> = courseRepo.getAllCourses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val dueFlashcards: StateFlow<List<Flashcard>> = flashcardRepo.getDueFlashcards()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val allFlashcards: StateFlow<List<Flashcard>> = flashcardRepo.getAllFlashcards()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val reviewLogs: StateFlow<List<ReviewLog>> = reviewRepo.getAllReviewLogs()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val preferences: StateFlow<UserPreferences> = prefsRepo.getPreferences()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserPreferences.DEFAULT)
 
     val allQuizQuestions: StateFlow<List<QuizQuestion>> = quizRepo.getAllQuizQuestions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -163,27 +84,14 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
     private val _generationProgress = MutableStateFlow<String>("")
     val generationProgress: StateFlow<String> = _generationProgress.asStateFlow()
 
-    sealed interface UiState {
-        object Idle : UiState
-        data class Loading(val message: String = "Chargement...") : UiState
-        data class Success(val message: String) : UiState
-        data class Error(val message: String) : UiState
-    }
-
     fun getMaterialsForCourse(courseId: String): Flow<List<StudyMaterial>> =
         studyMaterialRepo.getMaterialsForCourse(courseId)
 
     fun getFlashcardsForCourse(courseId: String): Flow<List<Flashcard>> =
         flashcardRepo.getFlashcardsForCourse(courseId)
 
-    fun getDueFlashcardsForCourse(courseId: String): Flow<List<Flashcard>> =
-        flashcardRepo.getDueFlashcardsForCourse(courseId)
-
     fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestion>> =
         quizRepo.getQuizQuestionsForCourse(courseId)
-
-    fun getCalendarEventsForCourse(courseId: String): Flow<List<CalendarEvent>> =
-        calendarRepo.getEventsForCourse(courseId)
 
     fun importCourse(uri: Uri, fileName: String) {
         viewModelScope.launch {
@@ -336,7 +244,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
 
             _uiState.value = UiState.Loading("Génération pédagogique en cours...")
             _generationProgress.value = "Démarrage de l'analyse IA..."
-            
+
             // Mark course as GENERATING
             val updatedCourseGenerating = course.copy(
                 generationStatus = "GENERATING",
@@ -611,84 +519,6 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         createdAt = System.currentTimeMillis()
     )
 
-    /**
-     * Notation atomique d'une carte : état FSRS + log (+ compteur de session)
-     * dans une seule transaction Room, puis rafraîchissement du widget.
-     */
-    fun rateCurrentCard(card: Flashcard, rating: Int, responseTimeMs: Long) {
-        val sessionId = currentSessionId
-        viewModelScope.launch {
-            val reviewResult = SpacedRepetition.calculateReview(card, rating, responseTimeMs)
-            val log = ReviewLog(
-                id = UUID.randomUUID().toString(),
-                flashcardId = card.id,
-                courseId = card.courseId,
-                reviewedAt = System.currentTimeMillis(),
-                rating = rating,
-                previousInterval = card.interval,
-                newInterval = reviewResult.newInterval,
-                responseTime = responseTimeMs
-            )
-            try {
-                reviewRepo.rateCardAtomically(reviewResult.updatedCard, log, sessionId)
-            } catch (e: Exception) {
-                android.util.Log.e("LearnSyncAI", "Notation atomique échouée pour la carte ${card.id}", e)
-            }
-            // Rafraîchit le widget (nombre de cartes dues)
-            DueCardsWidgetProvider.updateAll(getApplication())
-        }
-        _reviewQueue.update { queue ->
-            queue?.let { q ->
-                val rest = q.dropWhile { it.id == card.id }
-                if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
-            }
-        }
-    }
-
-    // --- Session de révision (file locale en mémoire) ---
-
-    /**
-     * File de la session de révision en cours : null = aucune session active
-     * (écran de choix), liste vide = session terminée. La file vit dans le
-     * ViewModel : quitter l'écran met la session en pause, y revenir la reprend
-     * dans le même ordre aléatoire.
-     */
-    private val _reviewQueue = MutableStateFlow<List<Flashcard>?>(null)
-    val reviewQueue: StateFlow<List<Flashcard>?> = _reviewQueue.asStateFlow()
-
-    /** Session Room en cours (null = pas de session, ou session héritée d'un crash). */
-    private var currentSessionId: String? = null
-
-    /** Démarre une session mélangée sur les cartes fournies (limit = 20, 30... ou null = tout). */
-    fun startReviewSession(cards: List<Flashcard>, limit: Int? = null) {
-        val shuffled = cards.distinctBy { it.id }.shuffled()
-        _reviewQueue.value = if (limit != null) shuffled.take(limit) else shuffled
-
-        // Trace la session en base (durée réelle + volume) pour stats et calendrier.
-        val session = ReviewSession(
-            id = UUID.randomUUID().toString(),
-            courseId = cards.map { it.courseId }.distinct().singleOrNull(),
-            startedAt = System.currentTimeMillis(),
-            endedAt = null,
-            cardsReviewed = 0
-        )
-        currentSessionId = session.id
-        viewModelScope.launch {
-            runCatching { reviewRepo.insertSession(session) }
-        }
-    }
-
-    fun endReviewSession() {
-        _reviewQueue.value = null
-        val sessionId = currentSessionId
-        currentSessionId = null
-        if (sessionId != null) {
-            viewModelScope.launch {
-                runCatching { reviewRepo.endSession(sessionId, System.currentTimeMillis()) }
-            }
-        }
-    }
-
     /** Change la langue de réponse IA d'un cours ("auto" = langue du document). */
     fun updateCourseLanguage(course: Course, language: String) {
         viewModelScope.launch {
@@ -721,394 +551,6 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Erreur lors de la suppression : ${e.localizedMessage}")
             }
-        }
-    }
-
-    fun updatePreferences(prefs: UserPreferences) {
-        viewModelScope.launch {
-            prefsRepo.updatePreferences(prefs)
-            if (prefs.notificationsEnabled) {
-                ReviewNotificationWorker.scheduleDailyReminder(getApplication(), prefs.reminderTime)
-            } else {
-                ReviewNotificationWorker.cancelDailyReminder(getApplication())
-            }
-        }
-    }
-
-    fun syncToCalendar() {
-        viewModelScope.launch {
-            try {
-                val currentCourses = courses.value
-                val due = dueFlashcards.value
-                val count = CalendarHelper.syncReviewsToCalendar(
-                    context = getApplication(),
-                    courses = currentCourses,
-                    dueCards = due,
-                    calendarEventDao = db.calendarEventDao()
-                )
-                if (count > 0) {
-                    _uiState.value = UiState.Success("$count sessions de révision synchronisées avec votre calendrier !")
-                } else {
-                    _uiState.value = UiState.Success("Votre calendrier est déjà à jour.")
-                }
-            } catch (e: Exception) {
-                _uiState.value = UiState.Error("Erreur lors de la synchronisation calendrier : ${e.localizedMessage}")
-            }
-        }
-    }
-
-    fun syncWithCloud() {
-        viewModelScope.launch {
-            _uiState.value = UiState.Loading("Synchronisation complète avec Firebase...")
-            try {
-                // 0. Tombstones locaux : propagés vers le cloud, et filtre
-                // anti-résurrection pour la sync descendante.
-                var localTombstones = tombstoneRepo.getAll()
-
-                // 1. DOWN : appliquer d'abord les suppressions distantes en local
-                // (chaque suppression enregistre son tombstone, donc se repropage).
-                val remoteDeleted = firestoreSyncManager.fetchRemoteDeletedIds()
-                    .getOrDefault(emptyMap())
-                val remoteDeletionsApplied = remoteDeleted.values.any { it.isNotEmpty() }
-                for (courseId in remoteDeleted[Tombstone.TYPE_COURSE].orEmpty()) {
-                    courseRepo.deleteCourse(courseId)
-                }
-                for (materialId in remoteDeleted[Tombstone.TYPE_STUDY_MATERIAL].orEmpty()) {
-                    studyMaterialRepo.deleteMaterialById(materialId)
-                }
-                for (cardId in remoteDeleted[Tombstone.TYPE_FLASHCARD].orEmpty()) {
-                    flashcardRepo.deleteFlashcard(cardId)
-                }
-                for (quizId in remoteDeleted[Tombstone.TYPE_QUIZ_QUESTION].orEmpty()) {
-                    quizRepo.deleteQuizQuestion(quizId)
-                }
-                if (remoteDeletionsApplied) {
-                    localTombstones = tombstoneRepo.getAll()
-                }
-
-                // 2. État local frais (les StateFlow UI peuvent ne pas avoir
-                // encore ré-émis après les suppressions ci-dessus).
-                val currentCourses = courseRepo.getAllCourses().firstOrNull() ?: emptyList()
-                val currentFlashcards = flashcardRepo.getAllFlashcards().firstOrNull() ?: emptyList()
-                val currentLogs = reviewRepo.getAllReviewLogs().firstOrNull() ?: emptyList()
-                val currentMaterials = studyMaterialRepo.getAllMaterials().firstOrNull() ?: emptyList()
-                val currentQuizQuestions = quizRepo.getAllQuizQuestions().firstOrNull() ?: emptyList()
-
-                // 3. Fetch remote data (DOWN) — les docs marqués deletedAt sont exclus
-                val remoteCoursesResult = firestoreSyncManager.fetchRemoteCourses()
-                val remoteMaterialsResult = firestoreSyncManager.fetchRemoteMaterials()
-                val remoteCardsResult = firestoreSyncManager.fetchRemoteFlashcards()
-                val remoteQuizResult = firestoreSyncManager.fetchRemoteQuizQuestions()
-                val remoteLogsResult = firestoreSyncManager.fetchRemoteReviewLogs()
-                val remotePrefsResult = firestoreSyncManager.fetchRemotePreferences()
-
-                // 4. Reconcile Courses with timestamp conflict resolution
-                val localCourseMap = currentCourses.associateBy { it.id }.toMutableMap()
-                for (remote in remoteCoursesResult.getOrDefault(emptyList())) {
-                    val local = localCourseMap[remote.id]
-                    if (local == null || remote.updatedAt > local.updatedAt) {
-                        // Remote is missing locally or newer -> update local
-                        courseRepo.insertCourse(remote)
-                        localCourseMap[remote.id] = remote
-                    }
-                }
-
-                // 5. Reconcile StudyMaterials
-                val localMaterialMap = currentMaterials.associateBy { it.id }.toMutableMap()
-                for (remote in remoteMaterialsResult.getOrDefault(emptyList())) {
-                    val local = localMaterialMap[remote.id]
-                    if (local == null || remote.generatedAt > local.generatedAt || remote.version > local.version) {
-                        studyMaterialRepo.insertMaterial(remote)
-                        localMaterialMap[remote.id] = remote
-                    }
-                }
-
-                // 6. Reconcile Flashcards
-                val localCardMap = currentFlashcards.associateBy { it.id }.toMutableMap()
-                for (remote in remoteCardsResult.getOrDefault(emptyList())) {
-                    val local = localCardMap[remote.id]
-                    val remoteTime = remote.lastReviewedAt ?: remote.createdAt
-                    val isLocalNewer = local != null && (local.lastReviewedAt ?: local.createdAt) >= remoteTime
-                    if (!isLocalNewer) {
-                        flashcardRepo.insertFlashcard(remote)
-                        localCardMap[remote.id] = remote
-                    }
-                }
-
-                // 7. Reconcile Quiz Questions
-                val localQuizMap = currentQuizQuestions.associateBy { it.id }.toMutableMap()
-                val newQuizQuestions = remoteQuizResult.getOrDefault(emptyList()).filter { it.id !in localQuizMap }
-                if (newQuizQuestions.isNotEmpty()) {
-                    quizRepo.insertQuizQuestions(newQuizQuestions)
-                    localQuizMap.putAll(newQuizQuestions.associateBy { it.id })
-                }
-
-                // 8. Reconcile Review Logs — en filtrant les logs de cartes/cours
-                // supprimés (sans quoi ils reviendraient à chaque sync).
-                val tombstonedCardIds = localTombstones.filter { it.entityType == Tombstone.TYPE_FLASHCARD }.map { it.entityId }.toSet()
-                val tombstonedCourseIds = localTombstones.filter { it.entityType == Tombstone.TYPE_COURSE }.map { it.entityId }.toSet()
-                val localLogMap = currentLogs.associateBy { it.id }.toMutableMap()
-                val newReviewLogs = remoteLogsResult.getOrDefault(emptyList())
-                    .filter { it.id !in localLogMap }
-                    .filter { it.flashcardId !in tombstonedCardIds && it.courseId !in tombstonedCourseIds }
-                if (newReviewLogs.isNotEmpty()) {
-                    reviewRepo.insertReviewLogs(newReviewLogs)
-                    localLogMap.putAll(newReviewLogs.associateBy { it.id })
-                }
-
-                // 9. Reconcile User Preferences (keeping local AI config intact!)
-                //    et mémorise le résultat fusionné : c'est LUI qu'on upload,
-                //    sinon le cloud est écrasé par les anciennes valeurs.
-                var mergedPrefs = prefsRepo.getPreferencesSync()
-                if (remotePrefsResult.isSuccess) {
-                    val remotePrefs = remotePrefsResult.getOrNull()
-                    if (remotePrefs != null) {
-                        mergedPrefs = mergedPrefs.copy(
-                            notificationsEnabled = remotePrefs.notificationsEnabled,
-                            dailyGoal = remotePrefs.dailyGoal,
-                            reminderTime = remotePrefs.reminderTime,
-                            theme = remotePrefs.theme,
-                            language = remotePrefs.language
-                        )
-                        prefsRepo.updatePreferences(mergedPrefs)
-                    }
-                }
-
-                // 10. Sync Up newest combined state to Firestore (UP)
-                val upCourses = localCourseMap.values.toList()
-                val upMaterials = localMaterialMap.values.toList()
-                val upCards = localCardMap.values.toList()
-                val upQuiz = localQuizMap.values.toList()
-                val upLogs = localLogMap.values.toList()
-
-                val res1 = firestoreSyncManager.syncUpCourses(upCourses)
-                val res2 = firestoreSyncManager.syncUpMaterials(upMaterials)
-                val res3 = firestoreSyncManager.syncUpFlashcards(upCards)
-                val res4 = firestoreSyncManager.syncUpQuizQuestions(upQuiz)
-                val res5 = firestoreSyncManager.syncUpReviewLogs(upLogs)
-                val res6 = firestoreSyncManager.syncUpPreferences(mergedPrefs)
-                val res7 = firestoreSyncManager.markDeletedInCloud(localTombstones)
-
-                if (res1.isSuccess && res2.isSuccess && res3.isSuccess && res4.isSuccess && res5.isSuccess && res6.isSuccess && res7.isSuccess) {
-                    _uiState.value = UiState.Success("Synchronisation bidirectionnelle terminée avec succès (${upCourses.size} cours, ${upCards.size} flashcards) !")
-                } else {
-                    val error = res1.exceptionOrNull() ?: res2.exceptionOrNull() ?: res3.exceptionOrNull() ?: res4.exceptionOrNull() ?: res5.exceptionOrNull() ?: res6.exceptionOrNull() ?: res7.exceptionOrNull()
-                    _uiState.value = UiState.Error("Erreur Cloud : ${error?.localizedMessage ?: "Vérifiez votre connexion"}")
-                }
-            } catch (e: Exception) {
-                _uiState.value = UiState.Error("Échec de la synchronisation : ${e.localizedMessage}")
-            }
-        }
-    }
-
-    suspend fun testAiConnection(baseUrl: String, apiKey: String, modelName: String): Result<String> {
-        // Profil local : baseUrl est le chemin du fichier modèle importé
-        if (baseUrl.startsWith("/") && (baseUrl.endsWith(".task") || baseUrl.endsWith(".litertlm") || baseUrl.endsWith(".bin"))) {
-            return runCatching {
-                val file = java.io.File(baseUrl)
-                if (!file.exists()) throw IllegalStateException("Fichier modèle introuvable sur l'appareil.")
-                val sizeMb = file.length() / (1024 * 1024)
-                if (sizeMb < 200) throw IllegalStateException("Fichier trop petit (${sizeMb} Mo) : ce n'est probablement pas un modèle Gemma valide.")
-                "Modèle local prêt : ${file.name} (${"%.1f".format(sizeMb / 1024f)} Go)."
-            }
-        }
-        return openAiClient.testConnection(baseUrl, apiKey, modelName)
-    }
-
-    /**
-     * Importe un fichier modèle Gemma (.task / .litertlm) dans le stockage privé
-     * de l'app et renvoie son chemin (utilisé comme baseUrl du profil local).
-     */
-    suspend fun importLocalGemmaModel(uri: Uri): Result<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        runCatching {
-            val resolver = getApplication<Application>().contentResolver
-            val fileName = queryDisplayName(uri) ?: "gemma-model.task"
-            val safeName = fileName.replace(Regex("[^a-zA-Z0-9 ._\\-]"), "_")
-            val modelsDir = java.io.File(getApplication<Application>().filesDir, "models").apply { mkdirs() }
-            val dest = java.io.File(modelsDir, safeName)
-
-            resolver.openInputStream(uri)?.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
-            } ?: throw IllegalStateException("Impossible de lire le fichier sélectionné.")
-
-            val sizeMb = dest.length() / (1024 * 1024)
-            if (sizeMb < 200) {
-                dest.delete()
-                throw IllegalStateException("Le fichier importé ne semble pas être un modèle (${sizeMb} Mo).")
-            }
-            dest.absolutePath
-        }
-    }
-
-    private fun queryDisplayName(uri: Uri): String? {
-        return try {
-            getApplication<Application>().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    // --- Gestion des Profils IA ---
-
-    // Progression du téléchargement d'un modèle Gemma : null = inactif,
-    // -1 = taille totale inconnue (indéterminé), sinon 0..1
-    private val _modelDownloadProgress = MutableStateFlow<Float?>(null)
-    val modelDownloadProgress: StateFlow<Float?> = _modelDownloadProgress.asStateFlow()
-
-    /**
-     * Télécharge directement un modèle Gemma depuis Hugging Face dans le
-     * stockage privé de l'app et renvoie son chemin (utilisé comme baseUrl
-     * du profil local). Écrit d'abord dans un fichier .part puis renomme.
-     */
-    fun downloadGemmaModel(url: String, hfToken: String, onResult: (Result<String>) -> Unit) {
-        viewModelScope.launch {
-            _modelDownloadProgress.value = 0f
-            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching {
-                    val fileName = url.substringAfterLast('/').ifBlank { "gemma-model.task" }
-                    val modelsDir = java.io.File(getApplication<Application>().filesDir, "models").apply { mkdirs() }
-                    val dest = java.io.File(modelsDir, fileName)
-                    val tmp = java.io.File(modelsDir, "$fileName.part")
-
-                    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                    connection.connectTimeout = 15000
-                    connection.readTimeout = 30000
-                    connection.setRequestProperty("User-Agent", "LearnSyncAI/1.0")
-                    if (hfToken.isNotBlank()) {
-                        connection.setRequestProperty("Authorization", "Bearer ${hfToken.trim()}")
-                    }
-                    try {
-                        val code = connection.responseCode
-                        if (code == 401 || code == 403) {
-                            val pageUrl = url.substringBefore("/resolve/")
-                            if (hfToken.isBlank()) {
-                                throw HfAuthenticationRequiredException(pageUrl)
-                            }
-                            throw LicenseRequiredException(pageUrl)
-                        }
-                        if (code != 200) {
-                            throw IllegalStateException("Téléchargement impossible (HTTP $code).")
-                        }
-                        val total = connection.contentLengthLong
-                        connection.inputStream.use { input ->
-                            tmp.outputStream().use { output ->
-                                val buffer = ByteArray(1 shl 16)
-                                var read: Int
-                                var done = 0L
-                                while (input.read(buffer).also { read = it } != -1) {
-                                    output.write(buffer, 0, read)
-                                    done += read
-                                    _modelDownloadProgress.value = if (total > 0) done.toFloat() / total else -1f
-                                }
-                            }
-                        }
-                    } finally {
-                        connection.disconnect()
-                    }
-
-                    if (tmp.length() < 200L * 1024 * 1024) {
-                        tmp.delete()
-                        throw IllegalStateException("Le fichier téléchargé est trop petit pour être un modèle valide — réessayez ou importez-le manuellement.")
-                    }
-                    if (!tmp.renameTo(dest)) {
-                        tmp.copyTo(dest, overwrite = true)
-                        tmp.delete()
-                    }
-                    dest.absolutePath
-                }
-            }
-            _modelDownloadProgress.value = null
-            onResult(result)
-        }
-    }
-
-    fun addAiProfile(name: String, provider: String, baseUrl: String, apiKey: String, modelName: String, setAsActive: Boolean = true) {
-        viewModelScope.launch {
-            val newProfile = AiProfile(
-                id = UUID.randomUUID().toString(),
-                name = name.ifBlank { "Configuration IA" },
-                provider = provider,
-                baseUrl = baseUrl,
-                apiKey = apiKey,
-                modelName = modelName,
-                isActive = setAsActive,
-                createdAt = System.currentTimeMillis()
-            )
-            aiProfileRepo.insertProfile(newProfile)
-            if (setAsActive) {
-                aiProfileRepo.setActiveProfile(newProfile.id)
-            }
-            _uiState.value = UiState.Success("Profil IA « ${newProfile.name} » ajouté !")
-        }
-    }
-
-    fun updateAiProfile(profile: AiProfile) {
-        viewModelScope.launch {
-            aiProfileRepo.updateProfile(profile)
-            _uiState.value = UiState.Success("Profil IA mis à jour !")
-        }
-    }
-
-    fun deleteAiProfile(profileId: String) {
-        viewModelScope.launch {
-            aiProfileRepo.deleteProfile(profileId)
-            val remaining = aiProfileRepo.getAllProfiles().firstOrNull() ?: emptyList()
-            if (remaining.isNotEmpty() && remaining.none { it.isActive }) {
-                aiProfileRepo.setActiveProfile(remaining.first().id)
-            }
-            _uiState.value = UiState.Success("Profil IA supprimé.")
-        }
-    }
-
-    fun setActiveAiProfile(profileId: String) {
-        viewModelScope.launch {
-            aiProfileRepo.setActiveProfile(profileId)
-            _uiState.value = UiState.Success("Profil IA activé.")
-        }
-    }
-
-    // --- Gestion des fichiers modèles locaux (Gemma) ---
-
-    private val _localModels = MutableStateFlow<List<LocalModelInfo>>(emptyList())
-    val localModels: StateFlow<List<LocalModelInfo>> = _localModels.asStateFlow()
-
-    fun refreshLocalModels() {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val activePath = aiProfileRepo.getAllProfiles().firstOrNull()
-                ?.find { it.isActive && it.provider == "LOCAL_GEMMA" }?.baseUrl
-            val dir = java.io.File(getApplication<Application>().filesDir, "models")
-            val list = dir.listFiles()
-                ?.filter { it.isFile && it.length() > 0 && !it.name.endsWith(".part") }
-                ?.map {
-                    LocalModelInfo(
-                        path = it.absolutePath,
-                        name = it.name,
-                        sizeBytes = it.length(),
-                        usedByActiveProfile = it.absolutePath == activePath
-                    )
-                }
-                ?.sortedByDescending { it.sizeBytes }
-                ?: emptyList()
-            _localModels.value = list
-        }
-    }
-
-    /** Supprime un fichier modèle local (et son éventuel .part) ; les profils qui le référencent sont vidés. */
-    fun deleteLocalModel(path: String) {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                val file = java.io.File(path)
-                file.delete()
-                java.io.File(file.parentFile, file.name + ".part").delete()
-            }
-            val profiles = aiProfileRepo.getAllProfiles().firstOrNull() ?: emptyList()
-            profiles.filter { it.baseUrl == path }.forEach { profile ->
-                aiProfileRepo.updateProfile(profile.copy(baseUrl = ""))
-            }
-            refreshLocalModels()
         }
     }
 
@@ -1239,4 +681,3 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value = UiState.Idle
     }
 }
-

@@ -1,6 +1,5 @@
 package com.learnsyncai.ui.navigation
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -13,15 +12,19 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
-import com.learnsyncai.domain.model.Course
 import com.learnsyncai.ui.screens.*
 import com.learnsyncai.ui.theme.*
-import com.learnsyncai.ui.viewmodels.LearnSyncViewModel
-import kotlinx.coroutines.launch
+import com.learnsyncai.ui.viewmodels.LibraryViewModel
+import com.learnsyncai.ui.viewmodels.ProfileViewModel
+import com.learnsyncai.ui.viewmodels.ReviewViewModel
+import com.learnsyncai.ui.viewmodels.SearchViewModel
+import com.learnsyncai.ui.viewmodels.SyncViewModel
+import com.learnsyncai.ui.viewmodels.UiState
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Accueil", Icons.Default.Home)
@@ -33,38 +36,35 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 }
 
 @Composable
-fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
+fun LearnSyncNavigation() {
+    val libraryViewModel: LibraryViewModel = viewModel()
+    val reviewViewModel: ReviewViewModel = viewModel()
+    val profileViewModel: ProfileViewModel = viewModel()
+    val syncViewModel: SyncViewModel = viewModel()
+    val searchViewModel: SearchViewModel = viewModel()
+
     val navController = rememberNavController()
-    val courses by viewModel.courses.collectAsState()
-    val dueFlashcards by viewModel.dueFlashcards.collectAsState()
-    val reviewQueue by viewModel.reviewQueue.collectAsState()
-    val allFlashcards by viewModel.allFlashcards.collectAsState()
-    val reviewLogs by viewModel.reviewLogs.collectAsState()
-    val preferences by viewModel.preferences.collectAsState()
-    val aiProfiles by viewModel.aiProfiles.collectAsState()
-    val activeAiProfile by viewModel.activeAiProfile.collectAsState()
-    val hasValidAiConfig by viewModel.hasValidAiConfig.collectAsState()
-    val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsState()
-    val localModels by viewModel.localModels.collectAsState()
-    val uiState by viewModel.uiState.collectAsState()
-    val generationProgress by viewModel.generationProgress.collectAsState()
+    val courses by libraryViewModel.courses.collectAsState()
+    val dueFlashcards by reviewViewModel.dueFlashcards.collectAsState()
+    val reviewQueue by reviewViewModel.reviewQueue.collectAsState()
+    val allFlashcards by libraryViewModel.allFlashcards.collectAsState()
+    val reviewLogs by reviewViewModel.reviewLogs.collectAsState()
+    val preferences by profileViewModel.preferences.collectAsState()
+    val aiProfiles by profileViewModel.aiProfiles.collectAsState()
+    val activeAiProfile by profileViewModel.activeAiProfile.collectAsState()
+    val hasValidAiConfig by libraryViewModel.hasValidAiConfig.collectAsState()
+    val modelDownloadProgress by profileViewModel.modelDownloadProgress.collectAsState()
+    val localModels by profileViewModel.localModels.collectAsState()
+    val uiState by libraryViewModel.uiState.collectAsState()
+    val profileUiState by profileViewModel.uiState.collectAsState()
+    val syncUiState by syncViewModel.uiState.collectAsState()
+    val generationProgress by libraryViewModel.generationProgress.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(uiState) {
-        when (val state = uiState) {
-            is LearnSyncViewModel.UiState.Success -> {
-                snackbarHostState.showSnackbar(state.message)
-                viewModel.clearState()
-            }
-            is LearnSyncViewModel.UiState.Error -> {
-                snackbarHostState.showSnackbar(state.message)
-                viewModel.clearState()
-            }
-            else -> {}
-        }
-    }
+    UiStateSnackbarEffect(uiState, libraryViewModel::clearState, snackbarHostState)
+    UiStateSnackbarEffect(profileUiState, profileViewModel::clearState, snackbarHostState)
+    UiStateSnackbarEffect(syncUiState, syncViewModel::clearState, snackbarHostState)
 
     // 5 Primary mobile bottom navigation items
     val mainBottomScreens = listOf(
@@ -97,25 +97,14 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
 
                             NavigationBarItem(
                                 icon = {
-                                    BadgedBox(
-                                        badge = {
-                                            if (isReview && dueFlashcards.isNotEmpty()) {
-                                                Badge(
-                                                    containerColor = AmberFlame,
-                                                    contentColor = Slate900
-                                                ) {
-                                                    Text("${dueFlashcards.size}")
-                                                }
-                                            }
-                                        }
-                                    ) {
-                                        Icon(
-                                            imageVector = screen.icon,
-                                            contentDescription = screen.title,
-                                            tint = if (isSelected) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    NavItemIcon(
+                                        icon = screen.icon,
+                                        contentDescription = screen.title,
+                                        showBadge = isReview && dueFlashcards.isNotEmpty(),
+                                        badgeCount = dueFlashcards.size,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 },
                                 label = {
                                     Text(
@@ -132,17 +121,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
-                                onClick = {
-                                    if (currentRoute != screen.route) {
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                }
+                                onClick = { navigateToTopLevel(navController, currentRoute, screen.route) }
                             )
                         }
                     }
@@ -170,31 +149,16 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
 
                             NavigationRailItem(
                                 icon = {
-                                    BadgedBox(
-                                        badge = {
-                                            if (isReview && dueFlashcards.isNotEmpty()) {
-                                                Badge(containerColor = AmberFlame) {
-                                                    Text("${dueFlashcards.size}")
-                                                }
-                                            }
-                                        }
-                                    ) {
-                                        Icon(screen.icon, contentDescription = screen.title)
-                                    }
+                                    NavItemIcon(
+                                        icon = screen.icon,
+                                        contentDescription = screen.title,
+                                        showBadge = isReview && dueFlashcards.isNotEmpty(),
+                                        badgeCount = dueFlashcards.size
+                                    )
                                 },
                                 label = { Text(screen.title) },
                                 selected = isSelected,
-                                onClick = {
-                                    if (currentRoute != screen.route) {
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                }
+                                onClick = { navigateToTopLevel(navController, currentRoute, screen.route) }
                             )
                         }
                     }
@@ -222,7 +186,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     onNavigateToStats = { navController.navigate(Screen.Stats.route) },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onSelectCourse = { course -> navController.navigate("course_detail/${course.id}") },
-                                    onSyncCalendar = { viewModel.syncToCalendar() }
+                                    onSyncCalendar = { syncViewModel.syncToCalendar() }
                                 )
                             }
 
@@ -232,12 +196,12 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     allFlashcards = allFlashcards,
                                     dueCards = dueFlashcards,
                                     hasValidAiConfig = hasValidAiConfig,
-                                    onImportCourse = { uri, name -> viewModel.importCourse(uri, name) },
-                                    onImportFromUrl = { url -> viewModel.importCourseFromUrl(url) },
-                                    onGenerateMaterial = { course -> viewModel.generateMaterial(course) },
+                                    onImportCourse = { uri, name -> libraryViewModel.importCourse(uri, name) },
+                                    onImportFromUrl = { url -> libraryViewModel.importCourseFromUrl(url) },
+                                    onGenerateMaterial = { course -> libraryViewModel.generateMaterial(course) },
                                     onSelectCourse = { course -> navController.navigate("course_detail/${course.id}") },
-                                    onDeleteCourse = { courseId -> viewModel.deleteCourse(courseId) },
-                                    onUpdateCourseTag = { courseId, tag -> viewModel.updateCourseTag(courseId, tag) },
+                                    onDeleteCourse = { courseId -> libraryViewModel.deleteCourse(courseId) },
+                                    onUpdateCourseTag = { courseId, tag -> libraryViewModel.updateCourseTag(courseId, tag) },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onNavigateToSearch = { navController.navigate("search") },
                                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
@@ -246,11 +210,13 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                             }
 
                             composable("search") {
-                                val allQuiz by viewModel.allQuizQuestions.collectAsState()
-                                val allMaterials by viewModel.allMaterials.collectAsState()
+                                val allQuiz by searchViewModel.allQuizQuestions.collectAsState()
+                                val allMaterials by searchViewModel.allMaterials.collectAsState()
+                                val searchCourses by searchViewModel.courses.collectAsState()
+                                val searchFlashcards by searchViewModel.allFlashcards.collectAsState()
                                 SearchScreen(
-                                    courses = courses,
-                                    flashcards = allFlashcards,
+                                    courses = searchCourses,
+                                    flashcards = searchFlashcards,
                                     quizQuestions = allQuiz,
                                     materials = allMaterials,
                                     onBackClick = { navController.popBackStack() },
@@ -264,12 +230,12 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                             ) { backStackEntry ->
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
                                 val course = courses.find { it.id == courseId }
-                                val materials by viewModel.getMaterialsForCourse(courseId).collectAsState(initial = emptyList())
-                                val courseFlashcards by viewModel.getFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
-                                val courseQuiz by viewModel.getQuizQuestionsForCourse(courseId).collectAsState(initial = emptyList())
+                                val materials by libraryViewModel.getMaterialsForCourse(courseId).collectAsState(initial = emptyList())
+                                val courseFlashcards by libraryViewModel.getFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
+                                val courseQuiz by libraryViewModel.getQuizQuestionsForCourse(courseId).collectAsState(initial = emptyList())
 
                                 if (course != null) {
-                                    val coursePreview by viewModel.getCoursePreview(course.id)
+                                    val coursePreview by libraryViewModel.getCoursePreview(course.id)
                                         .collectAsState(initial = "")
                                     CourseDetailScreen(
                                         course = course,
@@ -282,22 +248,22 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                         onBackClick = { navController.popBackStack() },
                                         onStartReview = { navController.navigate("course_review/${course.id}") },
                                         onStartQuiz = { navController.navigate("course_quiz/${course.id}") },
-                                        onRegenerate = { viewModel.generateMaterial(course) },
-                                        onGenerateMore = { viewModel.generateMoreMaterial(course) },
-                                        onCourseLanguageChange = { lang -> viewModel.updateCourseLanguage(course, lang) },
+                                        onRegenerate = { libraryViewModel.generateMaterial(course) },
+                                        onGenerateMore = { libraryViewModel.generateMoreMaterial(course) },
+                                        onCourseLanguageChange = { lang -> libraryViewModel.updateCourseLanguage(course, lang) },
                                         onDeleteCourse = {
-                                            viewModel.deleteCourse(course.id)
+                                            libraryViewModel.deleteCourse(course.id)
                                             navController.popBackStack()
                                         },
-                                        onExportCsv = { uri -> viewModel.exportCourseToCsv(uri, course.id) },
+                                        onExportCsv = { uri -> libraryViewModel.exportCourseToCsv(uri, course.id) },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                                        onAddFlashcard = { q, a, exp -> viewModel.addCustomFlashcard(course.id, q, a, exp) },
-                                        onDeleteFlashcard = { cardId -> viewModel.deleteFlashcard(cardId) },
-                                        onAddQuizQuestion = { q, opts, ans, exp -> viewModel.addCustomQuizQuestion(course.id, q, opts, ans, exp) },
-                                        onDeleteQuizQuestion = { qId -> viewModel.deleteQuizQuestion(qId) },
-                                        onSaveSummary = { summary -> viewModel.saveCustomSummary(course.id, summary) },
-                                        onAddKeyPoint = { point -> viewModel.addCustomKeyPoint(course.id, point) },
-                                        onRemoveKeyPoint = { point -> viewModel.removeCustomKeyPoint(course.id, point) }
+                                        onAddFlashcard = { q, a, exp -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp) },
+                                        onDeleteFlashcard = { cardId -> libraryViewModel.deleteFlashcard(cardId) },
+                                        onAddQuizQuestion = { q, opts, ans, exp -> libraryViewModel.addCustomQuizQuestion(course.id, q, opts, ans, exp) },
+                                        onDeleteQuizQuestion = { qId -> libraryViewModel.deleteQuizQuestion(qId) },
+                                        onSaveSummary = { summary -> libraryViewModel.saveCustomSummary(course.id, summary) },
+                                        onAddKeyPoint = { point -> libraryViewModel.addCustomKeyPoint(course.id, point) },
+                                        onRemoveKeyPoint = { point -> libraryViewModel.removeCustomKeyPoint(course.id, point) }
                                     )
                                 }
                             }
@@ -310,10 +276,10 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     aheadCount = aheadCards.size,
                                     reviewQueue = reviewQueue,
                                     autoTtsEnabled = preferences.autoTtsEnabled,
-                                    onReviewCard = { card, rating, time -> viewModel.rateCurrentCard(card, rating, time) },
-                                    onStartSession = { limit -> viewModel.startReviewSession(dueFlashcards, limit) },
-                                    onStartAheadSession = { viewModel.startReviewSession(aheadCards, null) },
-                                    onEndSession = { viewModel.endReviewSession() },
+                                    onReviewCard = { card, rating, time -> reviewViewModel.rateCurrentCard(card, rating, time) },
+                                    onStartSession = { limit -> reviewViewModel.startReviewSession(dueFlashcards, limit) },
+                                    onStartAheadSession = { reviewViewModel.startReviewSession(aheadCards, null) },
+                                    onEndSession = { reviewViewModel.endReviewSession() },
                                     onFinishReview = { navController.navigate(Screen.Home.route) }
                                 )
                             }
@@ -323,7 +289,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                 arguments = listOf(navArgument("courseId") { type = NavType.StringType })
                             ) { backStackEntry ->
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
-                                val courseDueFlashcards by viewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
+                                val courseDueFlashcards by reviewViewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
                                 val courseAheadCards = allFlashcards.filter { it.courseId == courseId && it.dueDate > System.currentTimeMillis() }
 
                                 ReviewScreen(
@@ -331,10 +297,10 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     aheadCount = courseAheadCards.size,
                                     reviewQueue = reviewQueue,
                                     autoTtsEnabled = preferences.autoTtsEnabled,
-                                    onReviewCard = { card, rating, time -> viewModel.rateCurrentCard(card, rating, time) },
-                                    onStartSession = { limit -> viewModel.startReviewSession(courseDueFlashcards, limit) },
-                                    onStartAheadSession = { viewModel.startReviewSession(courseAheadCards, null) },
-                                    onEndSession = { viewModel.endReviewSession() },
+                                    onReviewCard = { card, rating, time -> reviewViewModel.rateCurrentCard(card, rating, time) },
+                                    onStartSession = { limit -> reviewViewModel.startReviewSession(courseDueFlashcards, limit) },
+                                    onStartAheadSession = { reviewViewModel.startReviewSession(courseAheadCards, null) },
+                                    onEndSession = { reviewViewModel.endReviewSession() },
                                     onFinishReview = { navController.popBackStack() }
                                 )
                             }
@@ -345,7 +311,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                             ) { backStackEntry ->
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
                                 val course = courses.find { it.id == courseId }
-                                val courseQuiz by viewModel.getQuizQuestionsForCourse(courseId).collectAsState(initial = emptyList())
+                                val courseQuiz by libraryViewModel.getQuizQuestionsForCourse(courseId).collectAsState(initial = emptyList())
 
                                 QuizScreen(
                                     courseTitle = course?.title ?: "Cours",
@@ -358,7 +324,7 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                 CalendarScreen(
                                     allFlashcards = allFlashcards,
                                     courses = courses,
-                                    onSyncCalendar = { viewModel.syncToCalendar() },
+                                    onSyncCalendar = { syncViewModel.syncToCalendar() },
                                     onBackClick = { navController.popBackStack() }
                                 )
                             }
@@ -376,29 +342,29 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
                                     preferences = preferences,
                                     aiProfiles = aiProfiles,
                                     activeAiProfile = activeAiProfile,
-                                    onUpdatePreferences = { prefs -> viewModel.updatePreferences(prefs) },
+                                    onUpdatePreferences = { prefs -> profileViewModel.updatePreferences(prefs) },
                                     onAddAiProfile = { name, provider, baseUrl, apiKey, modelName ->
-                                        viewModel.addAiProfile(name, provider, baseUrl, apiKey, modelName)
+                                        profileViewModel.addAiProfile(name, provider, baseUrl, apiKey, modelName)
                                     },
-                                    onUpdateAiProfile = { profile -> viewModel.updateAiProfile(profile) },
-                                    onDeleteAiProfile = { profileId -> viewModel.deleteAiProfile(profileId) },
-                                    onSetActiveAiProfile = { profileId -> viewModel.setActiveAiProfile(profileId) },
-                                    onSyncCloud = { viewModel.syncWithCloud() },
-                                    onSyncCalendar = { viewModel.syncToCalendar() },
+                                    onUpdateAiProfile = { profile -> profileViewModel.updateAiProfile(profile) },
+                                    onDeleteAiProfile = { profileId -> profileViewModel.deleteAiProfile(profileId) },
+                                    onSetActiveAiProfile = { profileId -> profileViewModel.setActiveAiProfile(profileId) },
+                                    onSyncCloud = { syncViewModel.syncWithCloud() },
+                                    onSyncCalendar = { syncViewModel.syncToCalendar() },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onTestAiConnection = { baseUrl, apiKey, modelName ->
-                                        viewModel.testAiConnection(baseUrl, apiKey, modelName)
+                                        profileViewModel.testAiConnection(baseUrl, apiKey, modelName)
                                     },
                                     onImportLocalModel = { uri ->
-                                        viewModel.importLocalGemmaModel(uri)
+                                        profileViewModel.importLocalGemmaModel(uri)
                                     },
                                     onDownloadGemmaModel = { url, token, onResult ->
-                                        viewModel.downloadGemmaModel(url, token, onResult)
+                                        profileViewModel.downloadGemmaModel(url, token, onResult)
                                     },
                                     modelDownloadProgress = modelDownloadProgress,
                                     localModels = localModels,
-                                    onRefreshLocalModels = { viewModel.refreshLocalModels() },
-                                    onDeleteLocalModel = { path -> viewModel.deleteLocalModel(path) }
+                                    onRefreshLocalModels = { profileViewModel.refreshLocalModels() },
+                                    onDeleteLocalModel = { path -> profileViewModel.deleteLocalModel(path) }
                                 )
                             }
                         }
@@ -409,3 +375,71 @@ fun LearnSyncNavigation(viewModel: LearnSyncViewModel) {
     }
 }
 
+/** Navigation vers un onglet de premier niveau (save/restore state, single top). */
+private fun navigateToTopLevel(
+    navController: androidx.navigation.NavController,
+    currentRoute: String?,
+    route: String
+) {
+    if (currentRoute != route) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+}
+
+/**
+ * Icône d'item de navigation avec badge de cartes dues, partagée par la
+ * bottom bar et le rail. [tint] null = teinte par défaut du thème (rail).
+ */
+@Composable
+private fun NavItemIcon(
+    icon: ImageVector,
+    contentDescription: String,
+    showBadge: Boolean,
+    badgeCount: Int,
+    tint: androidx.compose.ui.graphics.Color? = null
+) {
+    BadgedBox(
+        badge = {
+            if (showBadge) {
+                Badge(
+                    containerColor = AmberFlame,
+                    contentColor = Slate900
+                ) {
+                    Text("$badgeCount")
+                }
+            }
+        }
+    ) {
+        if (tint != null) {
+            Icon(imageVector = icon, contentDescription = contentDescription, tint = tint)
+        } else {
+            Icon(imageVector = icon, contentDescription = contentDescription)
+        }
+    }
+}
+
+/** Affiche le message d'un état UI transitoire en snackbar puis le consomme. */
+@Composable
+private fun UiStateSnackbarEffect(
+    state: UiState,
+    onConsume: () -> Unit,
+    snackbarHostState: SnackbarHostState
+) {
+    val message = when (state) {
+        is UiState.Success -> state.message
+        is UiState.Error -> state.message
+        else -> null
+    }
+    LaunchedEffect(state) {
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            onConsume()
+        }
+    }
+}
