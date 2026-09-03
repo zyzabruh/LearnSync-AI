@@ -94,8 +94,8 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                 if (prefs != null && prefs.notificationsEnabled) {
                     ReviewNotificationWorker.scheduleDailyReminder(application, prefs.reminderTime)
                 }
-            } catch (_: Throwable) {
-                // Gracefully ignore if WorkManager is not ready or constrained
+            } catch (e: Throwable) {
+                android.util.Log.w("LearnSyncAI", "Planification du rappel quotidien impossible : ${e.message}")
             }
         }
 
@@ -109,7 +109,9 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                             stale.copy(generationStatus = "ERROR", updatedAt = System.currentTimeMillis())
                         )
                     }
-            } catch (_: Throwable) {}
+            } catch (e: Throwable) {
+                android.util.Log.w("LearnSyncAI", "Reset des statuts GENERATING orphelins impossible : ${e.message}")
+            }
         }
 
         // Seed initial AI profile if none exists
@@ -129,7 +131,9 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                     aiProfileRepo.insertProfile(defaultProfile)
                 }
-            } catch (_: Throwable) {}
+            } catch (e: Throwable) {
+                android.util.Log.w("LearnSyncAI", "Initialisation du profil IA par défaut impossible : ${e.message}")
+            }
         }
     }
 
@@ -227,9 +231,10 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // Optional cloud file upload in background
                 launch {
-                    try {
-                        firestoreSyncManager.uploadCourseDocument(uri, courseId, fileName, getApplication())
-                    } catch (_: Exception) {}
+                    firestoreSyncManager.uploadCourseDocument(uri, courseId, fileName, getApplication())
+                        .onFailure {
+                            android.util.Log.w("LearnSyncAI", "Upload cloud du document différé : ${it.message}")
+                        }
                 }
 
                 _uiState.value = UiState.Success("Cours importé avec succès (${parseResult.pageCount} pages)")
@@ -313,6 +318,32 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /** Marque le cours en erreur et affiche un message clair à l'utilisateur. */
+    private suspend fun markGenerationError(course: Course, message: String) {
+        courseRepo.insertCourse(course.copy(generationStatus = "ERROR", updatedAt = System.currentTimeMillis()))
+        _uiState.value = UiState.Error(message)
+        _generationProgress.value = ""
+    }
+
+    /**
+     * Lit le texte extrait du document pour la génération ; en cas de document
+     * absent ou illisible, interrompt avec un message clair au lieu de générer
+     * à partir d'un texte vide. Renvoie null si la génération doit s'arrêter.
+     */
+    private suspend fun readCourseTextForGeneration(course: Course): String? {
+        return when (val result = courseContentStorage.readExtractedTextChecked(course.id)) {
+            is com.learnsyncai.data.storage.CourseContentStorage.ExtractedText.Available -> result.text
+            is com.learnsyncai.data.storage.CourseContentStorage.ExtractedText.Missing -> {
+                markGenerationError(course, "Texte du document introuvable pour ce cours : réimporte le document avant de générer.")
+                null
+            }
+            is com.learnsyncai.data.storage.CourseContentStorage.ExtractedText.ReadError -> {
+                markGenerationError(course, "Texte du document illisible (${result.detail}) : réimporte le document avant de générer.")
+                null
+            }
+        }
+    }
+
     fun generateMaterial(course: Course) {
         viewModelScope.launch {
             val activeProfile = aiProfileRepo.getActiveProfile()
@@ -336,7 +367,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             )
             courseRepo.insertCourse(updatedCourseGenerating)
 
-            val courseText = courseContentStorage.readExtractedText(course.id)
+            val courseText = readCourseTextForGeneration(course) ?: return@launch
             val result = aiRepo.generateStudyMaterial(
                 courseTitle = course.title,
                 courseText = courseText,
@@ -397,7 +428,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
             )
 
             try {
-                val courseText = courseContentStorage.readExtractedText(course.id)
+                val courseText = readCourseTextForGeneration(course) ?: return@launch
                 val existingCards = flashcardRepo.getFlashcardsForCourse(course.id).firstOrNull() ?: emptyList()
                 val existingQuiz = quizRepo.getQuizQuestionsForCourse(course.id).firstOrNull() ?: emptyList()
 
@@ -495,7 +526,7 @@ class LearnSyncViewModel(application: Application) : AndroidViewModel(applicatio
         )
 
         try {
-            val courseText = courseContentStorage.readExtractedText(course.id)
+            val courseText = readCourseTextForGeneration(course) ?: return
             val prefs = prefsRepo.getPreferencesSync()
             val flashcardsTarget = if (prefs.flashcardsMode == "custom") prefs.flashcardsCustomCount else 8
             val quizTarget = if (prefs.quizMode == "custom") prefs.quizCustomCount else 5
