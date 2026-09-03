@@ -2,6 +2,7 @@ package com.learnsyncai.domain.usecase
 
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.ReviewLog
+import com.learnsyncai.domain.model.ReviewSession
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -293,6 +294,18 @@ object SpacedRepetition {
         }
 
         return forecastDates
+    }
+
+    /**
+     * Sum actual session durations, including a currently open session.
+     * Sessions with invalid or negative bounds are ignored.
+     */
+    fun calculateStudyDurationMs(
+        sessions: List<ReviewSession>,
+        currentTime: Long = System.currentTimeMillis()
+    ): Long = sessions.sumOf { session ->
+        val end = session.endedAt ?: currentTime
+        (end - session.startedAt).coerceAtLeast(0L)
     }
 
     /**

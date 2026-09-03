@@ -63,6 +63,9 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     val reviewLogs: StateFlow<List<ReviewLog>> = reviewRepo.getAllReviewLogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val reviewSessions: StateFlow<List<ReviewSession>> = reviewRepo.getAllSessions()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     /**
      * File de la session de révision en cours : null = aucune session active
      * (écran de choix), liste vide = session terminée. La file vit dans le

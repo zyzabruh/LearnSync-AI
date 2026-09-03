@@ -35,6 +35,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.learnsyncai.domain.model.Course
 import com.learnsyncai.domain.model.Flashcard
+import com.learnsyncai.domain.model.ReviewLog
+import com.learnsyncai.domain.model.ReviewSession
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
@@ -74,7 +76,8 @@ private data class ScheduledReview(
 private data class CalendarDayMarkers(
     val actualCount: Int = 0,
     val forecastCount: Int = 0,
-    val overdueCount: Int = 0
+    val overdueCount: Int = 0,
+    val reviewedCount: Int = 0
 )
 
 private const val FORECAST_HORIZON_DAYS = 30
@@ -192,8 +195,16 @@ private fun ReviewMonthGrid(
                                         color = if (day == selectedDay) Color.White else MaterialTheme.colorScheme.onSurface
                                     )
                                     val markers = markerDays[day]
-                                    if (markers != null && (markers.actualCount > 0 || markers.forecastCount > 0)) {
+                                    if (markers != null && (markers.actualCount > 0 || markers.forecastCount > 0 || markers.reviewedCount > 0)) {
                                         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            if (markers.reviewedCount > 0) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(5.dp)
+                                                        .clip(CircleShape)
+                                                        .background(if (day == selectedDay) Color.White else EmeraldSuccess)
+                                                )
+                                            }
                                             if (markers.actualCount > 0) {
                                                 val actualColor = when {
                                                     day == selectedDay -> Color.White
@@ -240,6 +251,7 @@ private fun ReviewMonthGrid(
                     horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    CalendarLegendItem(color = EmeraldSuccess, label = "Révisée")
                     CalendarLegendItem(color = RoseError, label = "En retard")
                     CalendarLegendItem(color = AmberFlame, label = "Aujourd'hui")
                 }
@@ -284,6 +296,8 @@ private fun CalendarLegendItem(
 @Composable
 fun CalendarScreen(
     allFlashcards: List<Flashcard>,
+    reviewLogs: List<ReviewLog> = emptyList(),
+    reviewSessions: List<ReviewSession> = emptyList(),
     courses: List<Course> = emptyList(),
     onSyncCalendar: () -> Unit,
     onBackClick: () -> Unit = {}
@@ -397,9 +411,9 @@ fun CalendarScreen(
             .mapValues { (_, reviews) -> reviews.sortedBy { it.scheduledAt } }
     }
 
-    val markerDays = remember(scheduledReviews) {
+    val markerDays = remember(scheduledReviews, reviewLogs, reviewSessions) {
         val todayStart = dayStartOf(System.currentTimeMillis())
-        scheduledReviews.groupBy { review -> dayStartOf(review.scheduledAt) }
+        val plannedMarkers = scheduledReviews.groupBy { review -> dayStartOf(review.scheduledAt) }
             .mapValues { (_, reviews) ->
                 CalendarDayMarkers(
                     actualCount = reviews.count { !it.isForecast },
@@ -407,6 +421,15 @@ fun CalendarScreen(
                     overdueCount = reviews.count { !it.isForecast && it.scheduledAt < todayStart }
                 )
             }
+        val reviewedMarkers = (reviewLogs.map { it.reviewedAt } + reviewSessions
+            .filter { it.cardsReviewed > 0 }
+            .map { it.startedAt })
+            .groupingBy { dayStartOf(it) }
+            .eachCount()
+
+        (plannedMarkers.keys + reviewedMarkers.keys).associateWith { day ->
+            (plannedMarkers[day] ?: CalendarDayMarkers()).copy(reviewedCount = reviewedMarkers[day] ?: 0)
+        }
     }
 
     // Résumé par cours : cartes dues maintenant + prochaine échéance

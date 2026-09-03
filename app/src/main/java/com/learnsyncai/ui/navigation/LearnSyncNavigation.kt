@@ -49,6 +49,7 @@ fun LearnSyncNavigation() {
     val reviewQueue by reviewViewModel.reviewQueue.collectAsState()
     val allFlashcards by libraryViewModel.allFlashcards.collectAsState()
     val reviewLogs by reviewViewModel.reviewLogs.collectAsState()
+    val reviewSessions by reviewViewModel.reviewSessions.collectAsState()
     val preferences by profileViewModel.preferences.collectAsState()
     val aiProfiles by profileViewModel.aiProfiles.collectAsState()
     val activeAiProfile by profileViewModel.activeAiProfile.collectAsState()
@@ -325,6 +326,8 @@ fun LearnSyncNavigation() {
                             composable(Screen.Calendar.route) {
                                 CalendarScreen(
                                     allFlashcards = allFlashcards,
+                                    reviewLogs = reviewLogs,
+                                    reviewSessions = reviewSessions,
                                     courses = courses,
                                     onSyncCalendar = { syncViewModel.syncToCalendar() },
                                     onBackClick = { navController.popBackStack() }
@@ -334,6 +337,7 @@ fun LearnSyncNavigation() {
                             composable(Screen.Stats.route) {
                                 StatsScreen(
                                     reviewLogs = reviewLogs,
+                                    reviewSessions = reviewSessions,
                                     allFlashcards = allFlashcards,
                                     courses = courses
                                 )

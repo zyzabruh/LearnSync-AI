@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.learnsyncai.domain.model.Course
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.ReviewLog
+import com.learnsyncai.domain.model.ReviewSession
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
@@ -36,6 +37,7 @@ import java.util.*
 @Composable
 fun StatsScreen(
     reviewLogs: List<ReviewLog>,
+    reviewSessions: List<ReviewSession>,
     allFlashcards: List<Flashcard>,
     courses: List<Course> = emptyList()
 ) {
@@ -50,8 +52,8 @@ fun StatsScreen(
         }
     }
 
-    val totalStudyMinutes = remember(reviewLogs) {
-        val totalMs = reviewLogs.sumOf { it.responseTime }
+    val totalStudyMinutes = remember(reviewSessions) {
+        val totalMs = SpacedRepetition.calculateStudyDurationMs(reviewSessions)
         (totalMs / 60000).toInt()
     }
 
@@ -69,7 +71,7 @@ fun StatsScreen(
     }
 
     // 7-day Activity aggregation
-    val last7DaysData = remember(reviewLogs) {
+    val last7DaysData = remember(reviewLogs, reviewSessions) {
         val today = LocalDate.now()
         (6 downTo 0).map { daysAgo ->
             val targetDate = today.minusDays(daysAgo.toLong())
@@ -254,8 +256,8 @@ fun StatsScreen(
                 }
             }
 
-            // 28-Day Consistency Heatmap Card
-            item {
+    // 28-Day Consistency Heatmap Card
+    item {
                 val last28DaysData = remember(reviewLogs) {
                     val today = LocalDate.now()
                     (27 downTo 0).map { daysAgo ->

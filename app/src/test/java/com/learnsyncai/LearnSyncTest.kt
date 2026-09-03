@@ -6,6 +6,7 @@ import com.learnsyncai.domain.model.Course
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.QuizQuestion
 import com.learnsyncai.domain.model.ReviewLog
+import com.learnsyncai.domain.model.ReviewSession
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import org.junit.Assert.*
 import org.junit.Test
@@ -105,6 +106,17 @@ class LearnSyncTest {
         assertTrue(result.updatedCard.easeFactor > 10.0f)
     }
 
+
+    @Test
+    fun testStudyDurationUsesRealSessionBounds() {
+        val sessions = listOf(
+            ReviewSession("s1", "course1", 1_000L, 61_000L, 2),
+            ReviewSession("s2", null, 100_000L, null, 1),
+            ReviewSession("invalid", null, 80_000L, 70_000L, 1)
+        )
+
+        assertEquals(60_000L + 20_000L, SpacedRepetition.calculateStudyDurationMs(sessions, currentTime = 120_000L))
+    }
 
     @Test
     fun testForecastScheduleSimulatesGoodReviewsUntilHorizon() {
