@@ -107,6 +107,59 @@ class LearnSyncTest {
 
 
     @Test
+    fun testForecastScheduleSimulatesGoodReviewsUntilHorizon() {
+        val now = 1_000_000L
+        val card = Flashcard(
+            id = "forecast",
+            courseId = "course1",
+            question = "Q",
+            answer = "A",
+            explanation = "",
+            difficulty = 5.5f,
+            box = 2,
+            dueDate = now,
+            interval = 3,
+            easeFactor = 3.1f,
+            repetitions = 1,
+            lapses = 0,
+            lastReviewedAt = now - TimeUnit.DAYS.toMillis(3),
+            createdAt = now - TimeUnit.DAYS.toMillis(4)
+        )
+
+        val schedule = SpacedRepetition.forecastSchedule(card, horizonDays = 30, currentTime = now)
+
+        assertTrue(schedule.isNotEmpty())
+        assertTrue(schedule.zipWithNext().all { (first, second) -> second > first })
+        assertTrue(schedule.all { it > now && it <= now + TimeUnit.DAYS.toMillis(30) })
+    }
+
+    @Test
+    fun testForecastScheduleStartsOverdueCardsNowAndStopsAtHorizon() {
+        val now = 1_000_000L
+        val overdueCard = Flashcard(
+            id = "overdue-forecast",
+            courseId = "course1",
+            question = "Q",
+            answer = "A",
+            explanation = "",
+            difficulty = 5.0f,
+            box = 1,
+            dueDate = now - TimeUnit.DAYS.toMillis(10),
+            interval = 1,
+            easeFactor = 2.5f,
+            repetitions = 0,
+            lapses = 0,
+            lastReviewedAt = null,
+            createdAt = now - TimeUnit.DAYS.toMillis(10)
+        )
+
+        val schedule = SpacedRepetition.forecastSchedule(overdueCard, horizonDays = 1, currentTime = now)
+
+        assertTrue(schedule.isEmpty() || schedule.first() > now)
+        assertTrue(schedule.all { it <= now + TimeUnit.DAYS.toMillis(1) })
+    }
+
+    @Test
     fun testStreakCalculationConsecutiveDays() {
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)

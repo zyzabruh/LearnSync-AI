@@ -259,6 +259,43 @@ object SpacedRepetition {
     }
 
     /**
+     * Forecast future review dates by repeatedly simulating a Good rating.
+     *
+     * The current due date is used as the first simulated review. Overdue cards
+     * are simulated from now, while cards due later keep their scheduled date.
+     * The returned dates are only the subsequent due dates, not the current one.
+     */
+    fun forecastSchedule(
+        card: Flashcard,
+        horizonDays: Int,
+        currentTime: Long = System.currentTimeMillis()
+    ): List<Long> {
+        if (horizonDays <= 0) return emptyList()
+
+        val horizonEnd = currentTime + TimeUnit.DAYS.toMillis(horizonDays.toLong())
+        var simulatedCard = card
+        var reviewAt = max(card.dueDate, currentTime)
+        val forecastDates = mutableListOf<Long>()
+
+        while (reviewAt <= horizonEnd) {
+            val result = calculateReview(
+                card = simulatedCard,
+                rating = RATING_GOOD,
+                currentTime = reviewAt
+            )
+            val nextDue = result.updatedCard.dueDate
+
+            if (nextDue <= reviewAt || nextDue > horizonEnd) break
+
+            forecastDates += nextDue
+            simulatedCard = result.updatedCard
+            reviewAt = nextDue
+        }
+
+        return forecastDates
+    }
+
+    /**
      * Calculate consecutive active days streak using java.time.LocalDate.
      */
     fun calculateStreak(reviewLogs: List<ReviewLog>, zoneId: ZoneId = ZoneId.systemDefault()): Int {

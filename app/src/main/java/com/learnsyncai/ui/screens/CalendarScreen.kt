@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,6 +35,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.learnsyncai.domain.model.Course
 import com.learnsyncai.domain.model.Flashcard
+import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
 import java.text.SimpleDateFormat
@@ -63,12 +65,26 @@ private data class CourseReviewSummary(
     val nextDue: Long?
 )
 
+private data class ScheduledReview(
+    val card: Flashcard,
+    val scheduledAt: Long,
+    val isForecast: Boolean
+)
+
+private data class CalendarDayMarkers(
+    val actualCount: Int = 0,
+    val forecastCount: Int = 0,
+    val overdueCount: Int = 0
+)
+
+private const val FORECAST_HORIZON_DAYS = 30
+
 /** Grille mensuelle avec pastilles sur les jours ayant des révisions. */
 @Composable
 private fun ReviewMonthGrid(
     year: Int,
     month: Int,
-    markerDays: Map<Long, Int>,
+    markerDays: Map<Long, CalendarDayMarkers>,
     selectedDay: Long?,
     onDayClick: (Long) -> Unit,
     onMonthChange: (year: Int, month: Int) -> Unit
@@ -175,16 +191,34 @@ private fun ReviewMonthGrid(
                                         fontWeight = if (day == selectedDay || day == todayStart) FontWeight.Bold else FontWeight.Normal,
                                         color = if (day == selectedDay) Color.White else MaterialTheme.colorScheme.onSurface
                                     )
-                                    val count = markerDays[day] ?: 0
-                                    if (count > 0) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(5.dp)
-                                                .clip(CircleShape)
-                                                .background(if (day == selectedDay) Color.White else AmberFlame)
-                                        )
+                                    val markers = markerDays[day]
+                                    if (markers != null && (markers.actualCount > 0 || markers.forecastCount > 0)) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            if (markers.actualCount > 0) {
+                                                val actualColor = when {
+                                                    day == selectedDay -> Color.White
+                                                    markers.overdueCount > 0 -> RoseError
+                                                    day == todayStart -> AmberFlame
+                                                    else -> IndigoPrimary
+                                                }
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(5.dp)
+                                                        .clip(CircleShape)
+                                                        .background(actualColor)
+                                                )
+                                            }
+                                            if (markers.forecastCount > 0) {
+                                                val forecastColor = if (day == selectedDay) Color.White else BlueInfo
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(7.dp)
+                                                        .border(1.dp, forecastColor, CircleShape)
+                                                )
+                                            }
+                                        }
                                     } else {
-                                        Spacer(modifier = Modifier.height(5.dp))
+                                        Spacer(modifier = Modifier.height(7.dp))
                                     }
                                 }
                             }
@@ -196,11 +230,53 @@ private fun ReviewMonthGrid(
             Spacer(modifier = Modifier.height(LearnSyncSpacing.small))
 
             Text(
-                text = "Touche un jour pour voir ses révisions. Les jours avec une pastille orange ont des cartes planifiées.",
+                text = "Touche un jour pour voir ses révisions.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.extraSmall)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CalendarLegendItem(color = RoseError, label = "En retard")
+                    CalendarLegendItem(color = AmberFlame, label = "Aujourd'hui")
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CalendarLegendItem(color = IndigoPrimary, label = "Planifiée")
+                    CalendarLegendItem(color = BlueInfo, label = "Prévision", outlined = true)
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun CalendarLegendItem(
+    color: Color,
+    label: String,
+    outlined: Boolean = false
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            modifier = if (outlined) {
+                Modifier.size(8.dp).border(1.dp, color, CircleShape)
+            } else {
+                Modifier.size(6.dp).clip(CircleShape).background(color)
+            }
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -298,16 +374,39 @@ fun CalendarScreen(
     val dayFormat = remember { SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE) }
     val shortFormat = remember { SimpleDateFormat("EEE d MMM", Locale.FRANCE) }
 
-    // Jour (début de journée) -> cartes de ce jour. Les cartes en retard
-    // comptent comme "aujourd'hui", comme sur l'écran d'accueil.
-    val dayBuckets = remember(allFlashcards) {
+    // Les dates stockées restent les échéances réelles, y compris les retards.
+    // Les dates de prévision sont ajoutées séparément pour ne pas masquer l'état réel.
+    val scheduledReviews = remember(allFlashcards) {
         val current = System.currentTimeMillis()
-        val buckets = mutableMapOf<Long, MutableList<Flashcard>>()
-        allFlashcards.forEach { card ->
-            val day = dayStartOf(card.dueDate.coerceAtLeast(current))
-            buckets.getOrPut(day) { mutableListOf() }.add(card)
+        buildList {
+            allFlashcards.forEach { card ->
+                add(ScheduledReview(card, card.dueDate, isForecast = false))
+                SpacedRepetition.forecastSchedule(
+                    card = card,
+                    horizonDays = FORECAST_HORIZON_DAYS,
+                    currentTime = current
+                ).forEach { forecastDate ->
+                    add(ScheduledReview(card, forecastDate, isForecast = true))
+                }
+            }
         }
-        buckets.mapValues { it.value.sortedBy { c -> c.dueDate } }
+    }
+
+    val dayBuckets = remember(scheduledReviews) {
+        scheduledReviews.groupBy { review -> dayStartOf(review.scheduledAt) }
+            .mapValues { (_, reviews) -> reviews.sortedBy { it.scheduledAt } }
+    }
+
+    val markerDays = remember(scheduledReviews) {
+        val todayStart = dayStartOf(System.currentTimeMillis())
+        scheduledReviews.groupBy { review -> dayStartOf(review.scheduledAt) }
+            .mapValues { (_, reviews) ->
+                CalendarDayMarkers(
+                    actualCount = reviews.count { !it.isForecast },
+                    forecastCount = reviews.count { it.isForecast },
+                    overdueCount = reviews.count { !it.isForecast && it.scheduledAt < todayStart }
+                )
+            }
     }
 
     // Résumé par cours : cartes dues maintenant + prochaine échéance
@@ -330,9 +429,9 @@ fun CalendarScreen(
 
     val upcomingReviews = remember(dayBuckets, selectedDay) {
         val current = System.currentTimeMillis()
-        val cards = selectedDay?.let { day -> dayBuckets[day] ?: emptyList() } ?: dayBuckets.values.flatten()
-        cards.groupBy { card ->
-            dayFormat.format(Date(card.dueDate.coerceAtLeast(current))).replaceFirstChar { c -> c.uppercase() }
+        val reviews = selectedDay?.let { day -> dayBuckets[day] ?: emptyList() } ?: dayBuckets.values.flatten()
+        reviews.groupBy { review ->
+            dayFormat.format(Date(review.scheduledAt)).replaceFirstChar { c -> c.uppercase() }
         }
     }
 
@@ -516,7 +615,7 @@ fun CalendarScreen(
                 ReviewMonthGrid(
                     year = displayedYear,
                     month = displayedMonth,
-                    markerDays = dayBuckets.mapValues { it.value.size },
+                    markerDays = markerDays,
                     selectedDay = selectedDay,
                     onDayClick = { day ->
                         selectedDay = if (selectedDay == day) null else day
@@ -582,9 +681,12 @@ fun CalendarScreen(
                         }
                     }
 
-                    items(cards) { card ->
+                    items(cards) { review ->
+                        val card = review.card
                         val course = courses.find { it.id == card.courseId }
-                        val isDueNow = card.dueDate <= System.currentTimeMillis()
+                        val current = System.currentTimeMillis()
+                        val isOverdue = !review.isForecast && review.scheduledAt < dayStartOf(current)
+                        val isDueNow = !review.isForecast && review.scheduledAt <= current
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -616,19 +718,32 @@ fun CalendarScreen(
                                     )
                                 }
 
-                                if (isDueNow) {
-                                    Surface(
-                                        shape = LearnSyncShapes.pill,
-                                        color = AmberSoftBg
-                                    ) {
-                                        Text(
-                                            text = "À réviser",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = AmberDark,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
+                                Surface(
+                                    shape = LearnSyncShapes.pill,
+                                    color = when {
+                                        review.isForecast -> BlueSoftBg
+                                        isOverdue -> RoseSoftBg
+                                        isDueNow -> AmberSoftBg
+                                        else -> IndigoSoftBg
                                     }
+                                ) {
+                                    Text(
+                                        text = when {
+                                            review.isForecast -> "Prévue"
+                                            isOverdue -> "En retard"
+                                            isDueNow -> "À réviser"
+                                            else -> "Planifiée"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = when {
+                                            review.isForecast -> BlueInfo
+                                            isOverdue -> RoseDark
+                                            isDueNow -> AmberDark
+                                            else -> IndigoPrimary
+                                        },
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
                                 }
                             }
                         }
