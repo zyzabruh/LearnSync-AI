@@ -37,6 +37,15 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     /** Dernière carte dont la question a été lue automatiquement (anti-doublon). */
     private var lastAutoSpokenCardId: String? = null
 
+    /**
+     * File de la session de révision en cours : null = aucune session active
+     * (écran de choix), liste vide = session terminée. La file vit dans le
+     * ViewModel : quitter l'écran met la session en pause, y revenir la reprend
+     * dans le même ordre aléatoire.
+     */
+    private val _reviewQueue = MutableStateFlow<List<Flashcard>?>(null)
+    val reviewQueue: StateFlow<List<Flashcard>?> = _reviewQueue.asStateFlow()
+
     init {
         // Lecture vocale automatique de la question à chaque nouvelle carte
         // en tête de file (option autoTtsEnabled), arrêt dès qu'il n'y a plus
@@ -65,15 +74,6 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
 
     val reviewSessions: StateFlow<List<ReviewSession>> = reviewRepo.getAllSessions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    /**
-     * File de la session de révision en cours : null = aucune session active
-     * (écran de choix), liste vide = session terminée. La file vit dans le
-     * ViewModel : quitter l'écran met la session en pause, y revenir la reprend
-     * dans le même ordre aléatoire.
-     */
-    private val _reviewQueue = MutableStateFlow<List<Flashcard>?>(null)
-    val reviewQueue: StateFlow<List<Flashcard>?> = _reviewQueue.asStateFlow()
 
     /** Session Room en cours (null = pas de session, ou session héritée d'un crash). */
     private var currentSessionId: String? = null
