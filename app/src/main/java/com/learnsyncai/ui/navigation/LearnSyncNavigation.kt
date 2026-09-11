@@ -292,6 +292,7 @@ fun LearnSyncNavigation(
                                         onNavigateToExam = { navController.navigate("course_exam/${course.id}") },
                                         onNavigateToPdf = { navController.navigate("course_pdf/${course.id}") },
                                         onNavigateToMindMap = { navController.navigate("course_mindmap/${course.id}") },
+                                        onNavigateToOral = { navController.navigate("course_oral/${course.id}") },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onAddImageCard = { uri, answer, mx, my, mw, mh -> libraryViewModel.createImageCard(course.id, uri, answer, mx, my, mw, mh) },
@@ -499,6 +500,24 @@ fun LearnSyncNavigation(
                                         reviewViewModel.startReviewSession(conceptCards, null)
                                         navController.navigate(Screen.Review.route)
                                     }
+                                )
+                            }
+
+                            composable(
+                                route = "course_oral/{courseId}",
+                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                            ) { backStackEntry ->
+                                val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val course = courses.find { it.id == courseId }
+                                val oralDues by reviewViewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
+                                val oralItems = remember(oralDues) {
+                                    com.learnsyncai.domain.usecase.ReviewQueue.expand(oralDues)
+                                }
+                                CourseOralScreen(
+                                    items = oralItems,
+                                    onSpeak = { text -> reviewViewModel.speakQuestion(text) },
+                                    onRate = { item, rating -> reviewViewModel.rateCurrentCard(item, rating, 0L) },
+                                    onQuit = { navController.popBackStack() }
                                 )
                             }
 

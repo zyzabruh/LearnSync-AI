@@ -64,6 +64,7 @@ fun CourseDetailScreen(
     onNavigateToExam: () -> Unit = {},
     onNavigateToPdf: () -> Unit = {},
     onNavigateToMindMap: () -> Unit = {},
+    onNavigateToOral: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onAddImageCard: (uri: android.net.Uri, answer: String, maskX: Float, maskY: Float, maskW: Float, maskH: Float) -> Unit = { _, _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
@@ -232,6 +233,14 @@ fun CourseDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigateToMindMap()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Interro orale") },
+                            leadingIcon = { Icon(Icons.Default.Mic, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToOral()
                             }
                         )
                         DropdownMenuItem(
