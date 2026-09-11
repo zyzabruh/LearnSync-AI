@@ -492,8 +492,9 @@ class AiRepositoryImpl(
             1. Base-toi uniquement sur le cours fourni.
             2. $flashcardsRule
             3. Pour les faits, dates, définitions et formules : génère aussi des cartes cloze en écrivant la phrase complète dans "question" avec le passage à mémoriser entre {{doubles accolades}} (ex. "La {{mitochondrie}} produit l'ATP"), "answer" pouvant alors être vide ou rappeler la phrase.
-            4. $quizRule
-            5. Réponds UNIQUEMENT en JSON valide.
+            4. Varie les types de questions : définitions, "pourquoi / comment" (explication), comparaisons ("différence entre X et Y"), application concrète (cas, exemple, exercice).
+            5. $quizRule
+            6. Réponds UNIQUEMENT en JSON valide.
 
             TEXTE DU COURS :
             $courseText

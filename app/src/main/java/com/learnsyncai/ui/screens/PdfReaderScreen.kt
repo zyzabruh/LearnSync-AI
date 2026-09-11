@@ -5,8 +5,10 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -186,17 +188,23 @@ fun PdfReaderScreen(
                             minLines = 2,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = noteKind == PdfAnnotation.KIND_NOTE,
-                                onClick = { noteKind = PdfAnnotation.KIND_NOTE },
-                                label = { Text("Note") }
-                            )
-                            FilterChip(
-                                selected = noteKind == PdfAnnotation.KIND_KEY,
-                                onClick = { noteKind = PdfAnnotation.KIND_KEY },
-                                label = { Text("À retenir") }
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                PdfAnnotation.KIND_NOTE to "Note",
+                                PdfAnnotation.KIND_KEY to "Important",
+                                "difficult" to "Difficile",
+                                "understood" to "Compris",
+                                "definition" to "Définition"
+                            ).forEach { (value, label) ->
+                                FilterChip(
+                                    selected = noteKind == value,
+                                    onClick = { noteKind = value },
+                                    label = { Text(label) }
+                                )
+                            }
                         }
                         LearnSyncButton(
                             text = "Enregistrer",
@@ -239,7 +247,7 @@ fun PdfReaderScreen(
                                     }
                                 }
                                 Text(annotation.text, style = MaterialTheme.typography.bodySmall)
-                                if (annotation.kind == PdfAnnotation.KIND_KEY) {
+                                if (annotation.kind != PdfAnnotation.KIND_NOTE) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     TextButton(
                                         onClick = { onCardsFromAnnotation(annotation) },
