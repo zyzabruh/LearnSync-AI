@@ -48,7 +48,9 @@ data class Flashcard(
     /** Sens de révision : "forward", "reverse" ou "both". */
     val direction: String = CardDirection.FORWARD,
     /** Si vrai, la révision demande de taper la réponse au clavier. */
-    val typeAnswer: Boolean = false
+    val typeAnswer: Boolean = false,
+    /** Extrait du texte source d'où vient la carte (contexte affiché en révision). */
+    val sourceExcerpt: String = ""
 )
 
 /** Types de cartes (pilier RemNote : basic, cloze…). */
@@ -155,7 +157,9 @@ data class StudyGenerationResult(
 data class GeneratedFlashcard(
     val question: String,
     val answer: String,
-    val explanation: String
+    val explanation: String,
+    /** Court extrait du texte source d'où vient la carte (contexte en révision). */
+    val source: String = ""
 )
 
 data class GeneratedQuizQuestion(

@@ -449,7 +449,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
                         // Insertion NON destructive : les anciennes cartes restent en base
                         flashcardRepo.insertFlashcards(
-                            newCards.map { newFlashcard(course.id, it.question, it.answer, it.explanation) }
+                            newCards.map { newFlashcard(course.id, it.question, it.answer, it.explanation, sourceExcerpt = it.source) }
                         )
                         quizRepo.insertQuizQuestions(
                             newQuiz.map {
@@ -563,7 +563,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 courseId = course.id,
                 question = it.question,
                 answer = it.answer,
-                explanation = it.explanation
+                explanation = it.explanation,
+                sourceExcerpt = it.source
             )
         }
 
@@ -613,7 +614,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         answer: String,
         explanation: String,
         direction: String = com.learnsyncai.domain.model.CardDirection.FORWARD,
-        typeAnswer: Boolean = false
+        typeAnswer: Boolean = false,
+        sourceExcerpt: String = ""
     ) = Flashcard(
         id = UUID.randomUUID().toString(),
         courseId = courseId,
@@ -631,7 +633,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         createdAt = System.currentTimeMillis(),
         cardType = com.learnsyncai.domain.usecase.CardContent.detectType(question),
         direction = direction,
-        typeAnswer = typeAnswer
+        typeAnswer = typeAnswer,
+        sourceExcerpt = sourceExcerpt
     )
 
     /** Change la langue de réponse IA d'un cours ("auto" = langue du document). */
@@ -753,6 +756,61 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             _uiState.value = UiState.Success(
                 if (suspended) "Carte suspendue." else "Carte réactivée."
             )
+        }
+    }
+
+    /**
+     * Création directe depuis un surlignage (style RemNote) : question déjà
+     * mise en forme ({{…}} pour un cloze), sans passer par le dialogue.
+     */
+    fun quickAddFlashcard(courseId: String, question: String, answer: String, sourceExcerpt: String) {
+        viewModelScope.launch {
+            val q = question.trim()
+            val a = answer.trim().ifBlank { q.replace("{{", "").replace("}}", "") }
+            if (q.length < 3 || a.isBlank()) {
+                _uiState.value = UiState.Error("Sélection trop courte pour créer une carte.")
+                return@launch
+            }
+            flashcardRepo.insertFlashcard(newFlashcard(courseId, q, a, "", sourceExcerpt = sourceExcerpt.trim()))
+            _uiState.value = UiState.Success("Carte créée depuis la sélection !")
+        }
+    }
+
+    /**
+     * Génère 1 à 3 cartes IA depuis un extrait surligné du résumé
+     * (surlignage → cartes, comme RemNote).
+     */
+    fun generateFlashcardsFromExcerpt(course: Course, excerpt: String) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading("Génération de cartes depuis la sélection...")
+            try {
+                val cards = aiRepo.generateFlashcardsFromExcerpt(excerpt, course.language)
+                    .getOrThrow()
+                    .filter { it.question.trim().length > 3 }
+                if (cards.isEmpty()) {
+                    _uiState.value = UiState.Error("L'IA n'a produit aucune carte pour cette sélection.")
+                    return@launch
+                }
+                val existingKeys = flashcardRepo.getFlashcardsForCourse(course.id)
+                    .let { flow -> kotlinx.coroutines.flow.firstOrNull(flow)?.map { it.question.trim().lowercase() } }
+                    ?.toMutableSet() ?: mutableSetOf()
+                val fresh = cards.filter { existingKeys.add(it.question.trim().lowercase()) }
+                if (fresh.isEmpty()) {
+                    _uiState.value = UiState.Success("Ces cartes existent déjà.")
+                    return@launch
+                }
+                flashcardRepo.insertFlashcards(
+                    fresh.map {
+                        newFlashcard(
+                            course.id, it.question, it.answer, it.explanation,
+                            sourceExcerpt = it.source.ifBlank { excerpt.trim().take(200) }
+                        )
+                    }
+                )
+                _uiState.value = UiState.Success("${fresh.size} carte(s) créée(s) depuis la sélection !")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Génération impossible : ${e.localizedMessage}")
+            }
         }
     }
 

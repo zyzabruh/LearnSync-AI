@@ -60,6 +60,8 @@ fun CourseDetailScreen(
     onExportCsv: (android.net.Uri) -> Unit = {},
     onOpenDocument: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
+    onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
+    onGenerateFromExcerpt: (String) -> Unit = {},
     onDeleteFlashcard: (flashcardId: String) -> Unit = {},
     onAddQuizQuestion: (question: String, options: List<String>, correctAnswer: String, explanation: String) -> Unit = { _, _, _, _ -> },
     onDeleteQuizQuestion: (quizQuestionId: String) -> Unit = {},
@@ -491,7 +493,9 @@ fun CourseDetailScreen(
                 0 -> CourseSummaryTab(
                     latestMaterial = latestMaterial,
                     onEditSummary = { showEditSummaryDialog = true },
-                    onRegenerate = onRegenerate
+                    onRegenerate = onRegenerate,
+                    onQuickCloze = onQuickAddFlashcard,
+                    onGenerateFromExcerpt = onGenerateFromExcerpt
                 )
 
                 1 -> CourseKeyPointsTab(

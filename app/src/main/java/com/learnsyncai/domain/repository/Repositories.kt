@@ -107,6 +107,15 @@ interface AiRepository {
         language: String = "auto",
         onProgress: (String) -> Unit = {}
     ): Result<Pair<List<GeneratedFlashcard>, List<GeneratedQuizQuestion>>>
+
+    /**
+     * Génère 1 à 3 flashcards depuis un court extrait surligné
+     * (style RemNote : surlignage → cartes). Source = l'extrait.
+     */
+    suspend fun generateFlashcardsFromExcerpt(
+        excerpt: String,
+        language: String = "auto"
+    ): Result<List<GeneratedFlashcard>>
 }
 
 interface PreferencesRepository {

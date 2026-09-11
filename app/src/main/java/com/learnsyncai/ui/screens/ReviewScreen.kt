@@ -708,6 +708,36 @@ private fun ReviewSessionScreen(
                                     }
                                 }
                             }
+
+                            // Contexte source : extrait d'origine de la carte (style RemNote).
+                            if (currentCard.sourceExcerpt.isNotBlank()) {
+                                var contextExpanded by remember(currentItem.key()) { mutableStateOf(false) }
+                                Spacer(modifier = Modifier.height(LearnSyncSpacing.small))
+                                TextButton(onClick = { contextExpanded = !contextExpanded }) {
+                                    Icon(
+                                        imageVector = if (contextExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(if (contextExpanded) "Masquer le contexte" else "Voir le contexte source")
+                                }
+                                if (contextExpanded) {
+                                    Surface(
+                                        shape = LearnSyncShapes.medium,
+                                        color = IndigoSoftBg,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "« ${currentCard.sourceExcerpt} »",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(LearnSyncSpacing.medium)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

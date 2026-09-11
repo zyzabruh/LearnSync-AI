@@ -28,7 +28,9 @@ import com.learnsyncai.ui.theme.*
 internal fun LazyListScope.CourseSummaryTab(
     latestMaterial: StudyMaterial?,
     onEditSummary: () -> Unit,
-    onRegenerate: () -> Unit
+    onRegenerate: () -> Unit,
+    onQuickCloze: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
+    onGenerateFromExcerpt: (String) -> Unit = {}
 ) {
     item {
         Row(
@@ -79,11 +81,10 @@ internal fun LazyListScope.CourseSummaryTab(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
-                    Text(
-                        text = latestMaterial.summary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        lineHeight = 22.sp
+                    SelectableSummary(
+                        summary = latestMaterial.summary,
+                        onQuickCloze = onQuickCloze,
+                        onGenerateFromExcerpt = onGenerateFromExcerpt
                     )
                 }
             }
@@ -399,5 +400,80 @@ internal fun LazyListScope.CourseQuizTab(
                 onActionClick = onRegenerate
             )
         }
+    }
+}
+
+/**
+ * Résumé sélectionnable (style RemNote) : un appui long sélectionne du
+ * texte, puis deux actions créent des cartes — cloze direct ou via l'IA.
+ */
+@Composable
+private fun SelectableSummary(
+    summary: String,
+    onQuickCloze: (question: String, answer: String, excerpt: String) -> Unit,
+    onGenerateFromExcerpt: (String) -> Unit
+) {
+    var fieldValue by remember(summary) {
+        mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(summary))
+    }
+    val selection = fieldValue.selection
+    val selectedText = remember(fieldValue) {
+        if (selection.collapsed) "" else fieldValue.text.substring(
+            selection.start.coerceIn(0, fieldValue.text.length),
+            selection.end.coerceIn(0, fieldValue.text.length)
+        ).trim()
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)) {
+        androidx.compose.foundation.text.BasicTextField(
+            value = fieldValue,
+            onValueChange = { fieldValue = it },
+            readOnly = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 22.sp
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (selectedText.length >= 3) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AssistChip(
+                    onClick = {
+                        val sentence = sentenceAround(fieldValue.text, selection.start, selection.end)
+                        val clozeQuestion = sentence.replaceRange(
+                            sentence.indexOf(selectedText).takeIf { it >= 0 } ?: 0,
+                            (sentence.indexOf(selectedText).takeIf { it >= 0 } ?: 0) + selectedText.length,
+                            "{{${selectedText}}}"
+                        )
+                        onQuickCloze(clozeQuestion, selectedText, sentence)
+                    },
+                    label = { Text("Cloze") },
+                    leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                )
+                AssistChip(
+                    onClick = { onGenerateFromExcerpt(selectedText) },
+                    label = { Text("Cartes IA") },
+                    leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                )
+            }
+        } else {
+            Text(
+                text = "Astuce : sélectionnez un passage pour en faire des cartes.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** Phrase (délimitée par ponctuation/sauts) contenant la sélection. */
+private fun sentenceAround(text: String, selStart: Int, selEnd: Int): String {
+    val start = text.lastIndexOfAny(charArrayOf('.', '!', '?', '\n'), selStart).let { if (it < 0) 0 else it + 1 }
+    val end = text.indexOfAny(charArrayOf('.', '!', '?', '\n'), selEnd).let { if (it < 0) text.length else it + 1 }
+    return text.substring(start.coerceIn(0, text.length), end.coerceIn(0, text.length)).trim().ifBlank {
+        text.substring(selStart.coerceIn(0, text.length), selEnd.coerceIn(0, text.length)).trim()
     }
 }

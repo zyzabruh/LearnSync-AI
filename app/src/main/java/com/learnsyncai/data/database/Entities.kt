@@ -73,7 +73,8 @@ data class FlashcardEntity(
     val suspended: Boolean = false,
     val cardType: String = "basic",
     val direction: String = "forward",
-    val typeAnswer: Boolean = false
+    val typeAnswer: Boolean = false,
+    val sourceExcerpt: String = ""
 )
 
 @Entity(

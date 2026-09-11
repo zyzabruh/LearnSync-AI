@@ -281,6 +281,8 @@ fun LearnSyncNavigation(
                                         onOpenDocument = { libraryViewModel.openCourseDocument(course.id) },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
+                                        onQuickAddFlashcard = { q, a, excerpt -> libraryViewModel.quickAddFlashcard(course.id, q, a, excerpt) },
+                                        onGenerateFromExcerpt = { excerpt -> libraryViewModel.generateFlashcardsFromExcerpt(course, excerpt) },
                                         onDeleteFlashcard = { cardId -> libraryViewModel.deleteFlashcard(cardId) },
                                         onAddQuizQuestion = { q, opts, ans, exp -> libraryViewModel.addCustomQuizQuestion(course.id, q, opts, ans, exp) },
                                         onDeleteQuizQuestion = { qId -> libraryViewModel.deleteQuizQuestion(qId) },

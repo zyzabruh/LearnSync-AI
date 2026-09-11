@@ -361,8 +361,8 @@ fun StudyMaterial.toEntity() = StudyMaterialEntity(
     version = version
 )
 
-fun FlashcardEntity.toDomain() = Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer)
-fun Flashcard.toEntity() = FlashcardEntity(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer)
+fun FlashcardEntity.toDomain() = Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt)
+fun Flashcard.toEntity() = FlashcardEntity(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt)
 
 fun QuizQuestionEntity.toDomain(): QuizQuestion {
     val optList = mutableListOf<String>()

@@ -218,6 +218,48 @@ class AiRepositoryImpl(
         }
     }
 
+    override suspend fun generateFlashcardsFromExcerpt(
+        excerpt: String,
+        language: String
+    ): Result<List<GeneratedFlashcard>> = withContext(Dispatchers.IO) {
+        try {
+            val text = excerpt.trim()
+            if (text.length < 10) {
+                return@withContext Result.failure(
+                    IllegalArgumentException("Sélectionnez un passage plus long pour générer des cartes.")
+                )
+            }
+            val config = configProvider?.invoke() ?: AiConfig()
+            val prompt = """
+                Tu es un ingénieur pédagogique. À partir du court extrait ci-dessous, génère 1 à 3 flashcards (mélange question/réponse et cloze avec {{doubles accolades}} si pertinent).
+                ${languageInstruction(language)}
+
+                Format JSON STRICT (sans texte introductif ni markdown) :
+                {
+                  "flashcards": [
+                    {
+                      "question": "Question précise, OU phrase à trou avec {{passage à mémoriser}}",
+                      "answer": "Réponse concise",
+                      "explanation": "Brève explication (1 phrase max)",
+                      "source": "Court extrait source (1 phrase)"
+                    }
+                  ]
+                }
+
+                EXTRAIT :
+                ${text.take(2000)}
+            """.trimIndent()
+            val rawText = executeWithRetry(maxAttempts = 2) {
+                chatCompletion(config, prompt, temperature = 0.3)
+            }
+            val cards = parsePracticeSection(rawText).first
+                .map { if (it.source.isBlank()) it.copy(source = text.take(200)) else it }
+            Result.success(cards)
+        } catch (t: Throwable) {
+            Result.failure(mapUserFacingException(t))
+        }
+    }
+
     /** Consigne de langue de sortie pour les prompts : "auto" suit la langue du document. */
     private fun languageInstruction(language: String): String = when (language) {
         "auto" -> "CONSIGNE DE LANGUE : détecte automatiquement la langue du document fourni et rédige TOUT le contenu (questions, réponses, options, explications, résumé) dans cette langue."
@@ -394,7 +436,8 @@ class AiRepositoryImpl(
                 {
                   "question": "Question atomique et précise, OU phrase à trou cloze avec les passages à mémoriser entre {{doubles accolades}}",
                   "answer": "Réponse concise et exacte (maximum 2 phrases)",
-                  "explanation": "Brève explication (maximum 1 phrase)"
+                  "explanation": "Brève explication (maximum 1 phrase)",
+                  "source": "Court extrait du texte source (1 phrase) d'où vient cette carte"
                 }
               ],
               "quizQuestions": [
@@ -754,13 +797,18 @@ class AiRepositoryImpl(
                     .ifBlank { obj.optString("explication", "") }
                     .ifBlank { obj.optString("details", "") }
                     .trim()
+                val source = obj.optString("source", "")
+                    .ifBlank { obj.optString("contexte", "") }
+                    .ifBlank { obj.optString("context", "") }
+                    .ifBlank { obj.optString("extrait", "") }
+                    .trim()
 
                 if (question.isNotBlank() && answer.isNotBlank()) {
-                    flashcards.add(GeneratedFlashcard(question, answer, explanation))
+                    flashcards.add(GeneratedFlashcard(question, answer, explanation, source))
                 } else if (question.isNotBlank() && question.contains("{{") && question.contains("}}")) {
                     // Carte cloze : la phrase à trous suffit, la réponse est déduite.
                     val fullAnswer = answer.ifBlank { question.replace("{{", "").replace("}}", "") }
-                    flashcards.add(GeneratedFlashcard(question, fullAnswer, explanation))
+                    flashcards.add(GeneratedFlashcard(question, fullAnswer, explanation, source))
                 }
             }
         }
