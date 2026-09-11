@@ -272,10 +272,10 @@ class DocumentParser(private val context: Context) {
                     pageIndexOf(document, page)
                 }
                 is PDNamedDestination -> {
-                    val page = try {
+                    val resolved = try {
                         document.documentCatalog.findNamedDestinationPage(dest)
                     } catch (_: Exception) { null } ?: return null
-                    pageIndexOf(document, page)
+                    resolveDestinationToPage(resolved, document)
                 }
                 else -> null
             }
