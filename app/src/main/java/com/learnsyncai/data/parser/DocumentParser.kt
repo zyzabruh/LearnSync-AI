@@ -46,6 +46,12 @@ class ScannedPdfException(
     "Ce PDF semble être un scan sans couche de texte. Vous pouvez lancer l'OCR pour l'importer."
 )
 
+/** Mot d'une page avec boîte normalisée 0..1, origine en haut à gauche (sélection au doigt). */
+data class PageWord(val text: String, val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/** Lien interne d'une page (annotation Link → page cible), boîte normalisée 0..1. */
+data class PageLink(val targetPage: Int, val left: Float, val top: Float, val right: Float, val bottom: Float)
+
 class DocumentParser(private val context: Context) {
 
     init {
@@ -265,9 +271,6 @@ class DocumentParser(private val context: Context) {
         }
     }
 
-    /** Lien interne d'une page (annotation Link → page cible), boîte normalisée 0..1. */
-    data class PageLink(val targetPage: Int, val left: Float, val top: Float, val right: Float, val bottom: Float)
-
     fun getPageLinks(file: java.io.File, pageIndex: Int): List<PageLink> {
         if (!file.exists()) return emptyList()
         return try {
@@ -337,9 +340,6 @@ class DocumentParser(private val context: Context) {
         stripper.getText(document)
         return PageChars(chars, pageW, pageH)
     }
-
-    /** Mot d'une page avec boîte normalisée 0..1, origine en haut à gauche (sélection au doigt). */
-    data class PageWord(val text: String, val left: Float, val top: Float, val right: Float, val bottom: Float)
 
     fun getPageWords(file: java.io.File, pageIndex: Int): List<PageWord> {
         if (!file.exists()) return emptyList()
