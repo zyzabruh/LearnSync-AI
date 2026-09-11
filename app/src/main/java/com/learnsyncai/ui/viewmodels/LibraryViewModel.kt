@@ -939,23 +939,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun getLocalDocument(courseId: String): java.io.File? =
         courseContentStorage.getOriginalFile(courseId)
 
-    /** Texte par page mémorisé en session (mode « texte » du lecteur PDF). */
-    private val pageTextsCache = mutableMapOf<String, List<String>>()
+    /** Texte d'une page mémorisé en session (mode « texte » du lecteur PDF). */
+    private val pageTextCache = mutableMapOf<String, String>()
 
-    suspend fun getPageTexts(courseId: String): List<String> = withContext(Dispatchers.IO) {
-        pageTextsCache[courseId] ?: run {
+    suspend fun getPageText(courseId: String, pageIndex: Int): String = withContext(Dispatchers.IO) {
+        val key = "$courseId#$pageIndex"
+        pageTextCache[key] ?: run {
             val file = courseContentStorage.getOriginalFile(courseId)
-            val texts = if (file != null && file.exists() && file.extension.lowercase() == "pdf") {
+            val text = if (file != null && file.exists() && file.extension.lowercase() == "pdf") {
                 try {
-                    documentParser.extractPageTexts(file)
+                    documentParser.extractPageText(file, pageIndex)
                 } catch (_: Exception) {
-                    emptyList()
+                    ""
                 }
             } else {
-                emptyList()
+                ""
             }
-            pageTextsCache[courseId] = texts
-            texts
+            pageTextCache[key] = text
+            text
         }
     }
 

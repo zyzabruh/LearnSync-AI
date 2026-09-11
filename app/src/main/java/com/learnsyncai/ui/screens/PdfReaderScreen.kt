@@ -41,7 +41,7 @@ fun PdfReaderScreen(
     courseTitle: String,
     pdfFile: File?,
     initialPage: Int = 0,
-    pageTexts: List<String> = emptyList(),
+    onLoadPageText: (suspend (Int) -> String)? = null,
     outline: List<OutlineEntry> = emptyList(),
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
@@ -100,7 +100,7 @@ fun PdfReaderScreen(
 
     val pageCount = rendererState?.third ?: 0
     val safeIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-    val textIndex = pageIndex.coerceIn(0, (pageTexts.size - 1).coerceAtLeast(0))
+    val textIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     val bitmap = remember(rendererState, safeIndex) {
         try {
             val renderer = rendererState?.second ?: return@remember null
@@ -159,23 +159,21 @@ fun PdfReaderScreen(
                 }
             }
 
-            if (pageTexts.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilterChip(
-                            selected = !textMode,
-                            onClick = { textMode = false },
-                            label = { Text("Page") }
-                        )
-                        FilterChip(
-                            selected = textMode,
-                            onClick = { textMode = true },
-                            label = { Text("Texte") }
-                        )
-                    }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !textMode,
+                        onClick = { textMode = false },
+                        label = { Text("Page") }
+                    )
+                    FilterChip(
+                        selected = textMode,
+                        onClick = { textMode = true },
+                        label = { Text("Texte") }
+                    )
                 }
             }
 
@@ -220,11 +218,13 @@ fun PdfReaderScreen(
             }
 
             item {
-                if (textMode && pageTexts.isNotEmpty()) {
-                    val pageText = pageTexts.getOrElse(textIndex) { "" }
-                    var fieldValue by remember(textIndex, pageText) {
-                        mutableStateOf(TextFieldValue(pageText))
+                if (textMode) {
+                    var loadedText by remember(pdfFile, textIndex) { mutableStateOf<String?>(null) }
+                    LaunchedEffect(textMode, textIndex) {
+                        loadedText = null
+                        loadedText = try { onLoadPageText?.invoke(textIndex) } catch (_: Exception) { null } ?: ""
                     }
+                    val pageText = loadedText
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = LearnSyncShapes.medium,
@@ -240,13 +240,23 @@ fun PdfReaderScreen(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
-                            if (pageText.isBlank()) {
+                            if (pageText == null) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                                }
+                            } else if (pageText.isBlank()) {
                                 Text(
-                                    "Aucun texte extractible sur cette page (scan ?).",
+                                    "Aucun texte sélectionnable ici (PDF scanné sans couche texte, ou copie locale indisponible).",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             } else {
+                                var fieldValue by remember(textIndex, pageText) {
+                                    mutableStateOf(TextFieldValue(pageText))
+                                }
                                 BasicTextField(
                                     value = fieldValue,
                                     onValueChange = { fieldValue = it },

@@ -618,14 +618,14 @@ fun LearnSyncNavigation(
                                 val course = courses.find { it.id == courseId }
                                 val pdfAnnotations by libraryViewModel.getAnnotationsForCourse(courseId).collectAsState(initial = emptyList())
                                 val pdfOutline by libraryViewModel.getOutlineForCourse(courseId).collectAsState(initial = emptyList())
-                                val pdfPageTexts by produceState<List<String>?>(initialValue = null, courseId) {
-                                    value = try { libraryViewModel.getPageTexts(courseId) } catch (_: Exception) { emptyList() }
+                                val loadPageText: suspend (Int) -> String = { page ->
+                                    try { libraryViewModel.getPageText(courseId, page) } catch (_: Exception) { "" }
                                 }
                                 PdfReaderScreen(
                                     courseTitle = course?.title ?: "Cours",
                                     pdfFile = remember(courseId) { libraryViewModel.getLocalDocument(courseId) },
                                     initialPage = startPage,
-                                    pageTexts = pdfPageTexts ?: emptyList(),
+                                    onLoadPageText = loadPageText,
                                     outline = pdfOutline,
                                     annotations = pdfAnnotations,
                                     onAddAnnotation = { page, text, kind -> libraryViewModel.addAnnotation(courseId, page, text, kind) },
