@@ -19,6 +19,7 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.learnsyncai.ui.screens.*
 import com.learnsyncai.ui.theme.*
+import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.viewmodels.LibraryViewModel
 import com.learnsyncai.ui.viewmodels.ProfileViewModel
 import com.learnsyncai.ui.viewmodels.ReviewViewModel
@@ -286,6 +287,7 @@ fun LearnSyncNavigation(
                                         onExportCsv = { uri -> libraryViewModel.exportCourseToCsv(uri, course.id) },
                                         onOpenDocument = { libraryViewModel.openCourseDocument(course.id) },
                                         onNavigateToTutor = { navController.navigate("course_tutor/${course.id}") },
+                                        onNavigateToLearn = { navController.navigate("course_learn/${course.id}") },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onQuickAddFlashcard = { q, a, excerpt -> libraryViewModel.quickAddFlashcard(course.id, q, a, excerpt) },
@@ -400,6 +402,39 @@ fun LearnSyncNavigation(
                                     onCreateCard = { q, a -> tutorViewModel.createCardFromAnswer(courseId, q, a) },
                                     onClearError = { tutorViewModel.clearError() },
                                     onBackClick = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable(
+                                route = "course_learn/{courseId}",
+                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                            ) { backStackEntry ->
+                                val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val course = courses.find { it.id == courseId }
+                                val learnMaterials by libraryViewModel.getMaterialsForCourse(courseId).collectAsState(initial = emptyList())
+                                val learnDues by reviewViewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
+                                val learnQuiz by libraryViewModel.getQuizQuestionsForCourse(courseId).collectAsState(initial = emptyList())
+                                val learnCards = remember(allFlashcards) { allFlashcards.filter { it.courseId == courseId } }
+                                val learnLeeches = remember(learnCards) {
+                                    learnCards.count { !it.suspended && it.lapses >= SpacedRepetition.LEECH_LAPSE_THRESHOLD }
+                                }
+                                CourseLearnScreen(
+                                    courseTitle = course?.title ?: "Cours",
+                                    hasSummary = learnMaterials.firstOrNull()?.summary?.isNotBlank() == true,
+                                    flashcardsCount = learnCards.size,
+                                    dueCount = learnDues.size,
+                                    quizCount = learnQuiz.size,
+                                    leechCount = learnLeeches,
+                                    onBackClick = { navController.popBackStack() },
+                                    onSeeSummary = { navController.popBackStack() },
+                                    onGenerate = { if (course != null) libraryViewModel.generateMaterial(course) },
+                                    onGoReview = { navController.navigate("course_review/$courseId") },
+                                    onGoQuiz = { navController.navigate("course_quiz/$courseId") },
+                                    onStartGap = {
+                                        reviewViewModel.startGapSession(learnDues, reviewLogs)
+                                        navController.navigate("course_review/$courseId")
+                                    },
+                                    onGoTutor = { navController.navigate("course_tutor/$courseId") }
                                 )
                             }
 

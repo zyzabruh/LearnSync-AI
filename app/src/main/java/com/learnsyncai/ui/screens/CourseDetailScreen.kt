@@ -60,6 +60,7 @@ fun CourseDetailScreen(
     onExportCsv: (android.net.Uri) -> Unit = {},
     onOpenDocument: () -> Unit = {},
     onNavigateToTutor: () -> Unit = {},
+    onNavigateToLearn: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
     onGenerateFromExcerpt: (String) -> Unit = {},
@@ -193,6 +194,14 @@ fun CourseDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigateToTutor()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Parcours guidé") },
+                            leadingIcon = { Icon(Icons.Default.Map, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToLearn()
                             }
                         )
                         DropdownMenuItem(
