@@ -793,7 +793,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
                 val existingKeys = flashcardRepo.getFlashcardsForCourse(course.id)
-                    .let { flow -> kotlinx.coroutines.flow.firstOrNull(flow)?.map { it.question.trim().lowercase() } }
+                    .firstOrNull()?.map { it.question.trim().lowercase() }
                     ?.toMutableSet() ?: mutableSetOf()
                 val fresh = cards.filter { existingKeys.add(it.question.trim().lowercase()) }
                 if (fresh.isEmpty()) {
@@ -823,7 +823,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun saveNote(courseId: String, content: String) {
         viewModelScope.launch {
             try {
-                val existing = kotlinx.coroutines.flow.firstOrNull(noteRepo.getNoteForCourse(courseId))
+                val existing = noteRepo.getNoteForCourse(courseId).firstOrNull()
                 noteRepo.upsertNote(
                     (existing ?: CourseNote(
                         id = UUID.randomUUID().toString(),
@@ -848,7 +848,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
                 val existingKeys = flashcardRepo.getFlashcardsForCourse(courseId)
-                    .let { flow -> kotlinx.coroutines.flow.firstOrNull(flow)?.map { it.question.trim().lowercase() } }
+                    .firstOrNull()?.map { it.question.trim().lowercase() }
                     ?.toMutableSet() ?: mutableSetOf()
                 val fresh = parsed.filter { existingKeys.add(it.question.trim().lowercase()) }
                 if (fresh.isEmpty()) {
