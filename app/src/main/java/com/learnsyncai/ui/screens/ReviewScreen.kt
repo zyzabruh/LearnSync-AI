@@ -49,6 +49,8 @@ fun ReviewScreen(
     onSpeakAnswer: (String) -> Unit,
     onStartSession: (Int?) -> Unit,
     onStartAheadSession: () -> Unit,
+    onStartGapSession: () -> Unit = {},
+    gapCount: Int = 0,
     onEndSession: () -> Unit,
     onFinishReview: () -> Unit,
     canUndo: Boolean = false,
@@ -98,6 +100,7 @@ fun ReviewScreen(
             ReviewSessionStartScreen(
                 dueCount = dueCards.size,
                 aheadCount = aheadCount,
+                gapCount = gapCount,
                 onStart = { limit ->
                     resetStats()
                     onStartSession(limit)
@@ -105,6 +108,10 @@ fun ReviewScreen(
                 onStartAhead = {
                     resetStats()
                     onStartAheadSession()
+                },
+                onStartGap = {
+                    resetStats()
+                    onStartGapSession()
                 },
                 onFinishReview = onFinishReview
             )
@@ -165,7 +172,9 @@ private fun ReviewSessionStartScreen(
     aheadCount: Int,
     onStart: (Int?) -> Unit,
     onStartAhead: () -> Unit,
-    onFinishReview: () -> Unit
+    onFinishReview: () -> Unit,
+    gapCount: Int = 0,
+    onStartGap: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -260,6 +269,15 @@ private fun ReviewSessionStartScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
+                        }
+
+                        // Session Lacunes : priorise oublis et échecs récents.
+                        if (gapCount > 0) {
+                            LearnSyncSecondaryButton(
+                                text = "Session Lacunes ($gapCount prioritaires)",
+                                onClick = onStartGap,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
 
                         // Révision anticipée : possible même quand rien n'est dû

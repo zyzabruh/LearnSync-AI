@@ -85,9 +85,9 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
         flashcardRepo.getDueFlashcardsForCourse(courseId)
 
     /** Démarre une session mélangée sur les cartes fournies (limit = 20, 30... ou null = tout). */
-    fun startReviewSession(cards: List<Flashcard>, limit: Int? = null) {
+    fun startReviewSession(cards: List<Flashcard>, limit: Int? = null, shuffle: Boolean = true) {
         _lastRating.value = null
-        val expanded = ReviewQueue.expand(cards)
+        val expanded = ReviewQueue.expand(cards, shuffle)
         _reviewQueue.value = if (limit != null) expanded.take(limit) else expanded
 
         // Trace la session en base (durée réelle + volume) pour stats et calendrier.
@@ -189,6 +189,45 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     fun removeCardFromQueue(cardId: String) {
         _lastRating.value = null
         _reviewQueue.update { queue -> queue?.filterNot { it.card.id == cardId } }
+    }
+
+    /**
+     * Session « Lacunes » : cartes dues triées par priorité (oublis,
+     * dernier échec, temps de réponse élevé), sans mélange pour traiter
+     * le plus urgent d'abord.
+     */
+    fun startGapSession(cards: List<Flashcard>, logs: List<ReviewLog>, limit: Int = 15) {
+        val lastRatingByCard = logs.groupBy { it.flashcardId }
+            .mapValues { (_, entries) -> entries.maxByOrNull { it.reviewedAt } }
+        val ranked = cards.sortedByDescending { card ->
+            val last = lastRatingByCard[card.id]
+            card.lapses * 100 +
+                (if (last?.rating == SpacedRepetition.RATING_AGAIN) 50 else 0) +
+                (if ((last?.responseTime ?: 0L) > 30_000L) 10 else 0) +
+                (if (card.interval == 0) 5 else 0)
+        }
+        _lastRating.value = null
+        _reviewQueue.value = ReviewQueue.expand(ranked.take(limit.coerceAtLeast(1)), shuffle = false)
+        val session = ReviewSession(
+            id = UUID.randomUUID().toString(),
+            courseId = ranked.map { it.courseId }.distinct().singleOrNull(),
+            startedAt = System.currentTimeMillis(),
+            endedAt = null,
+            cardsReviewed = 0
+        )
+        currentSessionId = session.id
+        viewModelScope.launch {
+            runCatching { reviewRepo.insertSession(session) }
+        }
+    }
+
+    /** Compte les cartes dues relevant d'une session Lacunes (oublis ou échec récent). */
+    fun gapCount(cards: List<Flashcard>, logs: List<ReviewLog>): Int {
+        val lastRatingByCard = logs.groupBy { it.flashcardId }
+            .mapValues { (_, entries) -> entries.maxByOrNull { it.reviewedAt }?.rating }
+        return cards.count { card ->
+            card.lapses >= 2 || lastRatingByCard[card.id] == SpacedRepetition.RATING_AGAIN
+        }
     }
 
     /** Met à jour le texte d'une carte dans la file après correction. */

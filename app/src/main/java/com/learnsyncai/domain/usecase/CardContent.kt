@@ -77,7 +77,7 @@ object CardContent {
  * cloze multiple → un item par occultation, "both" → aller + retour.
  */
 object ReviewQueue {
-    fun expand(cards: List<Flashcard>): List<ReviewItem> {
+    fun expand(cards: List<Flashcard>, shuffle: Boolean = true): List<ReviewItem> {
         val items = mutableListOf<ReviewItem>()
         for (card in cards.distinctBy { it.id }) {
             val occlusions = if (card.cardType == CardType.CLOZE) {
@@ -94,7 +94,7 @@ object ReviewQueue {
                 else -> items += ReviewItem(card)
             }
         }
-        return items.shuffled()
+        return if (shuffle) items.shuffled() else items
     }
 }
 

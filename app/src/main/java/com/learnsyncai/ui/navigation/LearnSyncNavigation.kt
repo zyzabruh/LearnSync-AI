@@ -306,6 +306,9 @@ fun LearnSyncNavigation(
                             composable(Screen.Review.route) {
                                 val aheadCards = allFlashcards.filter { it.dueDate > System.currentTimeMillis() }
                                 val canUndo by reviewViewModel.canUndo.collectAsState()
+                                val gapCount = remember(dueFlashcards, reviewLogs) {
+                                    reviewViewModel.gapCount(dueFlashcards, reviewLogs)
+                                }
 
                                 ReviewScreen(
                                     dueCards = dueFlashcards,
@@ -316,6 +319,8 @@ fun LearnSyncNavigation(
                                     onSpeakAnswer = { text -> reviewViewModel.speakAnswer(text) },
                                     onStartSession = { limit -> reviewViewModel.startReviewSession(dueFlashcards, limit) },
                                     onStartAheadSession = { reviewViewModel.startReviewSession(aheadCards, null) },
+                                    onStartGapSession = { reviewViewModel.startGapSession(dueFlashcards, reviewLogs) },
+                                    gapCount = gapCount,
                                     onEndSession = { reviewViewModel.endReviewSession() },
                                     onFinishReview = { navController.navigate(Screen.Home.route) },
                                     canUndo = canUndo,
@@ -343,6 +348,9 @@ fun LearnSyncNavigation(
                                 val courseDueFlashcards by reviewViewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
                                 val courseAheadCards = allFlashcards.filter { it.courseId == courseId && it.dueDate > System.currentTimeMillis() }
                                 val canUndoCourse by reviewViewModel.canUndo.collectAsState()
+                                val courseGapCount = remember(courseDueFlashcards, reviewLogs) {
+                                    reviewViewModel.gapCount(courseDueFlashcards, reviewLogs)
+                                }
 
                                 ReviewScreen(
                                     dueCards = courseDueFlashcards,
@@ -353,6 +361,8 @@ fun LearnSyncNavigation(
                                     onSpeakAnswer = { text -> reviewViewModel.speakAnswer(text) },
                                     onStartSession = { limit -> reviewViewModel.startReviewSession(courseDueFlashcards, limit) },
                                     onStartAheadSession = { reviewViewModel.startReviewSession(courseAheadCards, null) },
+                                    onStartGapSession = { reviewViewModel.startGapSession(courseDueFlashcards, reviewLogs) },
+                                    gapCount = courseGapCount,
                                     onEndSession = { reviewViewModel.endReviewSession() },
                                     onFinishReview = { navController.popBackStack() },
                                     canUndo = canUndoCourse,
