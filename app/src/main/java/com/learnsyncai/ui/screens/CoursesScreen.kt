@@ -42,6 +42,7 @@ fun CoursesScreen(
     hasValidAiConfig: Boolean = true,
     onImportCourse: (Uri, String) -> Unit,
     onImportFromUrl: (String) -> Unit = {},
+    onImportFromTranscript: (title: String, url: String, transcript: String) -> Unit = { _, _, _ -> },
     onGenerateMaterial: (Course) -> Unit,
     onSelectCourse: (Course) -> Unit,
     onDeleteCourse: (String) -> Unit,
@@ -60,6 +61,7 @@ fun CoursesScreen(
     var courseToDelete by remember { mutableStateOf<Course?>(null) }
     var courseToOrganize by remember { mutableStateOf<Course?>(null) }
     var showUrlDialog by remember { mutableStateOf(false) }
+    var showYoutubeDialog by remember { mutableStateOf(false) }
     var showOnboardingDismissed by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -94,6 +96,13 @@ fun CoursesScreen(
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Rechercher",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(onClick = { showYoutubeDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.OndemandVideo,
+                            contentDescription = "Importer depuis YouTube",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -413,6 +422,60 @@ fun CoursesScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showUrlDialog = false }) {
+                    Text("Annuler")
+                }
+            },
+            shape = LearnSyncShapes.large
+        )
+    }
+
+    // YouTube Import Dialog (URL + transcription collée, sans API Google)
+    if (showYoutubeDialog) {
+        var ytUrl by remember { mutableStateOf("") }
+        var ytTitle by remember { mutableStateOf("") }
+        var ytTranscript by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showYoutubeDialog = false },
+            title = { Text("Importer depuis YouTube", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Ouvrez la vidéo YouTube → « … » → « Ouvrir la transcription », copiez le texte et collez-le ici.")
+                    OutlinedTextField(
+                        value = ytUrl,
+                        onValueChange = { ytUrl = it },
+                        label = { Text("Lien YouTube") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = ytTitle,
+                        onValueChange = { ytTitle = it },
+                        label = { Text("Titre du cours") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = ytTranscript,
+                        onValueChange = { ytTranscript = it },
+                        label = { Text("Transcription collée") },
+                        minLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onImportFromTranscript(ytTitle, ytUrl, ytTranscript)
+                        showYoutubeDialog = false
+                    },
+                    enabled = ytTitle.isNotBlank() && ytTranscript.trim().length >= 30
+                ) {
+                    Text("Importer")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showYoutubeDialog = false }) {
                     Text("Annuler")
                 }
             },

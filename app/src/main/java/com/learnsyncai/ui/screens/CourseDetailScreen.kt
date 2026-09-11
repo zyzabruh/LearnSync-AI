@@ -73,6 +73,11 @@ fun CourseDetailScreen(
     onSaveNote: (String) -> Unit = {},
     onConvertNotes: (String) -> Unit = {},
     onOpenConcept: (String) -> Unit = {},
+    courseMedia: List<com.learnsyncai.domain.model.CourseMedia> = emptyList(),
+    onAddAudio: (String) -> Unit = {},
+    onUpdateTranscript: (com.learnsyncai.domain.model.CourseMedia, String) -> Unit = { _, _ -> },
+    onDeleteMedia: (com.learnsyncai.domain.model.CourseMedia) -> Unit = {},
+    onCardsFromTranscript: (String) -> Unit = {},
     onDeleteFlashcard: (flashcardId: String) -> Unit = {},
     onAddQuizQuestion: (question: String, options: List<String>, correctAnswer: String, explanation: String) -> Unit = { _, _, _, _ -> },
     onDeleteQuizQuestion: (quizQuestionId: String) -> Unit = {},
@@ -92,7 +97,7 @@ fun CourseDetailScreen(
     var showEditSummaryDialog by remember { mutableStateOf(false) }
     var showAddKeyPointDialog by remember { mutableStateOf(false) }
 
-    val tabs = listOf("Résumé", "Notions clés", "Flashcards (${flashcards.size})", "QCM (${quizQuestions.size})", "Notes")
+    val tabs = listOf("Résumé", "Notions clés", "Flashcards (${flashcards.size})", "QCM (${quizQuestions.size})", "Notes", "Audio")
 
     val dueFlashcardsCount = remember(flashcards) {
         val now = System.currentTimeMillis()
@@ -586,6 +591,15 @@ fun CourseDetailScreen(
                     onSaveNote = onSaveNote,
                     onConvertNotes = onConvertNotes,
                     onOpenConcept = onOpenConcept
+                )
+
+                5 -> CourseAudioTab(
+                    courseId = course.id,
+                    media = courseMedia,
+                    onAddAudio = onAddAudio,
+                    onUpdateTranscript = onUpdateTranscript,
+                    onDeleteMedia = onDeleteMedia,
+                    onCardsFromTranscript = onCardsFromTranscript
                 )
             }
         }

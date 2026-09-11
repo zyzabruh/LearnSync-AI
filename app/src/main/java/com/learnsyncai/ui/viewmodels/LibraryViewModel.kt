@@ -748,6 +748,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             )
             flashcardRepo.insertFlashcard(card)
             _uiState.value = UiState.Success("Flashcard ajoutée avec succès !")
+            addXp(5)
         }
     }
 
@@ -824,6 +825,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
             flashcardRepo.insertFlashcard(newFlashcard(courseId, q, a, "", sourceExcerpt = sourceExcerpt.trim()))
             _uiState.value = UiState.Success("Carte créée depuis la sélection !")
+            addXp(5)
         }
     }
 
@@ -915,6 +917,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     }
                 )
                 _uiState.value = UiState.Success("${fresh.size} carte(s) créée(s) depuis les notes !")
+                addXp(5 * fresh.size)
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Conversion impossible : ${e.localizedMessage}")
             }
@@ -963,6 +966,84 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         generateFlashcardsFromExcerpt(course, annotation.text)
     }
 
+    // --- YouTube / audio : transcription -> pipeline existant ---
+
+    /** Import YouTube : URL + transcription collée (pas d'API Google requise). */
+    fun importFromTranscript(title: String, url: String, transcript: String) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading("Import de la transcription...")
+            try {
+                val text = transcript.trim()
+                if (title.isBlank() || text.length < 30) {
+                    _uiState.value = UiState.Error("Titre et transcription (30 caractères min) requis.")
+                    return@launch
+                }
+                val courseId = UUID.randomUUID().toString()
+                courseContentStorage.saveExtractedText(courseId, text)
+                courseRepo.insertCourse(
+                    Course(
+                        id = courseId,
+                        title = title.trim().take(120),
+                        description = "Importé depuis $url",
+                        sourceFileName = title.trim().take(120),
+                        sourceFileUri = url.trim(),
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis(),
+                        progress = 0f,
+                        color = "#3B82F6",
+                        generationStatus = "NONE"
+                    )
+                )
+                _uiState.value = UiState.Success("Transcription importée : lancez la génération.")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Erreur d'import : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    // --- Médias audio : enregistrement + transcription + cartes IA ---
+
+    fun getMediaForCourse(courseId: String): Flow<List<CourseMedia>> =
+        mediaRepo.getMediaForCourse(courseId)
+
+    fun addAudioMedia(courseId: String, path: String) {
+        viewModelScope.launch {
+            mediaRepo.addMedia(
+                CourseMedia(
+                    id = UUID.randomUUID().toString(),
+                    courseId = courseId,
+                    kind = "audio",
+                    path = path,
+                    transcript = "",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            _uiState.value = UiState.Success("Enregistrement ajouté.")
+        }
+    }
+
+    fun updateMediaTranscript(media: CourseMedia, transcript: String) {
+        viewModelScope.launch {
+            mediaRepo.updateMedia(media.copy(transcript = transcript.trim()))
+            _uiState.value = UiState.Success("Transcription enregistrée.")
+        }
+    }
+
+    fun deleteMedia(media: CourseMedia) {
+        viewModelScope.launch {
+            try {
+                if (media.path.isNotBlank()) java.io.File(media.path).delete()
+            } catch (_: Exception) { }
+            mediaRepo.deleteMedia(media.id)
+            _uiState.value = UiState.Success("Enregistrement supprimé.")
+        }
+    }
+
+    /** Cartes IA depuis la transcription d'un enregistrement. */
+    fun cardsFromTranscript(course: Course, transcript: String) {
+        generateFlashcardsFromExcerpt(course, transcript)
+    }
+
     /** Crée une carte image (occlusion optionnelle) depuis la galerie. */
     fun createImageCard(
         courseId: String,
@@ -996,6 +1077,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
                 _uiState.value = UiState.Success("Carte image créée !")
+                addXp(5)
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Carte image impossible : ${e.localizedMessage}")
             }

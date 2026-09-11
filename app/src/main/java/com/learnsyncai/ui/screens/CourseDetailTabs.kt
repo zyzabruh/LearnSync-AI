@@ -18,9 +18,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.learnsyncai.domain.model.CourseMedia
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.QuizQuestion
 import com.learnsyncai.domain.model.StudyMaterial
+import com.learnsyncai.ui.theme.RoseError
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
 
@@ -624,6 +626,34 @@ internal fun LazyListScope.CourseNotesTab(
     }
 }
 
+/** Onglet Audio (LazyList) : enveloppe l'éditeur d'enregistrements. */
+internal fun LazyListScope.CourseAudioTab(
+    courseId: String,
+    media: List<CourseMedia>,
+    onAddAudio: (String) -> Unit,
+    onUpdateTranscript: (CourseMedia, String) -> Unit,
+    onDeleteMedia: (CourseMedia) -> Unit,
+    onCardsFromTranscript: (String) -> Unit
+) {
+    item {
+        Text(
+            text = "Audio du cours",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+    }
+    item {
+        CourseAudioTabContent(
+            courseId = courseId,
+            media = media,
+            onAddAudio = onAddAudio,
+            onUpdateTranscript = onUpdateTranscript,
+            onDeleteMedia = onDeleteMedia,
+            onCardsFromTranscript = onCardsFromTranscript
+        )
+    }
+}
+
 /** Blocs hiérarchiques : ajoute/retire 2 espaces en tête de la ligne du curseur. */
 private fun indentLine(
     field: androidx.compose.ui.text.input.TextFieldValue,
@@ -648,3 +678,174 @@ private fun indentLine(
         field.copy(text = newText, selection = androidx.compose.ui.text.TextRange((cursor - removed).coerceAtLeast(lineStart)))
     }
 }
+
+/**
+ * Onglet Audio : enregistrements de cours (MediaRecorder), réécoute,
+ * transcription manuelle et cartes IA depuis la transcription.
+ */
+@Composable
+private fun CourseAudioTabContent(
+    courseId: String,
+    media: List<CourseMedia>,
+    onAddAudio: (String) -> Unit,
+    onUpdateTranscript: (CourseMedia, String) -> Unit,
+    onDeleteMedia: (CourseMedia) -> Unit,
+    onCardsFromTranscript: (String) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var recording by remember { mutableStateOf(false) }
+    var recorder by remember { mutableStateOf<android.media.MediaRecorder?>(null) }
+    var playingId by remember { mutableStateOf<String?>(null) }
+    var player by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    var permissionOk by remember { mutableStateOf(false) }
+    var pendingPath by remember { mutableStateOf<String?>(null) }
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> permissionOk = granted }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try { recorder?.release() } catch (_: Exception) { }
+            try { player?.release() } catch (_: Exception) { }
+        }
+    }
+
+    fun stopPlayback() {
+        try { player?.stop(); player?.release() } catch (_: Exception) { }
+        player = null
+        playingId = null
+    }
+
+    fun togglePlay(item: CourseMedia) {
+        if (playingId == item.id) { stopPlayback(); return }
+        stopPlayback()
+        try {
+            player = android.media.MediaPlayer().apply {
+                setDataSource(item.path)
+                prepare()
+                setOnCompletionListener { stopPlayback() }
+                start()
+            }
+            playingId = item.id
+        } catch (_: Exception) { stopPlayback() }
+    }
+
+    fun toggleRecord() {
+        if (recording) {
+            try { recorder?.stop(); recorder?.release() } catch (_: Exception) { }
+            recorder = null
+            recording = false
+            return
+        }
+        if (!permissionOk) {
+            permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        try {
+            val dir = java.io.File(context.filesDir, "courses/audio/$courseId").apply { mkdirs() }
+            val target = java.io.File(dir, "${System.currentTimeMillis()}.m4a")
+            recorder = android.media.MediaRecorder().apply {
+                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+                setOutputFile(target.absolutePath)
+                prepare()
+                start()
+            }
+            recording = true
+            pendingPath = target.absolutePath
+        } catch (_: Exception) {
+            recording = false
+        }
+    }
+
+    // Arrêt = sauvegarde du média.
+    fun stopAndSave() {
+        val path = pendingPath
+        try { recorder?.stop(); recorder?.release() } catch (_: Exception) { }
+        recorder = null
+        recording = false
+        pendingPath = null
+        if (path != null && java.io.File(path).exists()) onAddAudio(path)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { if (recording) stopAndSave() else toggleRecord() }) {
+                Icon(
+                    if (recording) Icons.Default.Stop else Icons.Default.Mic,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (recording) "Arrêter" else "Enregistrer")
+            }
+            if (recording) {
+                Text("Enregistrement en cours…", style = MaterialTheme.typography.bodySmall, color = RoseError)
+            }
+        }
+        if (media.isEmpty()) {
+            Text(
+                "Aucun enregistrement : capte ton cours puis transcris-le (à la main ou via l'oral) pour en faire des cartes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        media.forEach { item ->
+            var transcript by remember(item.id, item.transcript) { mutableStateOf(item.transcript) }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = LearnSyncShapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(modifier = Modifier.padding(LearnSyncSpacing.medium), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Enregistrement · ${java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(item.createdAt))}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row {
+                            IconButton(onClick = { togglePlay(item) }, modifier = Modifier.size(32.dp)) {
+                                Icon(
+                                    if (playingId == item.id) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                    contentDescription = "Écouter",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            IconButton(onClick = { if (playingId == item.id) stopPlayback(); onDeleteMedia(item) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Supprimer", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = transcript,
+                        onValueChange = { transcript = it },
+                        label = { Text("Transcription") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onUpdateTranscript(item, transcript) },
+                            enabled = transcript != item.transcript
+                        ) {
+                            Text("Enregistrer le texte", style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (transcript.trim().length >= 30) {
+                            OutlinedButton(onClick = { onCardsFromTranscript(transcript) }) {
+                                Text("Cartes IA", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

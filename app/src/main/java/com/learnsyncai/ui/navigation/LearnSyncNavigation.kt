@@ -218,6 +218,7 @@ fun LearnSyncNavigation(
                                     hasValidAiConfig = hasValidAiConfig,
                                     onImportCourse = { uri, name -> libraryViewModel.importCourse(uri, name) },
                                     onImportFromUrl = { url -> libraryViewModel.importCourseFromUrl(url) },
+                                    onImportFromTranscript = { title, url, transcript -> libraryViewModel.importFromTranscript(title, url, transcript) },
                                     onGenerateMaterial = { course -> libraryViewModel.generateMaterial(course) },
                                     onSelectCourse = { course -> navController.navigate("course_detail/${course.id}") },
                                     onDeleteCourse = { courseId -> libraryViewModel.deleteCourse(courseId) },
@@ -267,6 +268,8 @@ fun LearnSyncNavigation(
                                         .collectAsState(initial = "")
                                     val courseNote by libraryViewModel.getNoteForCourse(course.id)
                                         .collectAsState(initial = null)
+                                    val courseMedia by libraryViewModel.getMediaForCourse(course.id)
+                                        .collectAsState(initial = emptyList())
                                     CourseDetailScreen(
                                         course = course,
                                         materials = materials,
@@ -301,6 +304,11 @@ fun LearnSyncNavigation(
                                         courseNote = courseNote,
                                         onSaveNote = { content -> libraryViewModel.saveNote(course.id, content) },
                                         onConvertNotes = { content -> libraryViewModel.convertNotesToCards(course.id, content) },
+                                        courseMedia = courseMedia,
+                                        onAddAudio = { path -> libraryViewModel.addAudioMedia(course.id, path) },
+                                        onUpdateTranscript = { media, text -> libraryViewModel.updateMediaTranscript(media, text) },
+                                        onDeleteMedia = { media -> libraryViewModel.deleteMedia(media) },
+                                        onCardsFromTranscript = { text -> libraryViewModel.cardsFromTranscript(course, text) },
                                         onOpenConcept = { name ->
                                             val encoded = try {
                                                 java.net.URLEncoder.encode(name, "UTF-8")
@@ -621,7 +629,9 @@ fun LearnSyncNavigation(
                                     allFlashcards = allFlashcards,
                                     courses = courses,
                                     onSuspendCard = { card -> libraryViewModel.setFlashcardSuspended(card, true) },
-                                    onUnsuspendCard = { card -> libraryViewModel.setFlashcardSuspended(card, false) }
+                                    onUnsuspendCard = { card -> libraryViewModel.setFlashcardSuspended(card, false) },
+                                    dailyGoal = preferences.dailyGoal,
+                                    xp = preferences.xp
                                 )
                             }
 

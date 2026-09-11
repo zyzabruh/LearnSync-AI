@@ -41,7 +41,9 @@ fun StatsScreen(
     allFlashcards: List<Flashcard>,
     courses: List<Course> = emptyList(),
     onSuspendCard: (Flashcard) -> Unit = {},
-    onUnsuspendCard: (Flashcard) -> Unit = {}
+    onUnsuspendCard: (Flashcard) -> Unit = {},
+    dailyGoal: Int = 10,
+    xp: Int = 0
 ) {
     val totalReviews = reviewLogs.size
     val streak = remember(reviewLogs) { SpacedRepetition.calculateStreak(reviewLogs) }
@@ -123,6 +125,16 @@ fun StatsScreen(
     }
     val courseTitleById = remember(courses) { courses.associate { it.id to it.title } }
 
+    // Gamification : niveau (200 XP/niveau) + objectif du jour.
+    val reviewedToday = remember(reviewLogs) {
+        val today = LocalDate.now()
+        reviewLogs.count { log ->
+            Instant.ofEpochMilli(log.reviewedAt).atZone(ZoneId.systemDefault()).toLocalDate() == today
+        }
+    }
+    val level = remember(xp) { xp / 200 + 1 }
+    val levelProgress = remember(xp) { ((xp % 200).toFloat() / 200f).coerceIn(0f, 1f) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -194,6 +206,49 @@ fun StatsScreen(
                             iconColor = IndigoLight,
                             iconBgColor = IndigoSoftBg,
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            // Niveau & objectif du jour (gamification : +2 XP/carte, +5/carte créée, +50/examen)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = LearnSyncShapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(LearnSyncSpacing.large),
+                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                            ) {
+                                Icon(Icons.Default.Star, contentDescription = null, tint = AmberDark, modifier = Modifier.size(20.dp))
+                                Text("Niveau $level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
+                            Text("$xp XP", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = IndigoPrimary)
+                        }
+                        LinearProgressIndicator(
+                            progress = { levelProgress },
+                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                            color = AmberDark,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        Text(
+                            text = if (reviewedToday >= dailyGoal) "Objectif du jour atteint : $reviewedToday/$dailyGoal cartes !"
+                            else "Objectif du jour : $reviewedToday/$dailyGoal cartes",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = if (reviewedToday >= dailyGoal) EmeraldDark else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
