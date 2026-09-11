@@ -20,6 +20,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -46,6 +48,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import com.learnsyncai.data.parser.OutlineEntry
 import com.learnsyncai.data.parser.PageLink
 import com.learnsyncai.data.parser.PageWord
+import com.learnsyncai.data.parser.PdfSearchHit
 import com.learnsyncai.domain.model.InkStroke
 import com.learnsyncai.domain.model.PdfAnnotation
 import com.learnsyncai.ui.components.*
@@ -100,6 +104,7 @@ fun PdfReaderScreen(
     onLoadPageText: (suspend (Int) -> String)? = null,
     onLoadPageWords: (suspend (page: Int) -> List<PageWord>)? = null,
     onLoadPageLinks: (suspend (page: Int) -> List<PageLink>)? = null,
+    onSearchInPdf: (suspend (String) -> List<PdfSearchHit>)? = null,
     outline: List<OutlineEntry> = emptyList(),
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
@@ -137,6 +142,12 @@ fun PdfReaderScreen(
     var quickQuestion by remember { mutableStateOf("") }
     var quickAnswer by remember { mutableStateOf("") }
     var wordSel by remember { mutableStateOf<IntRange?>(null) }
+    var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var searchDone by remember { mutableStateOf(false) }
+    var searchResults by remember { mutableStateOf(emptyList<PdfSearchHit>()) }
+    var searchJump by remember { mutableStateOf<Pair<Int, String>?>(null) }
 
     if (pdfFile == null || !pdfFile.exists()) {
         Scaffold(
@@ -211,6 +222,19 @@ fun PdfReaderScreen(
         )
     }
 
+    /** Lance la recherche plein-texte (barre de recherche du lecteur). */
+    fun doSearch() {
+        val q = searchQuery.trim()
+        if (q.length < 2 || searching) return
+        scope.launch {
+            searching = true
+            searchDone = false
+            searchResults = try { onSearchInPdf?.invoke(q) } catch (_: Exception) { null } ?: emptyList()
+            searchDone = true
+            searching = false
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -278,6 +302,17 @@ fun PdfReaderScreen(
                         },
                         label = { Text("Dessiner") }
                     )
+                    FilterChip(
+                        selected = showSearch,
+                        onClick = {
+                            showSearch = !showSearch
+                            if (showSearch) {
+                                textMode = false
+                                drawMode = false
+                            }
+                        },
+                        label = { Text("Recherche") }
+                    )
                 }
             }
             if (drawMode) {
@@ -310,6 +345,81 @@ fun PdfReaderScreen(
                         }
                         IconButton(onClick = { onClearInkPage(safeIndex) }) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = "Effacer la page")
+                        }
+                    }
+                }
+            }
+
+            if (showSearch) {
+                item {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = {
+                            searchQuery = it
+                            searchDone = false
+                        },
+                        label = { Text("Rechercher dans le PDF") },
+                        singleLine = true,
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(onClick = {
+                                    searchQuery = ""
+                                    searchResults = emptyList()
+                                    searchDone = false
+                                    searchJump = null
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Effacer")
+                                }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { doSearch() }),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (searching) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text("Recherche…", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                } else if (searchDone && searchQuery.trim().length >= 2) {
+                    if (searchResults.isEmpty()) {
+                        item {
+                            Text(
+                                "Aucun résultat.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    searchResults.take(30).forEach { hit ->
+                        item(key = "search_${hit.page}_${hit.snippet.hashCode()}") {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = LearnSyncShapes.medium,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                onClick = {
+                                    searchJump = hit.page to searchQuery.trim()
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(hit.page.coerceIn(0, (pageCount - 1).coerceAtLeast(0)))
+                                    }
+                                }
+                            ) {
+                                Column(modifier = Modifier.padding(LearnSyncSpacing.medium)) {
+                                    Text(
+                                        text = "p. ${hit.page + 1}" + if (hit.count > 1) " · ${hit.count} occurrences" else "",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(hit.snippet, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                                }
+                            }
                         }
                     }
                 }
@@ -500,10 +610,13 @@ fun PdfReaderScreen(
                             var highlightRects by remember(pdfFile, safeIndex) {
                                 mutableStateOf<List<android.graphics.RectF>>(emptyList())
                             }
-                            LaunchedEffect(pdfFile, safeIndex, annotations) {
+                            LaunchedEffect(pdfFile, safeIndex, annotations, searchJump) {
                                 val keys = annotations.filter {
                                     it.page == safeIndex && it.kind == PdfAnnotation.KIND_KEY && it.text.trim().length >= 4
-                                }.take(3).map { it.text }
+                                }.take(3).map { it.text }.toMutableList()
+                                searchJump?.let { (pg, q) ->
+                                    if (pg == safeIndex && q.isNotBlank()) keys.add(q)
+                                }
                                 highlightRects = try {
                                     onLoadHighlightRects?.invoke(safeIndex, keys)
                                 } catch (_: Exception) {

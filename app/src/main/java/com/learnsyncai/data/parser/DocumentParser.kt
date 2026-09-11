@@ -52,6 +52,9 @@ data class PageWord(val text: String, val left: Float, val top: Float, val right
 /** Lien interne d'une page (annotation Link → page cible), boîte normalisée 0..1. */
 data class PageLink(val targetPage: Int, val left: Float, val top: Float, val right: Float, val bottom: Float)
 
+/** Occurrence de recherche plein-texte dans un PDF : page (0-based), extrait et nombre. */
+data class PdfSearchHit(val page: Int, val snippet: String, val count: Int)
+
 class DocumentParser(private val context: Context) {
 
     init {
@@ -374,6 +377,56 @@ class DocumentParser(private val context: Context) {
                 }
                 flush()
                 words.take(2000)
+            }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            emptyList()
+        }
+    }
+
+    /**
+     * Recherche plein-texte (style Ctrl+F) : un seul chargement du document,
+     * extraction page par page, extrait autour de la 1re occurrence.
+     */
+    fun searchPdfText(file: java.io.File, query: String, maxResults: Int = 50): List<PdfSearchHit> {
+        val q = query.trim()
+        if (!file.exists() || q.length < 2) return emptyList()
+        return try {
+            PDDocument.load(file).use { document ->
+                val hits = mutableListOf<PdfSearchHit>()
+                val count = document.numberOfPages.coerceAtMost(500)
+                for (index in 0 until count) {
+                    if (hits.size >= maxResults) break
+                    val text = try {
+                        val stripper = PDFTextStripper()
+                        stripper.sortByPosition = true
+                        stripper.startPage = index + 1
+                        stripper.endPage = index + 1
+                        stripper.getText(document)
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    if (text.isBlank()) continue
+                    var occurrences = 0
+                    var firstAt = -1
+                    var from = 0
+                    while (true) {
+                        val found = text.indexOf(q, from, ignoreCase = true)
+                        if (found < 0) break
+                        if (firstAt < 0) firstAt = found
+                        occurrences++
+                        from = found + q.length
+                        if (occurrences > 99) break
+                    }
+                    if (occurrences > 0 && firstAt >= 0) {
+                        val start = (firstAt - 40).coerceAtLeast(0)
+                        val end = (firstAt + q.length + 40).coerceAtMost(text.length)
+                        val snippet = text.substring(start, end)
+                            .replace(Regex("\\s+"), " ").trim()
+                        hits.add(PdfSearchHit(index, snippet, occurrences))
+                    }
+                }
+                hits
             }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t

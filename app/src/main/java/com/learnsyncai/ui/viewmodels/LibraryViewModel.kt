@@ -9,6 +9,7 @@ import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.parser.OutlineEntry
 import com.learnsyncai.data.parser.PageLink
 import com.learnsyncai.data.parser.PageWord
+import com.learnsyncai.data.parser.PdfSearchHit
 import com.learnsyncai.data.parser.ScannedPdfException
 import com.learnsyncai.data.sync.CloudSyncWorker
 import com.learnsyncai.data.sync.FirestoreSyncManager
@@ -1033,7 +1034,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Mots d'une page mémorisés en session (sélection au doigt). */
-    private val pageWordsCache = mutableMapOf<String, List<PageWord>>
+    private val pageWordsCache = mutableMapOf<String, List<PageWord>>()
 
     /** Liens internes d'une page mémorisés en session (annotations Link). */
     private val pageLinksCache = mutableMapOf<String, List<PageLink>>()
@@ -1131,6 +1132,20 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 android.util.Log.w("LearnSyncAI", "Effacement d'encre impossible : ${e.message}")
             }
+        }
+    }
+
+    /** Recherche plein-texte dans le PDF local (style Ctrl+F). */
+    suspend fun searchPdfText(courseId: String, query: String): List<PdfSearchHit> = withContext(Dispatchers.IO) {
+        val file = courseContentStorage.getOriginalFile(courseId)
+        if (file != null && file.exists() && file.extension.lowercase() == "pdf") {
+            try {
+                documentParser.searchPdfText(file, query)
+            } catch (_: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
         }
     }
 

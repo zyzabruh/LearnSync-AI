@@ -636,6 +636,9 @@ fun LearnSyncNavigation(
                                     onLoadPageLinks = { page ->
                                         try { libraryViewModel.getPageLinks(courseId, page) } catch (_: Exception) { emptyList() }
                                     },
+                                    onSearchInPdf = { q ->
+                                        try { libraryViewModel.searchPdfText(courseId, q) } catch (_: Exception) { emptyList() }
+                                    },
                                     outline = pdfOutline,
                                     annotations = pdfAnnotations,
                                     onAddAnnotation = { page, text, kind -> libraryViewModel.addAnnotation(courseId, page, text, kind) },
