@@ -44,6 +44,7 @@ fun CoursesScreen(
     hasValidAiConfig: Boolean = true,
     onImportCourse: (Uri, String) -> Unit,
     onImportApkg: (Uri, String) -> Unit = { _, _ -> },
+    onSeedDemo: () -> Unit = {},
     onNavigateToGraph: () -> Unit = {},
     onImportFromUrl: (String) -> Unit = {},
     onImportFromTranscript: (title: String, url: String, transcript: String) -> Unit = { _, _, _ -> },
@@ -158,11 +159,12 @@ fun CoursesScreen(
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         if (courses.isEmpty()) {
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentAlignment = Alignment.Center
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 EmptyState(
                     title = "Aucun cours pour le moment",
@@ -170,6 +172,11 @@ fun CoursesScreen(
                     icon = Icons.Default.UploadFile,
                     actionLabel = "Choisir un document",
                     onActionClick = { filePickerLauncher.launch(IMPORT_MIME_TYPES) }
+                )
+                LearnSyncSecondaryButton(
+                    text = "Découvrir avec un deck démo (sans IA)",
+                    onClick = onSeedDemo,
+                    modifier = Modifier.padding(top = LearnSyncSpacing.medium)
                 )
             }
         } else {

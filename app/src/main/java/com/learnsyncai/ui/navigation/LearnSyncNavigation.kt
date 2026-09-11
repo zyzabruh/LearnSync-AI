@@ -220,6 +220,7 @@ fun LearnSyncNavigation(
                                     hasValidAiConfig = hasValidAiConfig,
                                     onImportCourse = { uri, name -> libraryViewModel.importCourse(uri, name) },
                                     onImportApkg = { uri, name -> libraryViewModel.importApkg(uri, name) },
+                                    onSeedDemo = { libraryViewModel.seedDemoCourse() },
                                     onNavigateToGraph = { navController.navigate("knowledge_graph") },
                                     onImportFromUrl = { url -> libraryViewModel.importCourseFromUrl(url) },
                                     onImportFromTranscript = { title, url, transcript -> libraryViewModel.importFromTranscript(title, url, transcript) },
@@ -629,6 +630,9 @@ fun LearnSyncNavigation(
                                     outline = pdfOutline,
                                     annotations = pdfAnnotations,
                                     onAddAnnotation = { page, text, kind -> libraryViewModel.addAnnotation(courseId, page, text, kind) },
+                                    onQuickAddCard = { page, q, a ->
+                                        libraryViewModel.quickAddFlashcard(courseId, q, a, "PDF p. ${page + 1}")
+                                    },
                                     onDeleteAnnotation = { id -> libraryViewModel.deleteAnnotation(id) },
                                     onCardsFromAnnotation = { annotation ->
                                         if (course != null) libraryViewModel.cardsFromAnnotation(course, annotation)

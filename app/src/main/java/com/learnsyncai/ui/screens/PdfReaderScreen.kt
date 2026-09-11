@@ -45,6 +45,7 @@ fun PdfReaderScreen(
     outline: List<OutlineEntry> = emptyList(),
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
+    onQuickAddCard: (page: Int, question: String, answer: String) -> Unit = { _, _, _ -> },
     onDeleteAnnotation: (String) -> Unit,
     onCardsFromAnnotation: (PdfAnnotation) -> Unit,
     onBackClick: () -> Unit
@@ -277,16 +278,73 @@ fun PdfReaderScreen(
                                         )
                                     }.getOrDefault("")
                                 }
-                                LearnSyncButton(
-                                    text = "Noter la sélection",
-                                    icon = Icons.Default.Add,
-                                    enabled = selected.isNotBlank(),
-                                    onClick = {
-                                        onAddAnnotation(textIndex, selected, noteKind)
-                                        fieldValue = fieldValue.copy(selection = TextRange.Zero)
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                var showQuickCard by remember { mutableStateOf(false) }
+                                var quickQuestion by remember { mutableStateOf("") }
+                                var quickAnswer by remember { mutableStateOf("") }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    LearnSyncButton(
+                                        text = "Noter",
+                                        icon = Icons.Default.Add,
+                                        enabled = selected.isNotBlank(),
+                                        onClick = {
+                                            onAddAnnotation(textIndex, selected, noteKind)
+                                            fieldValue = fieldValue.copy(selection = TextRange.Zero)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    LearnSyncButton(
+                                        text = "Carte express",
+                                        icon = Icons.Default.Bolt,
+                                        enabled = selected.isNotBlank(),
+                                        onClick = {
+                                            quickQuestion = selected
+                                            quickAnswer = ""
+                                            showQuickCard = true
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (showQuickCard) {
+                                    AlertDialog(
+                                        onDismissRequest = { showQuickCard = false },
+                                        title = { Text("Carte express (sans IA)") },
+                                        text = {
+                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                OutlinedTextField(
+                                                    value = quickQuestion,
+                                                    onValueChange = { quickQuestion = it },
+                                                    label = { Text("Question ({{ }} = trou)") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                                OutlinedTextField(
+                                                    value = quickAnswer,
+                                                    onValueChange = { quickAnswer = it },
+                                                    label = { Text("Réponse") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                        },
+                                        confirmButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    onQuickAddCard(textIndex, quickQuestion, quickAnswer)
+                                                    showQuickCard = false
+                                                },
+                                                enabled = quickQuestion.trim().length >= 3
+                                            ) {
+                                                Text("Créer")
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showQuickCard = false }) {
+                                                Text("Annuler")
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

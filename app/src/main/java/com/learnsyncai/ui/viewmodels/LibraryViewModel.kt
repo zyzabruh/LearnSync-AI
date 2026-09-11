@@ -1123,6 +1123,50 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Deck de démonstration : boucle complète (import → cartes → révision) sans clé IA. */
+    fun seedDemoCourse() {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading("Préparation du deck de démonstration...")
+            try {
+                val courseId = UUID.randomUUID().toString()
+                courseContentStorage.saveExtractedText(
+                    courseId,
+                    "Deck de démonstration LearnSync : révises ces cartes puis explore l'application."
+                )
+                courseRepo.insertCourse(
+                    Course(
+                        id = courseId,
+                        title = "Découverte : la mémoire",
+                        description = "Deck de démonstration (8 cartes, sans IA)",
+                        sourceFileName = "Démo",
+                        sourceFileUri = "demo://deck",
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis(),
+                        progress = 0f,
+                        color = "#3B82F6",
+                        generationStatus = "NONE"
+                    )
+                )
+                val demo = listOf(
+                    "Quelle est la capitale de la France ?" to "Paris",
+                    "La {{photosynthèse}} produit du {{glucose}}." to "La photosynthèse produit du glucose.",
+                    "Combien font 2 + 2 × 3 ?" to "8 (la multiplication d'abord)",
+                    "Qui a écrit {{Les Misérables}} ?" to "Victor Hugo",
+                    "Quel est le plus grand océan ?" to "L'océan Pacifique",
+                    "H2O, c'est…" to "La molécule d'eau",
+                    "{{Paris}} est la capitale de la {{France}}." to "Paris est la capitale de la France.",
+                    "Combien de jours dans une année bissextile ?" to "366 jours"
+                )
+                flashcardRepo.insertFlashcards(
+                    demo.map { (q, a) -> newFlashcard(courseId, q, a, "", sourceExcerpt = "Démo") }
+                )
+                _uiState.value = UiState.Success("Deck de démonstration prêt : à toi de réviser !")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Démo impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
     // --- Médias audio : enregistrement + transcription + cartes IA ---
 
     fun getMediaForCourse(courseId: String): Flow<List<CourseMedia>> =
