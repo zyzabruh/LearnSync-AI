@@ -280,7 +280,7 @@ fun LearnSyncNavigation(
                                         onExportCsv = { uri -> libraryViewModel.exportCourseToCsv(uri, course.id) },
                                         onOpenDocument = { libraryViewModel.openCourseDocument(course.id) },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                                        onAddFlashcard = { q, a, exp -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp) },
+                                        onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onDeleteFlashcard = { cardId -> libraryViewModel.deleteFlashcard(cardId) },
                                         onAddQuizQuestion = { q, opts, ans, exp -> libraryViewModel.addCustomQuizQuestion(course.id, q, opts, ans, exp) },
                                         onDeleteQuizQuestion = { qId -> libraryViewModel.deleteQuizQuestion(qId) },
@@ -299,7 +299,7 @@ fun LearnSyncNavigation(
                                     dueCards = dueFlashcards,
                                     aheadCount = aheadCards.size,
                                     reviewQueue = reviewQueue,
-                                    onReviewCard = { card, rating, time -> reviewViewModel.rateCurrentCard(card, rating, time) },
+                                    onReviewCard = { item, rating, time -> reviewViewModel.rateCurrentCard(item, rating, time) },
                                     onSpeakQuestion = { text -> reviewViewModel.speakQuestion(text) },
                                     onSpeakAnswer = { text -> reviewViewModel.speakAnswer(text) },
                                     onStartSession = { limit -> reviewViewModel.startReviewSession(dueFlashcards, limit) },
@@ -308,8 +308,8 @@ fun LearnSyncNavigation(
                                     onFinishReview = { navController.navigate(Screen.Home.route) },
                                     canUndo = canUndo,
                                     onUndo = { reviewViewModel.undoLastRating() },
-                                    onUpdateCard = { card, q, a ->
-                                        libraryViewModel.updateFlashcardContent(card, q, a)
+                                    onUpdateCard = { card, q, a, dir, typeAns ->
+                                        libraryViewModel.updateFlashcardContent(card, q, a, dir, typeAns)
                                         reviewViewModel.refreshQueueCard(card.id, q, a)
                                     },
                                     onPostponeCard = { card ->
@@ -336,7 +336,7 @@ fun LearnSyncNavigation(
                                     dueCards = courseDueFlashcards,
                                     aheadCount = courseAheadCards.size,
                                     reviewQueue = reviewQueue,
-                                    onReviewCard = { card, rating, time -> reviewViewModel.rateCurrentCard(card, rating, time) },
+                                    onReviewCard = { item, rating, time -> reviewViewModel.rateCurrentCard(item, rating, time) },
                                     onSpeakQuestion = { text -> reviewViewModel.speakQuestion(text) },
                                     onSpeakAnswer = { text -> reviewViewModel.speakAnswer(text) },
                                     onStartSession = { limit -> reviewViewModel.startReviewSession(courseDueFlashcards, limit) },
@@ -345,8 +345,8 @@ fun LearnSyncNavigation(
                                     onFinishReview = { navController.popBackStack() },
                                     canUndo = canUndoCourse,
                                     onUndo = { reviewViewModel.undoLastRating() },
-                                    onUpdateCard = { card, q, a ->
-                                        libraryViewModel.updateFlashcardContent(card, q, a)
+                                    onUpdateCard = { card, q, a, dir, typeAns ->
+                                        libraryViewModel.updateFlashcardContent(card, q, a, dir, typeAns)
                                         reviewViewModel.refreshQueueCard(card.id, q, a)
                                     },
                                     onPostponeCard = { card ->

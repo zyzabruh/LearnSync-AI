@@ -59,7 +59,7 @@ fun CourseDetailScreen(
     onNavigateToProfile: () -> Unit = {},
     onExportCsv: (android.net.Uri) -> Unit = {},
     onOpenDocument: () -> Unit = {},
-    onAddFlashcard: (question: String, answer: String, explanation: String) -> Unit = { _, _, _ -> },
+    onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onDeleteFlashcard: (flashcardId: String) -> Unit = {},
     onAddQuizQuestion: (question: String, options: List<String>, correctAnswer: String, explanation: String) -> Unit = { _, _, _, _ -> },
     onDeleteQuizQuestion: (quizQuestionId: String) -> Unit = {},

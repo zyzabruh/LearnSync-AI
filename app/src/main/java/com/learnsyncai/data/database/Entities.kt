@@ -70,7 +70,10 @@ data class FlashcardEntity(
     val lapses: Int,
     val lastReviewedAt: Long?,
     val createdAt: Long,
-    val suspended: Boolean = false
+    val suspended: Boolean = false,
+    val cardType: String = "basic",
+    val direction: String = "forward",
+    val typeAnswer: Boolean = false
 )
 
 @Entity(

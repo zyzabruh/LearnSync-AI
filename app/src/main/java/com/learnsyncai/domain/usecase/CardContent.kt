@@ -1,0 +1,99 @@
+package com.learnsyncai.domain.usecase
+
+import com.learnsyncai.domain.model.CardDirection
+import com.learnsyncai.domain.model.CardType
+import com.learnsyncai.domain.model.Flashcard
+import com.learnsyncai.domain.model.ReviewItem
+
+/**
+ * Contenu des cartes avancées (style RemNote) : texte à trous (cloze),
+ * sens inversé, et expansion d'une liste de cartes en file de révision.
+ */
+object CardContent {
+
+    private val CLOZE_PATTERN = Regex("\\{\\{(.+?)\\}\\}")
+    const val CLOZE_GAP = "[…]"
+
+    /** Vrai si le texte contient au moins une occultation {{…}}. */
+    fun hasClozes(text: String): Boolean = CLOZE_PATTERN.containsMatchIn(text)
+
+    /** Liste des segments occultés, dans l'ordre. */
+    fun occlusions(text: String): List<String> =
+        CLOZE_PATTERN.findAll(text).map { it.groupValues[1] }.toList()
+
+    /** Type auto-détecté depuis la question ({{…}} → cloze). */
+    fun detectType(question: String): String =
+        if (hasClozes(question)) CardType.CLOZE else CardType.BASIC
+
+    /** Texte avec les {{…}} retirés (réponse d'une carte cloze). */
+    fun stripMarkers(text: String): String =
+        text.replace(CLOZE_PATTERN, "$1")
+
+    /**
+     * Question affichée : l'occultation active est masquée ([…]), les autres
+     * restent visibles. Hors cloze : question (ou réponse si inversé).
+     */
+    fun resolvePrompt(item: ReviewItem): String {
+        val card = item.card
+        if (card.cardType == CardType.CLOZE) {
+            val index = item.clozeIndex
+            if (index == null) return stripMarkers(card.question)
+            var seen = -1
+            return CLOZE_PATTERN.replace(card.question) { match ->
+                seen += 1
+                if (seen == index) CLOZE_GAP else match.groupValues[1]
+            }
+        }
+        return if (item.reversed) card.answer else card.question
+    }
+
+    /** Réponse affichée (texte complet, occultations révélées). */
+    fun resolveAnswer(item: ReviewItem): String {
+        val card = item.card
+        if (card.cardType == CardType.CLOZE) return stripMarkers(card.question)
+        return if (item.reversed) card.question else card.answer
+    }
+
+    /** Réponse attendue pour le mode « taper la réponse ». */
+    fun expectedTypedAnswer(item: ReviewItem): String {
+        val card = item.card
+        if (card.cardType == CardType.CLOZE) {
+            val occl = occlusions(card.question)
+            return item.clozeIndex?.let { occl.getOrNull(it) } ?: occl.joinToString(" / ")
+        }
+        return if (item.reversed) card.question else card.answer
+    }
+
+    fun normalizeAnswer(text: String): String =
+        text.trim().lowercase().replace(Regex("\\s+"), " ")
+
+    fun checkTypedAnswer(item: ReviewItem, typed: String): Boolean =
+        normalizeAnswer(typed).isNotEmpty() &&
+            normalizeAnswer(typed) == normalizeAnswer(expectedTypedAnswer(item))
+}
+
+/**
+ * Expansion d'une liste de cartes en file d'items de révision :
+ * cloze multiple → un item par occultation, "both" → aller + retour.
+ */
+object ReviewQueue {
+    fun expand(cards: List<Flashcard>): List<ReviewItem> {
+        val items = mutableListOf<ReviewItem>()
+        for (card in cards.distinctBy { it.id }) {
+            val occlusions = if (card.cardType == CardType.CLOZE) {
+                CardContent.occlusions(card.question)
+            } else emptyList()
+            if (occlusions.isNotEmpty()) {
+                occlusions.indices.forEach { items += ReviewItem(card, clozeIndex = it) }
+            } else when (card.direction) {
+                CardDirection.REVERSE -> items += ReviewItem(card, reversed = true)
+                CardDirection.BOTH -> {
+                    items += ReviewItem(card)
+                    items += ReviewItem(card, reversed = true)
+                }
+                else -> items += ReviewItem(card)
+            }
+        }
+        return items.shuffled()
+    }
+}

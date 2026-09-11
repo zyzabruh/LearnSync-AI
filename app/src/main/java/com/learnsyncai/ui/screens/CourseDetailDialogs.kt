@@ -8,15 +8,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.ui.theme.*
 
-/** Dialog de création manuelle d'une flashcard. */
+/** Dialog de création manuelle d'une flashcard ({{…}} = trou cloze). */
 @Composable
 internal fun AddFlashcardDialog(
     onDismiss: () -> Unit,
-    onConfirm: (question: String, answer: String, explanation: String) -> Unit
+    onConfirm: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit
 ) {
     var cardQuestion by remember { mutableStateOf("") }
     var cardAnswer by remember { mutableStateOf("") }
     var cardExplanation by remember { mutableStateOf("") }
+    var cardDirection by remember { mutableStateOf("forward") }
+    var cardTypeAnswer by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -29,7 +31,7 @@ internal fun AddFlashcardDialog(
                 OutlinedTextField(
                     value = cardQuestion,
                     onValueChange = { cardQuestion = it },
-                    label = { Text("Question *") },
+                    label = { Text("Question * ({{…}} = trou)") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
@@ -44,13 +46,29 @@ internal fun AddFlashcardDialog(
                     label = { Text("Explication / Astuce (facultatif)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("forward" to "Aller", "reverse" to "Retour", "both" to "Les deux").forEach { (value, label) ->
+                        FilterChip(
+                            selected = cardDirection == value,
+                            onClick = { cardDirection = value },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = cardTypeAnswer,
+                        onCheckedChange = { cardTypeAnswer = it }
+                    )
+                    Text("Taper la réponse")
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     if (cardQuestion.isNotBlank() && cardAnswer.isNotBlank()) {
-                        onConfirm(cardQuestion, cardAnswer, cardExplanation)
+                        onConfirm(cardQuestion, cardAnswer, cardExplanation, cardDirection, cardTypeAnswer)
                         onDismiss()
                     }
                 },

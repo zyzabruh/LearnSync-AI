@@ -392,7 +392,7 @@ class AiRepositoryImpl(
             {
               "flashcards": [
                 {
-                  "question": "Question atomique et précise",
+                  "question": "Question atomique et précise, OU phrase à trou cloze avec les passages à mémoriser entre {{doubles accolades}}",
                   "answer": "Réponse concise et exacte (maximum 2 phrases)",
                   "explanation": "Brève explication (maximum 1 phrase)"
                 }
@@ -410,8 +410,9 @@ class AiRepositoryImpl(
             Règles strictes :
             1. Base-toi uniquement sur le cours fourni.
             2. $flashcardsRule
-            3. $quizRule
-            4. Réponds UNIQUEMENT en JSON valide.
+            3. Pour les faits, dates, définitions et formules : génère aussi des cartes cloze en écrivant la phrase complète dans "question" avec le passage à mémoriser entre {{doubles accolades}} (ex. "La {{mitochondrie}} produit l'ATP"), "answer" pouvant alors être vide ou rappeler la phrase.
+            4. $quizRule
+            5. Réponds UNIQUEMENT en JSON valide.
 
             TEXTE DU COURS :
             $courseText
@@ -756,6 +757,10 @@ class AiRepositoryImpl(
 
                 if (question.isNotBlank() && answer.isNotBlank()) {
                     flashcards.add(GeneratedFlashcard(question, answer, explanation))
+                } else if (question.isNotBlank() && question.contains("{{") && question.contains("}}")) {
+                    // Carte cloze : la phrase à trous suffit, la réponse est déduite.
+                    val fullAnswer = answer.ifBlank { question.replace("{{", "").replace("}}", "") }
+                    flashcards.add(GeneratedFlashcard(question, fullAnswer, explanation))
                 }
             }
         }

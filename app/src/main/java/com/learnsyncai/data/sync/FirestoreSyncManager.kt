@@ -176,7 +176,10 @@ class FirestoreSyncManager(
                         "lapses" to card.lapses,
                         "lastReviewedAt" to card.lastReviewedAt,
                         "createdAt" to card.createdAt,
-                        "suspended" to card.suspended
+                        "suspended" to card.suspended,
+                        "cardType" to card.cardType,
+                        "direction" to card.direction,
+                        "typeAnswer" to card.typeAnswer
                     )
                     batch.set(docRef, map, SetOptions.merge())
                 }
@@ -360,8 +363,11 @@ class FirestoreSyncManager(
                 val lastReviewedAt = doc.getLong("lastReviewedAt")
                 val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
                 val suspended = doc.getBoolean("suspended") ?: false
+                val cardType = doc.getString("cardType") ?: "basic"
+                val direction = doc.getString("direction") ?: "forward"
+                val typeAnswer = doc.getBoolean("typeAnswer") ?: false
 
-                Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended)
+                Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer)
             }
             Result.success(flashcards)
         } catch (e: Exception) {

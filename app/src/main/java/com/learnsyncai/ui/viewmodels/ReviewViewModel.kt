@@ -5,8 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.widget.DueCardsWidgetProvider
 import com.learnsyncai.domain.model.Flashcard
+import com.learnsyncai.domain.model.ReviewItem
 import com.learnsyncai.domain.model.ReviewLog
 import com.learnsyncai.domain.model.ReviewSession
+import com.learnsyncai.domain.usecase.ReviewQueue
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.tts.TtsController
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,12 +42,12 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * File de la session de révision en cours : null = aucune session active
-     * (écran de choix), liste vide = session terminée. La file vit dans le
-     * ViewModel : quitter l'écran met la session en pause, y revenir la reprend
-     * dans le même ordre aléatoire.
+     * (écran de choix), liste vide = session terminée. Chaque carte est
+     * expansée en items (sens inversé, occultations cloze) puis mélangée.
+     * Quitter l'écran met la session en pause, y revenir la reprend.
      */
-    private val _reviewQueue = MutableStateFlow<List<Flashcard>?>(null)
-    val reviewQueue: StateFlow<List<Flashcard>?> = _reviewQueue.asStateFlow()
+    private val _reviewQueue = MutableStateFlow<List<ReviewItem>?>(null)
+    val reviewQueue: StateFlow<List<ReviewItem>?> = _reviewQueue.asStateFlow()
 
     init {
         // Lecture vocale automatique de la question à chaque nouvelle carte
@@ -55,7 +57,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
             combine(_reviewQueue, prefsRepo.getPreferences()) { queue, prefs ->
                 queue to prefs.autoTtsEnabled
             }.collect { (queue, autoTtsEnabled) ->
-                val headCard = queue?.firstOrNull()
+                val headCard = queue?.firstOrNull()?.card
                 if (headCard == null) {
                     ttsController.stop()
                     lastAutoSpokenCardId = null
@@ -85,8 +87,8 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     /** Démarre une session mélangée sur les cartes fournies (limit = 20, 30... ou null = tout). */
     fun startReviewSession(cards: List<Flashcard>, limit: Int? = null) {
         _lastRating.value = null
-        val shuffled = cards.distinctBy { it.id }.shuffled()
-        _reviewQueue.value = if (limit != null) shuffled.take(limit) else shuffled
+        val expanded = ReviewQueue.expand(cards)
+        _reviewQueue.value = if (limit != null) expanded.take(limit) else expanded
 
         // Trace la session en base (durée réelle + volume) pour stats et calendrier.
         val session = ReviewSession(
@@ -118,7 +120,8 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
      * Notation atomique d'une carte : état FSRS + log (+ compteur de session)
      * dans une seule transaction Room, puis rafraîchissement du widget.
      */
-    fun rateCurrentCard(card: Flashcard, rating: Int, responseTimeMs: Long) {
+    fun rateCurrentCard(item: ReviewItem, rating: Int, responseTimeMs: Long) {
+        val card = item.card
         val sessionId = currentSessionId
         // Calcul pur synchrone : la carte précédente + le log sont connus
         // avant l'écriture, ce qui rend l'annulation possible.
@@ -134,7 +137,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
             responseTime = responseTimeMs
         )
         _lastRating.value = LastRating(
-            previousCard = card,
+            previousItem = item,
             logId = log.id,
             sessionId = sessionId
         )
@@ -150,8 +153,8 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
         }
         _reviewQueue.update { queue ->
             queue?.let { q ->
-                val rest = q.dropWhile { it.id == card.id }
-                if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
+                val rest = if (q.isNotEmpty()) q.drop(1) else q
+                if (rating == SpacedRepetition.RATING_AGAIN) rest + item else rest
             }
         }
     }
@@ -163,7 +166,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /**
-     * Annule la dernière notation : restaure la carte en tête de file,
+     * Annule la dernière notation : restaure l'item en tête de file,
      * supprime le log et décrémente le compteur de session.
      */
     fun undoLastRating() {
@@ -171,27 +174,27 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
         _lastRating.value = null
         viewModelScope.launch {
             try {
-                reviewRepo.undoRateAtomically(last.previousCard, last.logId, last.sessionId)
+                reviewRepo.undoRateAtomically(last.previousItem.card, last.logId, last.sessionId)
             } catch (e: Exception) {
-                android.util.Log.e("LearnSyncAI", "Annulation échouée pour la carte ${last.previousCard.id}", e)
+                android.util.Log.e("LearnSyncAI", "Annulation échouée pour la carte ${last.previousItem.card.id}", e)
             }
             DueCardsWidgetProvider.updateAll(getApplication())
         }
         _reviewQueue.update { queue ->
-            queue?.let { q -> listOf(last.previousCard) + q.filterNot { it.id == last.previousCard.id } }
+            queue?.let { q -> listOf(last.previousItem) + q.filterNot { it.key() == last.previousItem.key() } }
         }
     }
 
     /** Retire une carte de la file (report/suspension depuis la session). */
     fun removeCardFromQueue(cardId: String) {
         _lastRating.value = null
-        _reviewQueue.update { queue -> queue?.filterNot { it.id == cardId } }
+        _reviewQueue.update { queue -> queue?.filterNot { it.card.id == cardId } }
     }
 
     /** Met à jour le texte d'une carte dans la file après correction. */
     fun refreshQueueCard(cardId: String, question: String, answer: String) {
         _reviewQueue.update { queue ->
-            queue?.map { if (it.id == cardId) it.copy(question = question, answer = answer) else it }
+            queue?.map { if (it.card.id == cardId) it.copy(card = it.card.copy(question = question, answer = answer)) else it }
         }
     }
 
@@ -212,7 +215,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
 
     /** État minimal pour annuler exactement la dernière notation. */
     private data class LastRating(
-        val previousCard: Flashcard,
+        val previousItem: ReviewItem,
         val logId: String,
         val sessionId: String?
     )

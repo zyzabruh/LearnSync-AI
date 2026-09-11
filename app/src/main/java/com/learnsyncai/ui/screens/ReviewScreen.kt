@@ -30,7 +30,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.learnsyncai.domain.model.CardDirection
 import com.learnsyncai.domain.model.Flashcard
+import com.learnsyncai.domain.model.ReviewItem
+import com.learnsyncai.domain.usecase.CardContent
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
@@ -40,8 +43,8 @@ import com.learnsyncai.ui.theme.*
 fun ReviewScreen(
     dueCards: List<Flashcard>,
     aheadCount: Int,
-    reviewQueue: List<Flashcard>?,
-    onReviewCard: (Flashcard, Int, Long) -> Unit,
+    reviewQueue: List<ReviewItem>?,
+    onReviewCard: (ReviewItem, Int, Long) -> Unit,
     onSpeakQuestion: (String) -> Unit,
     onSpeakAnswer: (String) -> Unit,
     onStartSession: (Int?) -> Unit,
@@ -50,7 +53,7 @@ fun ReviewScreen(
     onFinishReview: () -> Unit,
     canUndo: Boolean = false,
     onUndo: () -> Unit = {},
-    onUpdateCard: (Flashcard, String, String) -> Unit = { _, _, _ -> },
+    onUpdateCard: (Flashcard, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onPostponeCard: (Flashcard) -> Unit = {},
     onSuspendCard: (Flashcard) -> Unit = {}
 ) {
@@ -290,9 +293,9 @@ const val SESSION_TARGET_SIZE = 20
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReviewSessionScreen(
-    queue: List<Flashcard>,
+    queue: List<ReviewItem>,
     sessionTotal: Int,
-    onRate: (Flashcard, Int, Long) -> Unit,
+    onRate: (ReviewItem, Int, Long) -> Unit,
     onSpeakQuestion: (String) -> Unit,
     onSpeakAnswer: (String) -> Unit,
     onNewSession: () -> Unit,
@@ -300,7 +303,7 @@ private fun ReviewSessionScreen(
     onSessionSizeInitialized: (Int) -> Unit,
     canUndo: Boolean = false,
     onUndo: () -> Unit = {},
-    onUpdateCard: (Flashcard, String, String) -> Unit = { _, _, _ -> },
+    onUpdateCard: (Flashcard, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onPostponeCard: (Flashcard) -> Unit = {},
     onSuspendCard: (Flashcard) -> Unit = {}
 ) {
@@ -309,27 +312,42 @@ private fun ReviewSessionScreen(
         LaunchedEffect(Unit) { onSessionSizeInitialized(queue.size) }
     }
 
-    val currentCard = queue.firstOrNull() ?: return
+    val currentItem = queue.firstOrNull() ?: return
+    val currentCard = currentItem.card
     var isAnswerRevealed by remember { mutableStateOf(false) }
     var cardStartTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val haptic = LocalHapticFeedback.current
 
+    // Saisie de la réponse (cartes typeAnswer) : vérifiée avant notation.
+    var typedAnswer by remember { mutableStateOf("") }
+    var answerChecked by remember { mutableStateOf(false) }
+    var answerCorrect by remember { mutableStateOf(false) }
+    val promptText = remember(currentItem) { CardContent.resolvePrompt(currentItem) }
+    val answerText = remember(currentItem) { CardContent.resolveAnswer(currentItem) }
+
     // Anti double-tap : ignore une seconde note sur la même carte
-    var lastRatedId by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(currentCard?.id) { lastRatedId = null }
+    var lastRatedKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentItem.key()) {
+        lastRatedKey = null
+        isAnswerRevealed = false
+        typedAnswer = ""
+        answerChecked = false
+        answerCorrect = false
+        cardStartTime = System.currentTimeMillis()
+    }
 
     // La synthèse vocale (moteur, file d'attente, auto-speak) est gérée par
     // le ReviewViewModel : l'écran ne fait que demander les lectures.
 
     fun rate(rating: Int) {
-        val card = currentCard
-        if (card.id == lastRatedId) return
-        lastRatedId = card.id
+        val item = currentItem
+        if (item.key() == lastRatedKey) return
+        lastRatedKey = item.key()
         val reviewTime = System.currentTimeMillis() - cardStartTime
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         isAnswerRevealed = false
         cardStartTime = System.currentTimeMillis()
-        onRate(card, rating, reviewTime)
+        onRate(item, rating, reviewTime)
     }
 
     // Intervalle "Again" : étape d'apprentissage de 10 minutes
@@ -437,9 +455,9 @@ private fun ReviewSessionScreen(
                         EditFlashcardDialog(
                             card = currentCard,
                             onDismiss = { showEditDialog = false },
-                            onConfirm = { question, answer ->
+                            onConfirm = { question, answer, direction, typeAns ->
                                 showEditDialog = false
-                                onUpdateCard(currentCard, question, answer)
+                                onUpdateCard(currentCard, question, answer, direction, typeAns)
                             }
                         )
                     }
@@ -573,7 +591,7 @@ private fun ReviewSessionScreen(
                     Spacer(modifier = Modifier.height(LearnSyncSpacing.large))
 
                     Text(
-                        text = currentCard.question,
+                        text = promptText,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
@@ -581,7 +599,7 @@ private fun ReviewSessionScreen(
                     )
 
                     IconButton(
-                        onClick = { onSpeakQuestion(currentCard.question) },
+                        onClick = { onSpeakQuestion(promptText) },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -621,7 +639,7 @@ private fun ReviewSessionScreen(
                             Spacer(modifier = Modifier.height(LearnSyncSpacing.medium))
 
                             Text(
-                                text = currentCard.answer,
+                                text = answerText,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Center,
@@ -629,7 +647,7 @@ private fun ReviewSessionScreen(
                             )
 
                             IconButton(
-                                onClick = { onSpeakAnswer(currentCard.answer) },
+                                onClick = { onSpeakAnswer(answerText) },
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(
@@ -638,6 +656,22 @@ private fun ReviewSessionScreen(
                                     tint = EmeraldDark,
                                     modifier = Modifier.size(20.dp)
                                 )
+                            }
+
+                            if (answerChecked) {
+                                Spacer(modifier = Modifier.height(LearnSyncSpacing.small))
+                                Surface(
+                                    shape = LearnSyncShapes.pill,
+                                    color = if (answerCorrect) EmeraldSoftBg else AmberSoftBg
+                                ) {
+                                    Text(
+                                        text = if (answerCorrect) "Bonne réponse !" else "Raté — attendu : ${CardContent.expectedTypedAnswer(currentItem)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (answerCorrect) EmeraldDark else AmberDark,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
 
                             if (currentCard.explanation.isNotBlank()) {
@@ -681,17 +715,39 @@ private fun ReviewSessionScreen(
 
             // Bottom Actions: "Afficher la réponse" vs 4 Rating Buttons
             if (!isAnswerRevealed) {
-                LearnSyncButton(
-                    text = "Afficher la réponse",
-                    icon = Icons.Default.Visibility,
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        isAnswerRevealed = true
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("show_answer_button")
-                )
+                if (currentCard.typeAnswer && !answerChecked) {
+                    OutlinedTextField(
+                        value = typedAnswer,
+                        onValueChange = { typedAnswer = it },
+                        label = { Text("Tapez votre réponse") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    LearnSyncButton(
+                        text = "Vérifier",
+                        icon = Icons.Default.Check,
+                        onClick = {
+                            answerCorrect = CardContent.checkTypedAnswer(currentItem, typedAnswer)
+                            answerChecked = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isAnswerRevealed = true
+                        },
+                        enabled = typedAnswer.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LearnSyncButton(
+                        text = "Afficher la réponse",
+                        icon = Icons.Default.Visibility,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isAnswerRevealed = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("show_answer_button")
+                    )
+                }
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -923,10 +979,12 @@ private fun ReviewSessionCompleteScreen(
 private fun EditFlashcardDialog(
     card: Flashcard,
     onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit
+    onConfirm: (String, String, String, Boolean) -> Unit
 ) {
     var question by remember(card.id) { mutableStateOf(card.question) }
     var answer by remember(card.id) { mutableStateOf(card.answer) }
+    var direction by remember(card.id) { mutableStateOf(card.direction) }
+    var typeAnswer by remember(card.id) { mutableStateOf(card.typeAnswer) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Modifier la carte") },
@@ -935,7 +993,7 @@ private fun EditFlashcardDialog(
                 OutlinedTextField(
                     value = question,
                     onValueChange = { question = it },
-                    label = { Text("Question") },
+                    label = { Text("Question ({{…}} = trou)") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
@@ -944,11 +1002,39 @@ private fun EditFlashcardDialog(
                     label = { Text("Réponse") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Text(
+                    text = if (CardContent.hasClozes(question)) "Détecté : carte cloze" else "Sens de révision",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        CardDirection.FORWARD to "Aller",
+                        CardDirection.REVERSE to "Retour",
+                        CardDirection.BOTH to "Les deux"
+                    ).forEach { (value, label) ->
+                        FilterChip(
+                            selected = direction == value,
+                            onClick = { direction = value },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = typeAnswer,
+                        onCheckedChange = { typeAnswer = it }
+                    )
+                    Text(
+                        text = "Taper la réponse",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(question.trim(), answer.trim()) },
+                onClick = { onConfirm(question.trim(), answer.trim(), direction, typeAnswer) },
                 enabled = question.isNotBlank() && answer.isNotBlank()
             ) { Text("Enregistrer") }
         },

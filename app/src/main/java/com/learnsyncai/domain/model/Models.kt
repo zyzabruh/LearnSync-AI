@@ -42,8 +42,40 @@ data class Flashcard(
     val lastReviewedAt: Long?,
     val createdAt: Long,
     /** Carte suspendue : exclue des cartes dues jusqu'à réactivation (sangsues, choix manuel). */
-    val suspended: Boolean = false
+    val suspended: Boolean = false,
+    /** Type de carte : "basic" ou "cloze" (texte à trous avec {{occultation}}). */
+    val cardType: String = CardType.BASIC,
+    /** Sens de révision : "forward", "reverse" ou "both". */
+    val direction: String = CardDirection.FORWARD,
+    /** Si vrai, la révision demande de taper la réponse au clavier. */
+    val typeAnswer: Boolean = false
 )
+
+/** Types de cartes (pilier RemNote : basic, cloze…). */
+object CardType {
+    const val BASIC = "basic"
+    const val CLOZE = "cloze"
+}
+
+/** Sens de révision d'une carte (RemNote : avant, arrière, bidirectionnel). */
+object CardDirection {
+    const val FORWARD = "forward"
+    const val REVERSE = "reverse"
+    const val BOTH = "both"
+}
+
+/**
+ * Unité de révision : une carte vue sous un angle donné (sens inversé,
+ * et/ou une occultation cloze précise). Une carte "both" ou cloze multiple
+ * donne plusieurs items notés indépendamment sur le même état FSRS.
+ */
+data class ReviewItem(
+    val card: Flashcard,
+    val reversed: Boolean = false,
+    val clozeIndex: Int? = null
+) {
+    fun key(): String = "${card.id}|$reversed|${clozeIndex ?: -1}"
+}
 
 data class QuizQuestion(
     val id: String,

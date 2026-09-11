@@ -607,7 +607,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         return "Matériel v$nextVersion ($sourceLabel) : $detail !"
     }
 
-    private fun newFlashcard(courseId: String, question: String, answer: String, explanation: String) = Flashcard(
+    private fun newFlashcard(
+        courseId: String,
+        question: String,
+        answer: String,
+        explanation: String,
+        direction: String = com.learnsyncai.domain.model.CardDirection.FORWARD,
+        typeAnswer: Boolean = false
+    ) = Flashcard(
         id = UUID.randomUUID().toString(),
         courseId = courseId,
         question = question,
@@ -621,7 +628,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         repetitions = 0,
         lapses = 0,
         lastReviewedAt = null,
-        createdAt = System.currentTimeMillis()
+        createdAt = System.currentTimeMillis(),
+        cardType = com.learnsyncai.domain.usecase.CardContent.detectType(question),
+        direction = direction,
+        typeAnswer = typeAnswer
     )
 
     /** Change la langue de réponse IA d'un cours ("auto" = langue du document). */
@@ -661,7 +671,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // --- Création Manuelle de Contenu Pédagogique ---
-    fun addCustomFlashcard(courseId: String, question: String, answer: String, explanation: String = "") {
+    fun addCustomFlashcard(
+        courseId: String,
+        question: String,
+        answer: String,
+        explanation: String = "",
+        direction: String = com.learnsyncai.domain.model.CardDirection.FORWARD,
+        typeAnswer: Boolean = false
+    ) {
         viewModelScope.launch {
             if (question.isBlank() || answer.isBlank()) {
                 _uiState.value = UiState.Error("La question et la réponse ne peuvent pas être vides.")
@@ -671,7 +688,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 courseId = courseId,
                 question = question.trim(),
                 answer = answer.trim(),
-                explanation = explanation.trim()
+                explanation = explanation.trim(),
+                direction = direction,
+                typeAnswer = typeAnswer
             )
             flashcardRepo.insertFlashcard(card)
             _uiState.value = UiState.Success("Flashcard ajoutée avec succès !")
@@ -686,13 +705,28 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Corrige question/réponse d'une carte sans toucher à son état FSRS. */
-    fun updateFlashcardContent(card: Flashcard, question: String, answer: String) {
+    fun updateFlashcardContent(
+        card: Flashcard,
+        question: String,
+        answer: String,
+        direction: String = card.direction,
+        typeAnswer: Boolean = card.typeAnswer
+    ) {
         viewModelScope.launch {
             if (question.isBlank() || answer.isBlank()) {
                 _uiState.value = UiState.Error("La question et la réponse ne peuvent pas être vides.")
                 return@launch
             }
-            flashcardRepo.updateFlashcard(card.copy(question = question.trim(), answer = answer.trim()))
+            val type = com.learnsyncai.domain.usecase.CardContent.detectType(question)
+            flashcardRepo.updateFlashcard(
+                card.copy(
+                    question = question.trim(),
+                    answer = answer.trim(),
+                    cardType = type,
+                    direction = direction,
+                    typeAnswer = typeAnswer
+                )
+            )
             _uiState.value = UiState.Success("Carte mise à jour.")
         }
     }
