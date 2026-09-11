@@ -963,6 +963,45 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         generateFlashcardsFromExcerpt(course, annotation.text)
     }
 
+    /** Crée une carte image (occlusion optionnelle) depuis la galerie. */
+    fun createImageCard(
+        courseId: String,
+        srcUri: android.net.Uri,
+        answer: String,
+        maskX: Float = 0f,
+        maskY: Float = 0f,
+        maskW: Float = 0f,
+        maskH: Float = 0f
+    ) {
+        viewModelScope.launch {
+            try {
+                val app = getApplication<Application>()
+                val dir = java.io.File(app.filesDir, "images/$courseId").apply { mkdirs() }
+                val target = java.io.File(dir, "${UUID.randomUUID()}.jpg")
+                app.contentResolver.openInputStream(srcUri)?.use { src ->
+                    target.outputStream().use { dst -> src.copyTo(dst) }
+                } ?: return@launch.also {
+                    _uiState.value = UiState.Error("Lecture de l'image impossible.")
+                }
+                val hasMask = maskW > 0.01f && maskH > 0.01f
+                flashcardRepo.insertFlashcard(
+                    newFlashcard(
+                        courseId,
+                        if (hasMask) "Que cache le rectangle ?" else "Que montre cette image ?",
+                        answer.trim(),
+                        ""
+                    ).copy(
+                        imagePath = target.absolutePath,
+                        maskX = maskX, maskY = maskY, maskW = maskW, maskH = maskH
+                    )
+                )
+                _uiState.value = UiState.Success("Carte image créée !")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Carte image impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
     fun addCustomQuizQuestion(
         courseId: String,
         question: String,

@@ -2,9 +2,11 @@ package com.learnsyncai.ui.screens
 
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +23,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -34,6 +38,7 @@ import com.learnsyncai.domain.model.CardDirection
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.ReviewItem
 import com.learnsyncai.domain.usecase.CardContent
+import com.learnsyncai.domain.usecase.CardImages
 import com.learnsyncai.domain.usecase.SpacedRepetition
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
@@ -607,6 +612,41 @@ private fun ReviewSessionScreen(
                     }
 
                     Spacer(modifier = Modifier.height(LearnSyncSpacing.large))
+
+                    // Carte image / occlusion : image chargée localement, masque noir
+                    // tant que la réponse n'est pas révélée.
+                    val cardBitmap = remember(currentItem) {
+                        if (currentCard.imagePath.isBlank()) null
+                        else CardImages.loadBitmap(currentCard.imagePath)
+                    }
+                    if (cardBitmap != null) {
+                        val hasMask = currentCard.maskW > 0.01f && currentCard.maskH > 0.01f
+                        Image(
+                            bitmap = cardBitmap.asImageBitmap(),
+                            contentDescription = "Illustration de la carte",
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(LearnSyncShapes.medium)
+                                .drawWithContent {
+                                    drawContent()
+                                    if (hasMask && !isAnswerRevealed) {
+                                        drawRect(
+                                            color = Color.Black,
+                                            topLeft = androidx.compose.ui.geometry.Offset(
+                                                size.width * currentCard.maskX,
+                                                size.height * currentCard.maskY
+                                            ),
+                                            size = androidx.compose.ui.geometry.Size(
+                                                size.width * currentCard.maskW,
+                                                size.height * currentCard.maskH
+                                            )
+                                        )
+                                    }
+                                }
+                        )
+                        Spacer(modifier = Modifier.height(LearnSyncSpacing.medium))
+                    }
 
                     Text(
                         text = promptText,

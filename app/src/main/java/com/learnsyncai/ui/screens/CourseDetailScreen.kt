@@ -64,6 +64,7 @@ fun CourseDetailScreen(
     onNavigateToExam: () -> Unit = {},
     onNavigateToPdf: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
+    onAddImageCard: (uri: android.net.Uri, answer: String, maskX: Float, maskY: Float, maskW: Float, maskH: Float) -> Unit = { _, _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
     onGenerateFromExcerpt: (String) -> Unit = {},
     courseNote: com.learnsyncai.domain.model.CourseNote? = null,
@@ -84,6 +85,7 @@ fun CourseDetailScreen(
 
     // Dialog states for custom content creation
     var showAddFlashcardDialog by remember { mutableStateOf(false) }
+    var showAddImageDialog by remember { mutableStateOf(false) }
     var showAddQuizDialog by remember { mutableStateOf(false) }
     var showEditSummaryDialog by remember { mutableStateOf(false) }
     var showAddKeyPointDialog by remember { mutableStateOf(false) }
@@ -550,7 +552,8 @@ fun CourseDetailScreen(
                     flashcards = flashcards,
                     onAddFlashcard = { showAddFlashcardDialog = true },
                     onDeleteFlashcard = onDeleteFlashcard,
-                    onRegenerate = onRegenerate
+                    onRegenerate = onRegenerate,
+                    onAddImageFlashcard = { showAddImageDialog = true }
                 )
 
                 3 -> CourseQuizTab(
@@ -576,6 +579,15 @@ fun CourseDetailScreen(
         AddFlashcardDialog(
             onDismiss = { showAddFlashcardDialog = false },
             onConfirm = onAddFlashcard
+        )
+    }
+
+    if (showAddImageDialog) {
+        AddImageCardDialog(
+            onDismiss = { showAddImageDialog = false },
+            onConfirm = { uri, answer, mx, my, mw, mh ->
+                onAddImageCard(uri, answer, mx, my, mw, mh)
+            }
         )
     }
 

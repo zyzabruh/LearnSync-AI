@@ -190,7 +190,8 @@ internal fun LazyListScope.CourseFlashcardsTab(
     flashcards: List<Flashcard>,
     onAddFlashcard: () -> Unit,
     onDeleteFlashcard: (String) -> Unit,
-    onRegenerate: () -> Unit
+    onRegenerate: () -> Unit,
+    onAddImageFlashcard: () -> Unit = {}
 ) {
     item {
         Row(
@@ -203,13 +204,23 @@ internal fun LazyListScope.CourseFlashcardsTab(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-            FilledTonalButton(
-                onClick = onAddFlashcard,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Ajouter")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(
+                    onClick = onAddImageFlashcard,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Image")
+                }
+                FilledTonalButton(
+                    onClick = onAddFlashcard,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Ajouter")
+                }
             }
         }
     }

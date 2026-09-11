@@ -293,6 +293,7 @@ fun LearnSyncNavigation(
                                         onNavigateToPdf = { navController.navigate("course_pdf/${course.id}") },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
+                                        onAddImageCard = { uri, answer, mx, my, mw, mh -> libraryViewModel.createImageCard(course.id, uri, answer, mx, my, mw, mh) },
                                         onQuickAddFlashcard = { q, a, excerpt -> libraryViewModel.quickAddFlashcard(course.id, q, a, excerpt) },
                                         onGenerateFromExcerpt = { excerpt -> libraryViewModel.generateFlashcardsFromExcerpt(course, excerpt) },
                                         courseNote = courseNote,

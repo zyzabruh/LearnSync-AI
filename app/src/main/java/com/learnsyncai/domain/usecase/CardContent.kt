@@ -106,6 +106,23 @@ data class ParsedNoteCard(
     val typeAnswer: Boolean = false
 )
 
+/** Images des cartes : décodage échantillonné anti-OOM. */
+object CardImages {
+    fun loadBitmap(path: String, maxDim: Int = 1024): android.graphics.Bitmap? {
+        return try {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(path, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            android.graphics.BitmapFactory.decodeFile(path, opts)
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
 /**
  * Parseur de notes style RemNote (une carte par ligne, marqueurs espacés) :
  * - `Question >> Réponse` : carte simple (sens aller)

@@ -3,7 +3,9 @@ package com.learnsyncai.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.ui.theme.*
@@ -298,6 +300,111 @@ internal fun DeleteCourseConfirmDialog(
                 )
             ) {
                 Text("Supprimer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        },
+        shape = LearnSyncShapes.large
+    )
+}
+
+/** Dialog de création d'une carte image / occlusion depuis la galerie. */
+@Composable
+internal fun AddImageCardDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (uri: android.net.Uri, answer: String, maskX: Float, maskY: Float, maskW: Float, maskH: Float) -> Unit
+) {
+    var pickedUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var answer by remember { mutableStateOf("") }
+    var occlusion by remember { mutableStateOf(false) }
+    var maskX by remember { mutableFloatStateOf(0.25f) }
+    var maskY by remember { mutableFloatStateOf(0.25f) }
+    var maskW by remember { mutableFloatStateOf(0.5f) }
+    var maskH by remember { mutableFloatStateOf(0.3f) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? -> if (uri != null) pickedUri = uri }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Carte image", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+            ) {
+                Button(onClick = { picker.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (pickedUri == null) "Choisir une image" else "Changer d'image")
+                }
+                pickedUri?.let { uri ->
+                    val preview = remember(uri) {
+                        try {
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                android.graphics.BitmapFactory.decodeStream(input)
+                            }
+                        } catch (_: Exception) { null }
+                    }
+                    preview?.let {
+                        androidx.compose.foundation.Image(
+                            bitmap = it.asImageBitmap(),
+                            contentDescription = "Aperçu",
+                            modifier = Modifier.fillMaxWidth().height(140.dp),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = answer,
+                    onValueChange = { answer = it },
+                    label = { Text("Réponse * (ex. nom de l'élément)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = occlusion, onCheckedChange = { occlusion = it })
+                    Text("Masquer une zone (occlusion)", style = MaterialTheme.typography.bodySmall)
+                }
+                if (occlusion) {
+                    listOf("X" to maskX, "Y" to maskY, "Largeur" to maskW, "Hauteur" to maskH).forEach { (label, value) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
+                            Slider(
+                                value = value,
+                                onValueChange = {
+                                    when (label) {
+                                        "X" -> maskX = it
+                                        "Y" -> maskY = it
+                                        "Largeur" -> maskW = it
+                                        else -> maskH = it
+                                    }
+                                },
+                                valueRange = 0f..1f,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val uri = pickedUri
+                    if (uri != null && answer.isNotBlank()) {
+                        onConfirm(
+                            uri, answer,
+                            if (occlusion) maskX else 0f, if (occlusion) maskY else 0f,
+                            if (occlusion) maskW else 0f, if (occlusion) maskH else 0f
+                        )
+                        onDismiss()
+                    }
+                },
+                enabled = pickedUri != null && answer.isNotBlank()
+            ) {
+                Text("Ajouter")
             }
         },
         dismissButton = {
