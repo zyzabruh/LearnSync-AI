@@ -6,9 +6,12 @@ import android.provider.OpenableColumns
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
-import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.PDOutlineNode
-import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDActionGoTo
-import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDActionGoToR
+import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionGoTo
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDDestination
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDNamedDestination
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageDestination
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineNode
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.BufferedReader
 import java.io.InputStream
@@ -216,29 +219,78 @@ class DocumentParser(private val context: Context) {
     }
 
     private fun extractOutline(document: PDDocument, pageCount: Int): List<OutlineEntry> {
-        val root = document.documentCatalog.documentOutline ?: return emptyList()
-        return root.children.map { node -> buildOutlineEntry(node, document, pageCount) }
+        val root: PDOutlineNode = try {
+            document.documentCatalog.documentOutline
+        } catch (_: Exception) {
+            null
+        } ?: return emptyList()
+        return try {
+            root.children().map { node -> buildOutlineEntry(node, document, pageCount) }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
-    private fun buildOutlineEntry(node: PDOutlineNode, document: PDDocument, pageCount: Int): OutlineEntry {
+    private fun buildOutlineEntry(node: PDOutlineItem, document: PDDocument, pageCount: Int): OutlineEntry {
         val pageIndex = resolvePageIndex(node, document, pageCount)
-        val children = node.children.map { child -> buildOutlineEntry(child, document, pageCount) }
+        val children = try {
+            node.children().map { child -> buildOutlineEntry(child, document, pageCount) }
+        } catch (_: Exception) {
+            emptyList()
+        }
         return OutlineEntry(
-            title = node.title,
+            title = try { node.title } catch (_: Exception) { "" },
             pageIndex = pageIndex,
             children = children
         )
     }
 
-    private fun resolvePageIndex(node: PDOutlineNode, document: PDDocument, pageCount: Int): Int {
-        val dest = node.destination
-        if (dest is PDActionGoTo) {
-            return document.indexOfPage(dest.page).coerceIn(0, pageCount - 1)
+    private fun resolvePageIndex(item: PDOutlineItem, document: PDDocument, pageCount: Int): Int {
+        if (pageCount <= 0) return 0
+        return try {
+            resolveDestinationToPage(item.destination, document)?.let {
+                return it.coerceIn(0, pageCount - 1)
+            }
+            val action = try { item.action } catch (_: Exception) { null }
+            if (action is PDActionGoTo) {
+                resolveDestinationToPage(action.destination, document)?.let {
+                    return it.coerceIn(0, pageCount - 1)
+                }
+            }
+            0
+        } catch (_: Exception) {
+            0
         }
-        if (dest is PDActionGoToR) {
-            return document.indexOfPage(dest.page).coerceIn(0, pageCount - 1)
+    }
+
+    private fun resolveDestinationToPage(dest: PDDestination?, document: PDDocument): Int? {
+        if (dest == null) return null
+        return try {
+            when (dest) {
+                is PDPageDestination -> {
+                    val page = try { dest.page } catch (_: Exception) { null } ?: return null
+                    pageIndexOf(document, page)
+                }
+                is PDNamedDestination -> {
+                    val page = try {
+                        document.documentCatalog.findNamedDestinationPage(dest)
+                    } catch (_: Exception) { null } ?: return null
+                    pageIndexOf(document, page)
+                }
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
         }
-        return 0
+    }
+
+    private fun pageIndexOf(document: PDDocument, page: PDPage): Int? {
+        return try {
+            val index = document.pages.indexOf(page)
+            if (index >= 0) index else null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun parseTxt(uri: Uri, fileName: String): ParseResult {
@@ -276,6 +328,7 @@ class DocumentParser(private val context: Context) {
 
         ZipInputStream(inputStream).use { zipStream ->
             var entry = zipStream.nextEntry
+            var entryCount = 0
             while (entry != null && entryCount < maxEntries) {
                 entryCount++
                 if (entry.name == "word/document.xml") {

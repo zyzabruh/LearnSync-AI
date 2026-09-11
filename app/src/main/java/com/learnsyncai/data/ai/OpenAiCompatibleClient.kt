@@ -111,7 +111,7 @@ class OpenAiCompatibleClient(
                 break
             }
         }
-        if (success != null) return success
+        if (success != null) return@withContext success
         throw IllegalStateException("Échec de la requête IA : ${lastError?.message ?: "aucune erreur"}, cause=${lastError?.cause?.message}", lastError)
     }
 

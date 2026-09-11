@@ -1,10 +1,11 @@
 package com.learnsyncai.data.storage
 
 import android.content.Context
-import com.google.gson.Gson
 import com.learnsyncai.data.parser.OutlineEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 class CourseContentStorage(private val context: Context) {
@@ -111,13 +112,11 @@ class CourseContentStorage(private val context: Context) {
 
     // ==================== SOMMAIRE PDF (outline) ====================
 
-    private val gson = Gson()
-
     suspend fun saveOutlineForCourse(courseId: String, outline: List<OutlineEntry>) {
         withContext(Dispatchers.IO) {
             val sanitizedId = sanitizeCourseId(courseId)
             val file = File(coursesDir, "$sanitizedId.outline.json")
-            file.writeText(gson.toJson(outline), Charsets.UTF_8)
+            file.writeText(outlineToJson(outline).toString(), Charsets.UTF_8)
         }
     }
 
@@ -127,7 +126,7 @@ class CourseContentStorage(private val context: Context) {
             val file = File(coursesDir, "$sanitizedId.outline.json")
             if (file.exists()) {
                 try {
-                    gson.fromJson(file.readText(Charsets.UTF_8), Array<OutlineEntry>::class.java).toList()
+                    outlineFromJson(JSONArray(file.readText(Charsets.UTF_8)))
                 } catch (e: Exception) {
                     android.util.Log.w("LearnSyncAI", "Outline illisible pour le cours $courseId : ${e.message}")
                     emptyList()
@@ -136,6 +135,36 @@ class CourseContentStorage(private val context: Context) {
                 emptyList()
             }
         }
+    }
+
+    private fun outlineToJson(entries: List<OutlineEntry>): JSONArray {
+        val array = JSONArray()
+        for (entry in entries) {
+            array.put(
+                JSONObject().apply {
+                    put("title", entry.title)
+                    put("pageIndex", entry.pageIndex)
+                    put("children", outlineToJson(entry.children))
+                }
+            )
+        }
+        return array
+    }
+
+    private fun outlineFromJson(array: JSONArray): List<OutlineEntry> {
+        val result = mutableListOf<OutlineEntry>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val children = obj.optJSONArray("children")
+            result.add(
+                OutlineEntry(
+                    title = obj.optString("title", ""),
+                    pageIndex = obj.optInt("pageIndex", 0),
+                    children = if (children != null) outlineFromJson(children) else emptyList()
+                )
+            )
+        }
+        return result
     }
 
     private fun sanitizeCourseId(courseId: String): String {
