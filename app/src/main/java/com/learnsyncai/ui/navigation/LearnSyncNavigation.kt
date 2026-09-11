@@ -636,8 +636,8 @@ fun LearnSyncNavigation(
                                     onQuickAddCard = { page, q, a ->
                                         libraryViewModel.quickAddFlashcard(courseId, q, a, "PDF p. ${page + 1}")
                                     },
-                                    onLoadHighlightRects = { page, text ->
-                                        try { libraryViewModel.getHighlightRects(courseId, page, text) } catch (_: Exception) { emptyList() }
+                                    onLoadHighlightRects = { page, texts ->
+                                        try { libraryViewModel.getHighlightRectsForPage(courseId, page, texts) } catch (_: Exception) { emptyList() }
                                     },
                                     inkVersion = inkVersion,
                                     onLoadInkStrokes = { try { libraryViewModel.getInkStrokes(courseId) } catch (_: Exception) { emptyList() } },

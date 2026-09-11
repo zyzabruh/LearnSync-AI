@@ -1033,14 +1033,15 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     /** Boîtes de surlignage d'un passage « à retenir », mémorisées en session. */
     private val highlightCache = mutableMapOf<String, List<android.graphics.RectF>>()
 
-    suspend fun getHighlightRects(courseId: String, page: Int, text: String): List<android.graphics.RectF> =
+    suspend fun getHighlightRectsForPage(courseId: String, page: Int, texts: List<String>): List<android.graphics.RectF> =
         withContext(Dispatchers.IO) {
-            val key = "$courseId#$page#${text.trim().take(80).hashCode()}"
+            val key = "$courseId#$page#${texts.joinToString("|").take(200).hashCode()}"
             highlightCache[key] ?: run {
                 val file = courseContentStorage.getOriginalFile(courseId)
-                val rects = if (file != null && file.exists() && file.extension.lowercase() == "pdf" && text.trim().length >= 4) {
+                val queries = texts.map { it.trim() }.filter { it.length >= 4 }.take(3)
+                val rects = if (file != null && file.exists() && file.extension.lowercase() == "pdf" && queries.isNotEmpty()) {
                     try {
-                        documentParser.findTextRects(file, page, text)
+                        documentParser.findTextRectsMulti(file, page, queries)
                     } catch (_: Exception) {
                         emptyList()
                     }

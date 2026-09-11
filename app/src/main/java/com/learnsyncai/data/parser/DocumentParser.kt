@@ -235,19 +235,23 @@ class DocumentParser(private val context: Context) {
                 stripper.endPage = pageIndex + 1
                 stripper.getText(document).trim()
             }
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
             ""
         }
     }
 
     /**
      * Boîtes de surlignage (coordonnées 0..1, origine en haut à gauche) pour
-     * un passage sur une page : positions réelles du texte via PdfBox
-     * (TextPosition), appariées par mots significatifs pour tolérer les
-     * différences d'espacement. Max 8 boîtes (regroupées par ligne).
+     * plusieurs passages d'une page en UN seul chargement du document
+     * (les scans sont lourds : N chargements = risque d'OOM).
      */
-    fun findTextRects(file: java.io.File, pageIndex: Int, query: String): List<android.graphics.RectF> {
-        if (!file.exists() || query.isBlank()) return emptyList()
+    fun findTextRectsMulti(
+        file: java.io.File,
+        pageIndex: Int,
+        queries: List<String>
+    ): List<android.graphics.RectF> {
+        if (!file.exists() || queries.isEmpty()) return emptyList()
         return try {
             PDDocument.load(file).use { document ->
                 if (pageIndex < 0 || pageIndex >= document.numberOfPages) return emptyList()
@@ -269,9 +273,10 @@ class DocumentParser(private val context: Context) {
                 stripper.startPage = pageIndex + 1
                 stripper.endPage = pageIndex + 1
                 stripper.getText(document)
-                matchTextSpan(chars, query, pageW, pageH)
+                queries.take(3).flatMap { q -> matchTextSpan(chars, q, pageW, pageH).take(8) }.take(24)
             }
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
             emptyList()
         }
     }

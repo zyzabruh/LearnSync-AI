@@ -61,7 +61,7 @@ fun PdfReaderScreen(
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
     onQuickAddCard: (page: Int, question: String, answer: String) -> Unit = { _, _, _ -> },
-    onLoadHighlightRects: (suspend (page: Int, text: String) -> List<android.graphics.RectF>)? = null,
+    onLoadHighlightRects: (suspend (page: Int, texts: List<String>) -> List<android.graphics.RectF>)? = null,
     inkVersion: Int = 0,
     onLoadInkStrokes: (suspend () -> List<InkStroke>)? = null,
     onSaveInkStroke: (page: Int, stroke: InkStroke) -> Unit = { _, _ -> },
@@ -445,18 +445,17 @@ fun PdfReaderScreen(
                             LaunchedEffect(pdfFile, safeIndex, annotations) {
                                 val keys = annotations.filter {
                                     it.page == safeIndex && it.kind == PdfAnnotation.KIND_KEY && it.text.trim().length >= 4
-                                }.take(3)
-                                highlightRects = keys.flatMap { ann ->
-                                    try {
-                                        onLoadHighlightRects?.invoke(safeIndex, ann.text)
-                                    } catch (_: Exception) {
-                                        null
-                                    } ?: emptyList()
-                                }.take(24)
+                                }.take(3).map { it.text }
+                                highlightRects = try {
+                                    onLoadHighlightRects?.invoke(safeIndex, keys)
+                                } catch (_: Exception) {
+                                    null
+                                } ?: emptyList()
                             }
+                            val aspect = bitmap.width.toFloat() / bitmap.height.toFloat()
                             Box(
                                 modifier = Modifier.fillMaxWidth()
-                                    .aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
+                                    .aspectRatio(if (aspect.isFinite() && aspect > 0f) aspect else 1f)
                             ) {
                                 Image(
                                     bitmap = bitmap.asImageBitmap(),
