@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.learnsyncai.domain.model.Course
+import com.learnsyncai.domain.model.CourseNote
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.QuizQuestion
 import com.learnsyncai.domain.model.StudyMaterial
@@ -29,5 +30,8 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allMaterials: StateFlow<List<StudyMaterial>> = container.studyMaterialRepository.getAllMaterials()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allNotes: StateFlow<List<CourseNote>> = container.noteRepository.getAllNotes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }

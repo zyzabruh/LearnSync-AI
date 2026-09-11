@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.domain.model.Course
+import com.learnsyncai.domain.model.CourseTags
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.data.parser.ScannedPdfException
 import com.learnsyncai.ui.components.*
@@ -44,7 +45,8 @@ fun CoursesScreen(
     onGenerateMaterial: (Course) -> Unit,
     onSelectCourse: (Course) -> Unit,
     onDeleteCourse: (String) -> Unit,
-    onUpdateCourseTag: (String, String) -> Unit = { _, _ -> },
+    onUpdateCourseTags: (String, List<String>) -> Unit = { _, _ -> },
+    onUpdateCourseFolder: (String, String) -> Unit = { _, _ -> },
     onNavigateToCalendar: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
@@ -55,7 +57,7 @@ fun CoursesScreen(
     onCancelPdfOcr: () -> Unit = {}
 ) {
     var courseToDelete by remember { mutableStateOf<Course?>(null) }
-    var courseToTag by remember { mutableStateOf<Course?>(null) }
+    var courseToOrganize by remember { mutableStateOf<Course?>(null) }
     var showUrlDialog by remember { mutableStateOf(false) }
     var showOnboardingDismissed by remember { mutableStateOf(false) }
 
@@ -149,9 +151,26 @@ fun CoursesScreen(
                 )
             }
         } else {
-            val availableTags = courses.map { it.tag }.filter { it.isNotBlank() }.distinct()
-            var selectedTag by remember { mutableStateOf<String?>(null) }
-            val filteredCourses = if (selectedTag == null) courses else courses.filter { it.tag == selectedTag }
+            val availableTags = remember(courses) {
+                courses.flatMap { it.tags() }.distinct().sorted()
+            }
+            val availableFolders = remember(courses) {
+                courses.map { it.folder.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+            }
+            var selectedTags by remember { mutableStateOf(setOf<String>()) }
+            var selectedFolder by remember { mutableStateOf<String?>(null) }
+            val filteredCourses = remember(courses, selectedTags, selectedFolder) {
+                courses.filter { course ->
+                    (selectedTags.isEmpty() || course.tags().any { it in selectedTags }) &&
+                        (selectedFolder == null || course.folder.trim() == selectedFolder)
+                }
+            }
+            // Groupement par dossier (dossiers alpha, "Sans dossier" en dernier).
+            val groupedCourses = remember(filteredCourses) {
+                filteredCourses.groupBy { it.folder.trim().ifBlank { "Sans dossier" } }
+                    .toList()
+                    .sortedWith(compareBy({ it.first == "Sans dossier" }, { it.first.lowercase() }))
+            }
 
             LazyColumn(
                 modifier = Modifier
@@ -171,7 +190,7 @@ fun CoursesScreen(
                     }
                 }
 
-                // Filtres par étiquette
+                // Filtres par étiquettes (multi-sélection OU)
                 if (availableTags.isNotEmpty()) {
                     item {
                         Row(
@@ -180,15 +199,12 @@ fun CoursesScreen(
                                 .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            FilterChip(
-                                selected = selectedTag == null,
-                                onClick = { selectedTag = null },
-                                label = { Text("Tous (${courses.size})") }
-                            )
                             availableTags.forEach { tag ->
                                 FilterChip(
-                                    selected = selectedTag == tag,
-                                    onClick = { selectedTag = if (selectedTag == tag) null else tag },
+                                    selected = tag in selectedTags,
+                                    onClick = {
+                                        selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag
+                                    },
                                     label = { Text(tag) }
                                 )
                             }
@@ -196,25 +212,94 @@ fun CoursesScreen(
                     }
                 }
 
-                items(filteredCourses, key = { it.id }) { course ->
-                    val courseCards = allFlashcards.filter { it.courseId == course.id }
-                    val courseDueCards = dueCards.filter { it.courseId == course.id }
-                    val masteryPercent = if (courseCards.isEmpty()) 0 else {
-                        val mastered = courseCards.count { it.repetitions >= 2 && it.difficulty <= 6.0f }
-                        ((mastered.toFloat() / courseCards.size) * 100).toInt()
+                // Filtres par dossier (+ "Tous")
+                if (availableFolders.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedFolder == null,
+                                onClick = { selectedFolder = null },
+                                label = { Text("Tous dossiers") },
+                                leadingIcon = if (selectedFolder == null) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                } else null
+                            )
+                            availableFolders.forEach { folder ->
+                                val count = courses.count { it.folder.trim() == folder }
+                                FilterChip(
+                                    selected = selectedFolder == folder,
+                                    onClick = { selectedFolder = if (selectedFolder == folder) null else folder },
+                                    label = { Text("📁 $folder ($count)") }
+                                )
+                            }
+                        }
                     }
-
-                    CourseCard(
-                        course = course,
-                        totalCardsCount = courseCards.size,
-                        dueCardsCount = courseDueCards.size,
-                        progressPercentage = masteryPercent,
-                        onSelectCourse = onSelectCourse,
-                        onReviewClick = if (courseDueCards.isNotEmpty()) {
-                            { onReviewCourse(course.id) }
-                        } else null
-                    )
                 }
+
+                if (filteredCourses.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Aucun cours pour ces filtres.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                groupedCourses.forEach { (folderName, folderCourses) ->
+                    // En-tête de dossier (masqué si un seul groupe "Sans dossier").
+                    if (groupedCourses.size > 1 || folderName != "Sans dossier") {
+                        item(key = "folder_$folderName") {
+                            Text(
+                                text = if (folderName == "Sans dossier") folderName else "📁 $folderName",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = LearnSyncSpacing.small)
+                            )
+                        }
+                    }
+                    items(folderCourses, key = { it.id }) { course ->
+                        val courseCards = allFlashcards.filter { it.courseId == course.id }
+                        val courseDueCards = dueCards.filter { it.courseId == course.id }
+                        val masteryPercent = if (courseCards.isEmpty()) 0 else {
+                            val mastered = courseCards.count { it.repetitions >= 2 && it.difficulty <= 6.0f }
+                            ((mastered.toFloat() / courseCards.size) * 100).toInt()
+                        }
+
+                        CourseCard(
+                            course = course,
+                            totalCardsCount = courseCards.size,
+                            dueCardsCount = courseDueCards.size,
+                            progressPercentage = masteryPercent,
+                            onSelectCourse = onSelectCourse,
+                            onReviewClick = if (courseDueCards.isNotEmpty()) {
+                                { onReviewCourse(course.id) }
+                            } else null,
+                            onOrganizeClick = { courseToOrganize = it }
+                        )
+                    }
+                }
+            }
+
+            // Dialogue Organiser : étiquettes + dossier
+            if (courseToOrganize != null) {
+                OrganizeCourseDialog(
+                    course = courseToOrganize!!,
+                    allTags = availableTags,
+                    allFolders = availableFolders,
+                    onDismiss = { courseToOrganize = null },
+                    onConfirm = { tags, folder ->
+                        onUpdateCourseTags(courseToOrganize!!.id, tags)
+                        onUpdateCourseFolder(courseToOrganize!!.id, folder)
+                        courseToOrganize = null
+                    }
+                )
             }
         }
     }
@@ -408,4 +493,81 @@ private fun OnboardingStep(number: String, text: String) {
             color = MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+/** Dialogue « Organiser » : étiquettes multiples + dossier d'un cours. */
+@Composable
+private fun OrganizeCourseDialog(
+    course: Course,
+    allTags: List<String>,
+    allFolders: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (tags: List<String>, folder: String) -> Unit
+) {
+    var tagsText by remember(course.id) { mutableStateOf(course.tags().joinToString(", ")) }
+    var folderText by remember(course.id) { mutableStateOf(course.folder) }
+    val selectedTags = remember(tagsText) { CourseTags.parse(tagsText) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Organiser « ${course.title} »", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)) {
+                OutlinedTextField(
+                    value = tagsText,
+                    onValueChange = { tagsText = it },
+                    label = { Text("Étiquettes (séparées par des virgules)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (allTags.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        allTags.filter { it !in selectedTags }.take(10).forEach { tag ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    tagsText = if (tagsText.isBlank()) tag else "$tagsText, $tag"
+                                },
+                                label = { Text("+ $tag") }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = folderText,
+                    onValueChange = { folderText = it },
+                    label = { Text("Dossier (vide = sans dossier)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (allFolders.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        allFolders.forEach { folder ->
+                            FilterChip(
+                                selected = folderText.trim() == folder,
+                                onClick = { folderText = if (folderText.trim() == folder) "" else folder },
+                                label = { Text("📁 $folder") }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(selectedTags, folderText.trim()) }) {
+                Text("Appliquer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        },
+        shape = LearnSyncShapes.large
+    )
 }

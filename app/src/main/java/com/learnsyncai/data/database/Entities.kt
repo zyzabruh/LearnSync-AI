@@ -18,6 +18,7 @@ data class CourseEntity(
     val color: String,
     val generationStatus: String, // "NONE", "GENERATING", "COMPLETED", "ERROR"
     val tag: String = "",
+    val folder: String = "",
     val language: String = "auto"
 )
 

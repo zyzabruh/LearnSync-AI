@@ -93,6 +93,9 @@ interface CourseNoteDao {
     @Query("SELECT * FROM course_notes WHERE courseId = :courseId LIMIT 1")
     fun getNoteForCourse(courseId: String): Flow<List<CourseNoteEntity>>
 
+    @Query("SELECT * FROM course_notes")
+    fun getAllNotes(): Flow<List<CourseNoteEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertNote(note: CourseNoteEntity)
 

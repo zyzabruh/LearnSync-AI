@@ -219,7 +219,8 @@ fun LearnSyncNavigation(
                                     onGenerateMaterial = { course -> libraryViewModel.generateMaterial(course) },
                                     onSelectCourse = { course -> navController.navigate("course_detail/${course.id}") },
                                     onDeleteCourse = { courseId -> libraryViewModel.deleteCourse(courseId) },
-                                    onUpdateCourseTag = { courseId, tag -> libraryViewModel.updateCourseTag(courseId, tag) },
+                                    onUpdateCourseTags = { courseId, tags -> libraryViewModel.updateCourseTags(courseId, tags) },
+                                    onUpdateCourseFolder = { courseId, folder -> libraryViewModel.updateCourseFolder(courseId, folder) },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onNavigateToSearch = { navController.navigate("search") },
                                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
@@ -236,11 +237,13 @@ fun LearnSyncNavigation(
                                 val allMaterials by searchViewModel.allMaterials.collectAsState()
                                 val searchCourses by searchViewModel.courses.collectAsState()
                                 val searchFlashcards by searchViewModel.allFlashcards.collectAsState()
+                                val searchNotes by searchViewModel.allNotes.collectAsState()
                                 SearchScreen(
                                     courses = searchCourses,
                                     flashcards = searchFlashcards,
                                     quizQuestions = allQuiz,
                                     materials = allMaterials,
+                                    notes = searchNotes,
                                     onBackClick = { navController.popBackStack() },
                                     onSelectResult = { courseId -> navController.navigate("course_detail/$courseId") }
                                 )

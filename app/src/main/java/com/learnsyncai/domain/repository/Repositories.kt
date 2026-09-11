@@ -62,6 +62,7 @@ interface QuizRepository {
 
 interface NoteRepository {
     fun getNoteForCourse(courseId: String): Flow<CourseNote?>
+    fun getAllNotes(): Flow<List<CourseNote>>
     suspend fun upsertNote(note: CourseNote)
     suspend fun deleteNotesForCourse(courseId: String)
 }

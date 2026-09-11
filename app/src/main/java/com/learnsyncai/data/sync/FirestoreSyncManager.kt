@@ -106,6 +106,7 @@ class FirestoreSyncManager(
                         "color" to course.color,
                         "generationStatus" to course.generationStatus,
                         "tag" to course.tag,
+                        "folder" to course.folder,
                         "language" to course.language
                     )
                     batch.set(docRef, map, SetOptions.merge())
@@ -305,9 +306,10 @@ class FirestoreSyncManager(
                 val color = doc.getString("color") ?: "#4F46E5"
                 val generationStatus = doc.getString("generationStatus") ?: "COMPLETED"
                 val tag = doc.getString("tag") ?: ""
+                val folder = doc.getString("folder") ?: ""
                 val language = doc.getString("language") ?: "auto"
 
-                Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, language)
+                Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, folder, language)
             }
             Result.success(courses)
         } catch (e: Exception) {

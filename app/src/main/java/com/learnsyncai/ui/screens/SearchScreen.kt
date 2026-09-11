@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.domain.model.Course
+import com.learnsyncai.domain.model.CourseNote
 import com.learnsyncai.domain.model.Flashcard
 import com.learnsyncai.domain.model.QuizQuestion
 import com.learnsyncai.domain.model.StudyMaterial
@@ -28,7 +30,8 @@ data class SearchResultItem(
 )
 
 /**
- * Recherche globale : cours, flashcards, QCM et synthèses.
+ * Recherche globale : cours (titre, étiquettes, dossier), flashcards
+ * (question, réponse, contexte), QCM, synthèses et notes.
  * Filtrage client (les volumes restent raisonnables pour un usage mobile).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,12 +41,13 @@ fun SearchScreen(
     flashcards: List<Flashcard>,
     quizQuestions: List<QuizQuestion>,
     materials: List<StudyMaterial>,
+    notes: List<CourseNote> = emptyList(),
     onBackClick: () -> Unit,
     onSelectResult: (String) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
 
-    val results = remember(query, courses, flashcards, quizQuestions, materials) {
+    val results = remember(query, courses, flashcards, quizQuestions, materials, notes) {
         val q = query.trim().lowercase()
         if (q.length < 2) {
             emptyList()
@@ -51,10 +55,17 @@ fun SearchScreen(
             val courseTitleById = courses.associate { it.id to it.title }
             val items = mutableListOf<SearchResultItem>()
 
-            courses.filter { it.title.lowercase().contains(q) || it.tag.lowercase().contains(q) }.forEach {
-                items.add(SearchResultItem(Icons.AutoMirrored.Filled.MenuBook, it.title, "Cours${if (it.tag.isNotBlank()) " · ${it.tag}" else ""}", it.id))
+            courses.filter {
+                it.title.lowercase().contains(q) || it.tags().any { tag -> tag.lowercase().contains(q) } ||
+                    it.folder.lowercase().contains(q)
+            }.forEach {
+                val meta = listOf(it.folder, it.tags().joinToString(", ")).filter { m -> m.isNotBlank() }.joinToString(" · ")
+                items.add(SearchResultItem(Icons.AutoMirrored.Filled.MenuBook, it.title, "Cours${if (meta.isNotBlank()) " · $meta" else ""}", it.id))
             }
-            flashcards.filter { it.question.lowercase().contains(q) || it.answer.lowercase().contains(q) }.take(40).forEach {
+            flashcards.filter {
+                it.question.lowercase().contains(q) || it.answer.lowercase().contains(q) ||
+                    it.sourceExcerpt.lowercase().contains(q)
+            }.take(40).forEach {
                 items.add(SearchResultItem(Icons.Default.CreditCard, it.question, "Flashcard · ${courseTitleById[it.courseId] ?: ""}", it.courseId))
             }
             quizQuestions.filter { it.question.lowercase().contains(q) }.take(40).forEach {
@@ -67,6 +78,14 @@ fun SearchScreen(
                     it.summary.substring(start, (start + 90).coerceAtMost(it.summary.length)).replace("\n", " ")
                 }
                 items.add(SearchResultItem(Icons.Default.Description, snippet, "Synthèse · ${courseTitleById[it.courseId] ?: ""}", it.courseId))
+            }
+            notes.filter { it.content.lowercase().contains(q) }.take(20).forEach {
+                val snippet = run {
+                    val idx = it.content.lowercase().indexOf(q)
+                    val start = (idx - 40).coerceAtLeast(0)
+                    it.content.substring(start, (start + 90).coerceAtMost(it.content.length)).replace("\n", " ")
+                }
+                items.add(SearchResultItem(Icons.AutoMirrored.Filled.Article, snippet, "Note · ${courseTitleById[it.courseId] ?: ""}", it.courseId))
             }
             items
         }
@@ -97,7 +116,7 @@ fun SearchScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                label = { Text("Cours, flashcards, QCM, synthèses...") },
+                label = { Text("Cours, flashcards, QCM, synthèses, notes...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {

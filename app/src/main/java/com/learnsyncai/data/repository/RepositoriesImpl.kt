@@ -216,6 +216,9 @@ class NoteRepositoryImpl(
     override fun getNoteForCourse(courseId: String): Flow<CourseNote?> =
         noteDao.getNoteForCourse(courseId).map { list -> list.firstOrNull()?.toDomain() }
 
+    override fun getAllNotes(): Flow<List<CourseNote>> =
+        noteDao.getAllNotes().map { list -> list.map { it.toDomain() } }
+
     override suspend fun upsertNote(note: CourseNote) =
         noteDao.upsertNote(note.toEntity())
 
@@ -355,8 +358,8 @@ class TombstoneRepositoryImpl(private val tombstoneDao: TombstoneDao) : Tombston
 }
 
 // Mappers
-fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, language)
-fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, language)
+fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, folder, language)
+fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, folder, language)
 
 fun StudyMaterialEntity.toDomain() = StudyMaterial(
     id = id,

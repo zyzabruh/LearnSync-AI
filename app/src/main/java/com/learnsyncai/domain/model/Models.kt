@@ -11,10 +11,25 @@ data class Course(
     val progress: Float,
     val color: String,
     val generationStatus: String,
+    /** Étiquettes multiples, stockées séparées par des virgules. */
     val tag: String = "",
+    /** Dossier de rangement ("" = sans dossier). */
+    val folder: String = "",
     // Langue de réponse IA : "auto" = langue du document, sinon code (fr, en...)
     val language: String = "auto"
-)
+) {
+    /** Étiquettes découpées et nettoyées. */
+    fun tags(): List<String> = CourseTags.parse(tag)
+}
+
+/** Étiquettes multiples : format CSV simple dans la colonne `tag` historique. */
+object CourseTags {
+    fun parse(raw: String): List<String> =
+        raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+    fun join(tags: List<String>): String =
+        tags.map { it.trim().replace(",", " ") }.filter { it.isNotEmpty() }.distinct().joinToString(", ")
+}
 
 data class StudyMaterial(
     val id: String,

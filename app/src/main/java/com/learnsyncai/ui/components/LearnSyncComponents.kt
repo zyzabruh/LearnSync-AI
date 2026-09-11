@@ -337,6 +337,7 @@ fun CourseCard(
     progressPercentage: Int,
     onSelectCourse: (Course) -> Unit,
     onReviewClick: (() -> Unit)? = null,
+    onOrganizeClick: ((Course) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val formattedDate = remember(course.updatedAt) {
@@ -401,17 +402,48 @@ fun CourseCard(
                         )
                         if (course.tag.isNotBlank()) {
                             Spacer(modifier = Modifier.height(2.dp))
-                            Surface(
-                                color = IndigoSoftBg,
-                                shape = LearnSyncShapes.pill
+                            val tags = course.tags()
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = course.tag,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = IndigoPrimary,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                                if (course.folder.isNotBlank()) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = LearnSyncShapes.pill
+                                    ) {
+                                        Text(
+                                            text = "📁 ${course.folder}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            maxLines = 1,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                tags.take(3).forEach { tag ->
+                                    Surface(
+                                        color = IndigoSoftBg,
+                                        shape = LearnSyncShapes.pill
+                                    ) {
+                                        Text(
+                                            text = tag,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = IndigoPrimary,
+                                            maxLines = 1,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                if (tags.size > 3) {
+                                    Text(
+                                        text = "+${tags.size - 3}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -515,6 +547,19 @@ fun CourseCard(
                             text = "Réviser",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                if (onOrganizeClick != null) {
+                    IconButton(
+                        onClick = { onOrganizeClick(course) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Organiser (étiquettes, dossier)",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

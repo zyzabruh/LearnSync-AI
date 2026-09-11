@@ -301,9 +301,33 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateCourseTag(courseId: String, tag: String) {
         viewModelScope.launch {
+            updateCourseTagsInternal(courseId, com.learnsyncai.domain.model.CourseTags.parse(tag))
+        }
+    }
+
+    /** Remplace les étiquettes d'un cours (liste) et notifie. */
+    fun updateCourseTags(courseId: String, tags: List<String>) {
+        viewModelScope.launch {
+            updateCourseTagsInternal(courseId, tags)
+        }
+    }
+
+    private suspend fun updateCourseTagsInternal(courseId: String, tags: List<String>) {
+        val course = courseRepo.getCourseById(courseId) ?: return
+        val joined = com.learnsyncai.domain.model.CourseTags.join(tags)
+        courseRepo.insertCourse(course.copy(tag = joined, updatedAt = System.currentTimeMillis()))
+        _uiState.value = if (tags.isEmpty()) UiState.Success("Étiquettes retirées.")
+        else UiState.Success("Étiquettes « $joined » appliquées.")
+    }
+
+    /** Déplace un cours dans un dossier (""/vide = sans dossier). */
+    fun updateCourseFolder(courseId: String, folder: String) {
+        viewModelScope.launch {
             val course = courseRepo.getCourseById(courseId) ?: return@launch
-            courseRepo.insertCourse(course.copy(tag = tag.trim(), updatedAt = System.currentTimeMillis()))
-            _uiState.value = if (tag.isBlank()) UiState.Success("Étiquette retirée.") else UiState.Success("Étiquette « ${tag.trim()} » appliquée.")
+            val clean = folder.trim()
+            courseRepo.insertCourse(course.copy(folder = clean, updatedAt = System.currentTimeMillis()))
+            _uiState.value = if (clean.isBlank()) UiState.Success("Cours sorti du dossier.")
+            else UiState.Success("Cours déplacé dans « $clean ».")
         }
     }
 
