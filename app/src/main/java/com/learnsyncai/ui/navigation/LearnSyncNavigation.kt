@@ -360,6 +360,11 @@ fun LearnSyncNavigation(
                                     onSuspendCard = { card ->
                                         libraryViewModel.setFlashcardSuspended(card, true)
                                         reviewViewModel.removeCardFromQueue(card.id)
+                                    },
+                                    onOpenPdfPage = { card ->
+                                        if (card.sourcePage >= 0) {
+                                            navController.navigate("course_pdf/${card.courseId}?page=${card.sourcePage}")
+                                        }
                                     }
                                 )
                             }
@@ -402,6 +407,11 @@ fun LearnSyncNavigation(
                                     onSuspendCard = { card ->
                                         libraryViewModel.setFlashcardSuspended(card, true)
                                         reviewViewModel.removeCardFromQueue(card.id)
+                                    },
+                                    onOpenPdfPage = { card ->
+                                        if (card.sourcePage >= 0) {
+                                            navController.navigate("course_pdf/${card.courseId}?page=${card.sourcePage}")
+                                        }
                                     }
                                 )
                             }
@@ -564,16 +574,25 @@ fun LearnSyncNavigation(
                             }
 
                             composable(
-                                route = "course_pdf/{courseId}",
-                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                                route = "course_pdf/{courseId}?page={page}",
+                                arguments = listOf(
+                                    navArgument("courseId") { type = NavType.StringType },
+                                    navArgument("page") { type = NavType.IntType; defaultValue = 0 }
+                                )
                             ) { backStackEntry ->
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val startPage = backStackEntry.arguments?.getInt("page") ?: 0
                                 val course = courses.find { it.id == courseId }
                                 val pdfAnnotations by libraryViewModel.getAnnotationsForCourse(courseId).collectAsState(initial = emptyList())
                                 val pdfOutline by libraryViewModel.getOutlineForCourse(courseId).collectAsState(initial = emptyList())
+                                val pdfPageTexts by produceState<List<String>?>(initialValue = null, courseId) {
+                                    value = try { libraryViewModel.getPageTexts(courseId) } catch (_: Exception) { emptyList() }
+                                }
                                 PdfReaderScreen(
                                     courseTitle = course?.title ?: "Cours",
                                     pdfFile = remember(courseId) { libraryViewModel.getLocalDocument(courseId) },
+                                    initialPage = startPage,
+                                    pageTexts = pdfPageTexts ?: emptyList(),
                                     outline = pdfOutline,
                                     annotations = pdfAnnotations,
                                     onAddAnnotation = { page, text, kind -> libraryViewModel.addAnnotation(courseId, page, text, kind) },

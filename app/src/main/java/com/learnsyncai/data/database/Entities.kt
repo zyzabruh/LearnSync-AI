@@ -81,7 +81,8 @@ data class FlashcardEntity(
     val maskX: Float = 0f,
     val maskY: Float = 0f,
     val maskW: Float = 0f,
-    val maskH: Float = 0f
+    val maskH: Float = 0f,
+    val sourcePage: Int = -1
 )
 
 @Entity(

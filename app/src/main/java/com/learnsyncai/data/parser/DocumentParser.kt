@@ -218,6 +218,31 @@ class DocumentParser(private val context: Context) {
         }
     }
 
+    /**
+     * Texte par page (1 entrée = 1 page), pour le mode « texte » du lecteur :
+     * permet la sélection au doigt et la création de notes depuis un passage.
+     */
+    fun extractPageTexts(file: java.io.File): List<String> {
+        if (!file.exists()) return emptyList()
+        return try {
+            PDDocument.load(file).use { document ->
+                (0 until document.numberOfPages).map { index ->
+                    try {
+                        val stripper = PDFTextStripper()
+                        stripper.sortByPosition = true
+                        stripper.startPage = index + 1
+                        stripper.endPage = index + 1
+                        stripper.getText(document).trim()
+                    } catch (_: Exception) {
+                        ""
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     private fun extractOutline(document: PDDocument, pageCount: Int): List<OutlineEntry> {
         val root: PDOutlineNode = try {
             document.documentCatalog.documentOutline

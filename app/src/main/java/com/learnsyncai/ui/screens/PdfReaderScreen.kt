@@ -9,6 +9,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,7 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.data.parser.OutlineEntry
 import com.learnsyncai.domain.model.PdfAnnotation
@@ -36,6 +40,8 @@ import java.io.File
 fun PdfReaderScreen(
     courseTitle: String,
     pdfFile: File?,
+    initialPage: Int = 0,
+    pageTexts: List<String> = emptyList(),
     outline: List<OutlineEntry> = emptyList(),
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
@@ -43,9 +49,10 @@ fun PdfReaderScreen(
     onCardsFromAnnotation: (PdfAnnotation) -> Unit,
     onBackClick: () -> Unit
 ) {
-    var pageIndex by remember { mutableIntStateOf(0) }
+    var pageIndex by remember(initialPage) { mutableIntStateOf(initialPage.coerceAtLeast(0)) }
     var noteText by remember { mutableStateOf("") }
     var noteKind by remember { mutableStateOf(PdfAnnotation.KIND_NOTE) }
+    var textMode by remember { mutableStateOf(false) }
 
     if (pdfFile == null || !pdfFile.exists()) {
         Scaffold(
@@ -93,6 +100,7 @@ fun PdfReaderScreen(
 
     val pageCount = rendererState?.third ?: 0
     val safeIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    val textIndex = pageIndex.coerceIn(0, (pageTexts.size - 1).coerceAtLeast(0))
     val bitmap = remember(rendererState, safeIndex) {
         try {
             val renderer = rendererState?.second ?: return@remember null
@@ -151,6 +159,26 @@ fun PdfReaderScreen(
                 }
             }
 
+            if (pageTexts.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = !textMode,
+                            onClick = { textMode = false },
+                            label = { Text("Page") }
+                        )
+                        FilterChip(
+                            selected = textMode,
+                            onClick = { textMode = true },
+                            label = { Text("Texte") }
+                        )
+                    }
+                }
+            }
+
             if (outline.isNotEmpty()) {
                 item {
                     Text(
@@ -192,26 +220,88 @@ fun PdfReaderScreen(
             }
 
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = LearnSyncShapes.medium,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "Page ${safeIndex + 1}",
-                            // Fit : la page entière reste visible (Crop rognait haut/bas).
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        Text(
-                            "Page illisible.",
+                if (textMode && pageTexts.isNotEmpty()) {
+                    val pageText = pageTexts.getOrElse(textIndex) { "" }
+                    var fieldValue by remember(textIndex, pageText) {
+                        mutableStateOf(TextFieldValue(pageText))
+                    }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = LearnSyncShapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
                             modifier = Modifier.padding(LearnSyncSpacing.large),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                        ) {
+                            Text(
+                                "Texte de la page ${textIndex + 1} — sélectionnez un passage",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (pageText.isBlank()) {
+                                Text(
+                                    "Aucun texte extractible sur cette page (scan ?).",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                BasicTextField(
+                                    value = fieldValue,
+                                    onValueChange = { fieldValue = it },
+                                    readOnly = true,
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 200.dp, max = 420.dp)
+                                        .verticalScroll(rememberScrollState())
+                                )
+                                val selected = fieldValue.selection.let { sel ->
+                                    if (sel.collapsed) "" else runCatching {
+                                        pageText.substring(
+                                            sel.start.coerceIn(0, pageText.length),
+                                            sel.end.coerceIn(0, pageText.length)
+                                        )
+                                    }.getOrDefault("")
+                                }
+                                LearnSyncButton(
+                                    text = "Noter la sélection",
+                                    icon = Icons.Default.Add,
+                                    enabled = selected.isNotBlank(),
+                                    onClick = {
+                                        onAddAnnotation(textIndex, selected, noteKind)
+                                        fieldValue = fieldValue.copy(selection = TextRange.Zero)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = LearnSyncShapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Page ${safeIndex + 1}",
+                                // Fit : la page entière reste visible (Crop rognait haut/bas).
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Text(
+                                "Page illisible.",
+                                modifier = Modifier.padding(LearnSyncSpacing.large),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                 }
             }

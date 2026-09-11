@@ -74,7 +74,9 @@ data class Flashcard(
     val maskX: Float = 0f,
     val maskY: Float = 0f,
     val maskW: Float = 0f,
-    val maskH: Float = 0f
+    val maskH: Float = 0f,
+    /** Page du PDF source (-1 = inconnue) : saut carte → document. */
+    val sourcePage: Int = -1
 )
 
 /** Types de cartes (pilier RemNote : basic, cloze…). */

@@ -13,8 +13,10 @@ import com.learnsyncai.data.sync.GenerationNotifier
 import com.learnsyncai.domain.model.*
 import com.learnsyncai.domain.usecase.QuizValidator
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
@@ -669,7 +671,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         explanation: String,
         direction: String = com.learnsyncai.domain.model.CardDirection.FORWARD,
         typeAnswer: Boolean = false,
-        sourceExcerpt: String = ""
+        sourceExcerpt: String = "",
+        sourcePage: Int = -1
     ) = Flashcard(
         id = UUID.randomUUID().toString(),
         courseId = courseId,
@@ -688,7 +691,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         cardType = com.learnsyncai.domain.usecase.CardContent.detectType(question),
         direction = direction,
         typeAnswer = typeAnswer,
-        sourceExcerpt = sourceExcerpt
+        sourceExcerpt = sourceExcerpt,
+        sourcePage = sourcePage
     )
 
     /** Change la langue de réponse IA d'un cours ("auto" = langue du document). */
@@ -836,7 +840,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
      * Génère 1 à 3 cartes IA depuis un extrait surligné du résumé
      * (surlignage → cartes, comme RemNote).
      */
-    fun generateFlashcardsFromExcerpt(course: Course, excerpt: String) {
+    fun generateFlashcardsFromExcerpt(course: Course, excerpt: String, sourcePage: Int = -1) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading("Génération de cartes depuis la sélection...")
             try {
@@ -859,7 +863,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     fresh.map {
                         newFlashcard(
                             course.id, it.question, it.answer, it.explanation,
-                            sourceExcerpt = it.source.ifBlank { excerpt.trim().take(200) }
+                            sourceExcerpt = it.source.ifBlank { excerpt.trim().take(200) },
+                            sourcePage = sourcePage
                         )
                     }
                 )
@@ -933,6 +938,26 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun getLocalDocument(courseId: String): java.io.File? =
         courseContentStorage.getOriginalFile(courseId)
 
+    /** Texte par page mémorisé en session (mode « texte » du lecteur PDF). */
+    private val pageTextsCache = mutableMapOf<String, List<String>>()
+
+    suspend fun getPageTexts(courseId: String): List<String> = withContext(Dispatchers.IO) {
+        pageTextsCache[courseId] ?: run {
+            val file = courseContentStorage.getOriginalFile(courseId)
+            val texts = if (file != null && file.exists() && file.extension.lowercase() == "pdf") {
+                try {
+                    documentParser.extractPageTexts(file)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+            pageTextsCache[courseId] = texts
+            texts
+        }
+    }
+
     fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotation>> =
         annotationRepo.getAnnotationsForCourse(courseId)
 
@@ -972,7 +997,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     /** Cartes IA depuis une annotation (source = page du PDF). */
     fun cardsFromAnnotation(course: Course, annotation: PdfAnnotation) {
-        generateFlashcardsFromExcerpt(course, annotation.text)
+        generateFlashcardsFromExcerpt(course, annotation.text, sourcePage = annotation.page)
     }
 
     // --- YouTube / audio : transcription -> pipeline existant ---

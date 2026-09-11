@@ -182,7 +182,8 @@ class FirestoreSyncManager(
                         "cardType" to card.cardType,
                         "direction" to card.direction,
                         "typeAnswer" to card.typeAnswer,
-                        "sourceExcerpt" to card.sourceExcerpt
+                        "sourceExcerpt" to card.sourceExcerpt,
+                        "sourcePage" to card.sourcePage
                     )
                     batch.set(docRef, map, SetOptions.merge())
                 }
@@ -372,8 +373,9 @@ class FirestoreSyncManager(
                 val direction = doc.getString("direction") ?: "forward"
                 val typeAnswer = doc.getBoolean("typeAnswer") ?: false
                 val sourceExcerpt = doc.getString("sourceExcerpt") ?: ""
+                val sourcePage = doc.getLong("sourcePage")?.toInt() ?: -1
 
-                Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt)
+                Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt, sourcePage = sourcePage)
             }
             Result.success(flashcards)
         } catch (e: Exception) {

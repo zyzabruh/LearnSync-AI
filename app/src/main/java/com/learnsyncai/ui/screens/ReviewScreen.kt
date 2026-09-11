@@ -62,7 +62,8 @@ fun ReviewScreen(
     onUndo: () -> Unit = {},
     onUpdateCard: (Flashcard, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onPostponeCard: (Flashcard) -> Unit = {},
-    onSuspendCard: (Flashcard) -> Unit = {}
+    onSuspendCard: (Flashcard) -> Unit = {},
+    onOpenPdfPage: (Flashcard) -> Unit = {}
 ) {
     var sessionTotal by remember { mutableIntStateOf(0) }
     var totalReviewedCount by remember { mutableIntStateOf(0) }
@@ -157,6 +158,7 @@ fun ReviewScreen(
                 },
                 onUndo = undoLast,
                 onUpdateCard = onUpdateCard,
+                onOpenPdfPage = onOpenPdfPage,
                 onPostponeCard = onPostponeCard,
                 onSuspendCard = onSuspendCard,
                 onSpeakQuestion = onSpeakQuestion,
@@ -328,7 +330,8 @@ private fun ReviewSessionScreen(
     onUndo: () -> Unit = {},
     onUpdateCard: (Flashcard, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onPostponeCard: (Flashcard) -> Unit = {},
-    onSuspendCard: (Flashcard) -> Unit = {}
+    onSuspendCard: (Flashcard) -> Unit = {},
+    onOpenPdfPage: (Flashcard) -> Unit = {}
 ) {
     // Taille totale de la session mémorisée une seule fois (résiste au requeue des "Again")
     if (queue.isNotEmpty()) {
@@ -472,6 +475,16 @@ private fun ReviewSessionScreen(
                                     currentCard?.let(onSuspendCard)
                                 }
                             )
+                            if ((currentCard?.sourcePage ?: -1) >= 0) {
+                                DropdownMenuItem(
+                                    text = { Text("Voir dans le PDF (p. ${(currentCard?.sourcePage ?: 0) + 1})") },
+                                    leadingIcon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null) },
+                                    onClick = {
+                                        showCardMenu = false
+                                        currentCard?.let(onOpenPdfPage)
+                                    }
+                                )
+                            }
                         }
                     }
                     if (showEditDialog && currentCard != null) {
