@@ -290,6 +290,7 @@ fun LearnSyncNavigation(
                                         onNavigateToTutor = { navController.navigate("course_tutor/${course.id}") },
                                         onNavigateToLearn = { navController.navigate("course_learn/${course.id}") },
                                         onNavigateToExam = { navController.navigate("course_exam/${course.id}") },
+                                        onNavigateToPdf = { navController.navigate("course_pdf/${course.id}") },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onQuickAddFlashcard = { q, a, excerpt -> libraryViewModel.quickAddFlashcard(course.id, q, a, excerpt) },
@@ -496,6 +497,26 @@ fun LearnSyncNavigation(
                                         reviewViewModel.startReviewSession(conceptCards, null)
                                         navController.navigate(Screen.Review.route)
                                     }
+                                )
+                            }
+
+                            composable(
+                                route = "course_pdf/{courseId}",
+                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                            ) { backStackEntry ->
+                                val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val course = courses.find { it.id == courseId }
+                                val pdfAnnotations by libraryViewModel.getAnnotationsForCourse(courseId).collectAsState(initial = emptyList())
+                                PdfReaderScreen(
+                                    courseTitle = course?.title ?: "Cours",
+                                    pdfFile = remember(courseId) { libraryViewModel.getLocalDocument(courseId) },
+                                    annotations = pdfAnnotations,
+                                    onAddAnnotation = { page, text, kind -> libraryViewModel.addAnnotation(courseId, page, text, kind) },
+                                    onDeleteAnnotation = { id -> libraryViewModel.deleteAnnotation(id) },
+                                    onCardsFromAnnotation = { annotation ->
+                                        if (course != null) libraryViewModel.cardsFromAnnotation(course, annotation)
+                                    },
+                                    onBackClick = { navController.popBackStack() }
                                 )
                             }
 

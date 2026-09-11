@@ -516,8 +516,11 @@ internal fun LazyListScope.CourseNotesTab(
         )
     }
     item {
-        var content by remember(note?.id, note?.updatedAt) { mutableStateOf(note?.content ?: "") }
+        var field by remember(note?.id, note?.updatedAt) {
+            mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(note?.content ?: ""))
+        }
         var showHelp by remember { mutableStateOf(false) }
+        val content = field.text
         val detectedCount = remember(content) {
             com.learnsyncai.domain.usecase.NoteCards.parse(content).size
         }
@@ -533,13 +536,28 @@ internal fun LazyListScope.CourseNotesTab(
                 verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
             ) {
                 OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
+                    value = field,
+                    onValueChange = { field = it },
                     label = { Text("Écrivez vos notes (une idée par ligne)") },
                     placeholder = { Text("Ex.\nMitochondrie >> centrale énergétique de la cellule\nLa {{mitochondrie}} produit l'ATP") },
                     minLines = 6,
                     modifier = Modifier.fillMaxWidth()
                 )
+                // Blocs hiérarchiques : indente/désindente la ligne du curseur.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { field = indentLine(field, true) },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("⇥ Indenter", style = MaterialTheme.typography.labelSmall)
+                    }
+                    OutlinedButton(
+                        onClick = { field = indentLine(field, false) },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("⇤ Désindenter", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
                 TextButton(onClick = { showHelp = !showHelp }) {
                     Text(if (showHelp) "Masquer la syntaxe" else "Voir la syntaxe des cartes")
                 }
@@ -592,5 +610,30 @@ internal fun LazyListScope.CourseNotesTab(
                 }
             }
         }
+    }
+}
+
+/** Blocs hiérarchiques : ajoute/retire 2 espaces en tête de la ligne du curseur. */
+private fun indentLine(
+    field: androidx.compose.ui.text.input.TextFieldValue,
+    indent: Boolean
+): androidx.compose.ui.text.input.TextFieldValue {
+    val text = field.text
+    val cursor = field.selection.start.coerceIn(0, text.length)
+    val lineStart = text.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+    val lineEnd = text.indexOf('\n', lineStart).let { if (it < 0) text.length else it }
+    val line = text.substring(lineStart, lineEnd)
+    return if (indent) {
+        val newText = text.substring(0, lineStart) + "  " + text.substring(lineStart)
+        field.copy(text = newText, selection = androidx.compose.ui.text.TextRange(cursor + 2))
+    } else {
+        val removed = when {
+            line.startsWith("  ") -> 2
+            line.startsWith(" ") || line.startsWith("\t") -> 1
+            else -> 0
+        }
+        if (removed == 0) return field
+        val newText = text.substring(0, lineStart) + line.drop(removed) + text.substring(lineEnd)
+        field.copy(text = newText, selection = androidx.compose.ui.text.TextRange((cursor - removed).coerceAtLeast(lineStart)))
     }
 }

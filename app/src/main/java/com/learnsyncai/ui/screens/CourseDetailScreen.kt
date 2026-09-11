@@ -62,6 +62,7 @@ fun CourseDetailScreen(
     onNavigateToTutor: () -> Unit = {},
     onNavigateToLearn: () -> Unit = {},
     onNavigateToExam: () -> Unit = {},
+    onNavigateToPdf: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
     onGenerateFromExcerpt: (String) -> Unit = {},
@@ -212,6 +213,14 @@ fun CourseDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigateToExam()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Lire le PDF") },
+                            leadingIcon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToPdf()
                             }
                         )
                         DropdownMenuItem(

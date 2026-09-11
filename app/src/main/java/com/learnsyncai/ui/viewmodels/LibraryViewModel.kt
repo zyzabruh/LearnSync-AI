@@ -33,6 +33,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val tombstoneRepo = container.tombstoneRepository
     private val aiRepo = container.aiRepository
     private val noteRepo = container.noteRepository
+    private val annotationRepo = container.annotationRepository
+    private val mediaRepo = container.mediaRepository
     private val documentParser = container.documentParser
     private val pdfOcrService = container.pdfOcrService
     private val firestoreSyncManager = container.firestoreSyncManager
@@ -917,6 +919,48 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = UiState.Error("Conversion impossible : ${e.localizedMessage}")
             }
         }
+    }
+
+    // --- Annotations PDF : notes par page + passages à retenir ---
+
+    /** Copie locale du document source (pour le lecteur PDF intégré). */
+    fun getLocalDocument(courseId: String): java.io.File? =
+        courseContentStorage.getOriginalFile(courseId)
+
+    fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotation>> =
+        annotationRepo.getAnnotationsForCourse(courseId)
+
+    fun addAnnotation(courseId: String, page: Int, text: String, kind: String) {
+        viewModelScope.launch {
+            val t = text.trim()
+            if (t.length < 3) {
+                _uiState.value = UiState.Error("Annotation trop courte.")
+                return@launch
+            }
+            annotationRepo.addAnnotation(
+                PdfAnnotation(
+                    id = UUID.randomUUID().toString(),
+                    courseId = courseId,
+                    page = page,
+                    text = t,
+                    kind = kind,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            _uiState.value = UiState.Success("Annotation enregistrée (p. ${page + 1}).")
+        }
+    }
+
+    fun deleteAnnotation(id: String) {
+        viewModelScope.launch {
+            annotationRepo.deleteAnnotation(id)
+            _uiState.value = UiState.Success("Annotation supprimée.")
+        }
+    }
+
+    /** Cartes IA depuis une annotation (source = page du PDF). */
+    fun cardsFromAnnotation(course: Course, annotation: PdfAnnotation) {
+        generateFlashcardsFromExcerpt(course, annotation.text)
     }
 
     fun addCustomQuizQuestion(
