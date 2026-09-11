@@ -1,5 +1,6 @@
 package com.learnsyncai.domain.usecase
 
+import com.learnsyncai.domain.model.CardDirection
 import org.junit.Assert.*
 import org.junit.Test
 
