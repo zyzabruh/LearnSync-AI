@@ -260,6 +260,44 @@ class AiRepositoryImpl(
         }
     }
 
+    override suspend fun tutorAsk(
+        courseTitle: String,
+        courseContext: String,
+        history: List<Pair<String, String>>,
+        question: String,
+        language: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val context = courseContext.trim().take(12000)
+            if (context.isEmpty()) {
+                return@withContext Result.failure(
+                    IllegalStateException("Aucun contenu de cours disponible pour le tuteur.")
+                )
+            }
+            val historyBlock = history.takeLast(6).joinToString("\n") { (role, text) ->
+                if (role == "user") "Élève : ${text.take(1000)}" else "Tuteur : ${text.take(1500)}"
+            }
+            val prompt = """
+                Tu es un tuteur pédagogique bienveillant et exigeant pour le cours "$courseTitle".
+                ${languageInstruction(language)}
+                Réponds UNIQUEMENT à partir du contenu du cours ci-dessous. Si la question sort du cours, dis-le et propose ce que le cours permet d'étudier. Réponse concise et structurée.
+
+                CONTENU DU COURS :
+                $context
+
+                ${if (historyBlock.isNotBlank()) "ÉCHANGES PRÉCÉDENTS :\n$historyBlock\n" else ""}
+                QUESTION DE L'ÉLÈVE : ${question.trim().take(1000)}
+            """.trimIndent()
+            val config = configProvider?.invoke() ?: AiConfig()
+            val answer = executeWithRetry(maxAttempts = 2) {
+                chatCompletion(config, prompt, temperature = 0.5)
+            }
+            Result.success(answer.trim())
+        } catch (t: Throwable) {
+            Result.failure(mapUserFacingException(t))
+        }
+    }
+
     /** Consigne de langue de sortie pour les prompts : "auto" suit la langue du document. */
     private fun languageInstruction(language: String): String = when (language) {
         "auto" -> "CONSIGNE DE LANGUE : détecte automatiquement la langue du document fourni et rédige TOUT le contenu (questions, réponses, options, explications, résumé) dans cette langue."

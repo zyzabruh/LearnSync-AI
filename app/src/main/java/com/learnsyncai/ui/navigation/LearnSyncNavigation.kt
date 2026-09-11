@@ -42,6 +42,7 @@ fun LearnSyncNavigation(
 ) {
     val libraryViewModel: LibraryViewModel = viewModel()
     val reviewViewModel: ReviewViewModel = viewModel()
+    val tutorViewModel: TutorViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
     val syncViewModel: SyncViewModel = viewModel()
     val searchViewModel: SearchViewModel = viewModel()
@@ -284,6 +285,7 @@ fun LearnSyncNavigation(
                                         },
                                         onExportCsv = { uri -> libraryViewModel.exportCourseToCsv(uri, course.id) },
                                         onOpenDocument = { libraryViewModel.openCourseDocument(course.id) },
+                                        onNavigateToTutor = { navController.navigate("course_tutor/${course.id}") },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onQuickAddFlashcard = { q, a, excerpt -> libraryViewModel.quickAddFlashcard(course.id, q, a, excerpt) },
@@ -367,6 +369,27 @@ fun LearnSyncNavigation(
                                         libraryViewModel.setFlashcardSuspended(card, true)
                                         reviewViewModel.removeCardFromQueue(card.id)
                                     }
+                                )
+                            }
+
+                            composable(
+                                route = "course_tutor/{courseId}",
+                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                            ) { backStackEntry ->
+                                val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val course = courses.find { it.id == courseId }
+                                val tutorMessages by tutorViewModel.messages.collectAsState()
+                                val tutorSending by tutorViewModel.sending.collectAsState()
+                                val tutorError by tutorViewModel.error.collectAsState()
+                                CourseTutorScreen(
+                                    courseTitle = course?.title ?: "Cours",
+                                    messages = tutorMessages,
+                                    sending = tutorSending,
+                                    error = tutorError,
+                                    onSend = { q -> tutorViewModel.send(courseId, q) },
+                                    onCreateCard = { q, a -> tutorViewModel.createCardFromAnswer(courseId, q, a) },
+                                    onClearError = { tutorViewModel.clearError() },
+                                    onBackClick = { navController.popBackStack() }
                                 )
                             }
 

@@ -59,6 +59,7 @@ fun CourseDetailScreen(
     onNavigateToProfile: () -> Unit = {},
     onExportCsv: (android.net.Uri) -> Unit = {},
     onOpenDocument: () -> Unit = {},
+    onNavigateToTutor: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
     onGenerateFromExcerpt: (String) -> Unit = {},
@@ -184,6 +185,14 @@ fun CourseDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onOpenDocument()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Tuteur IA") },
+                            leadingIcon = { Icon(Icons.Default.SmartToy, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToTutor()
                             }
                         )
                         DropdownMenuItem(

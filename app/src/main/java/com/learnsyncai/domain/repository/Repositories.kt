@@ -123,6 +123,18 @@ interface AiRepository {
         excerpt: String,
         language: String = "auto"
     ): Result<List<GeneratedFlashcard>>
+
+    /**
+     * Tuteur IA scopé à un cours : répond en s'appuyant uniquement sur le
+     * contexte du cours + l'historique d'échanges (rôle, texte).
+     */
+    suspend fun tutorAsk(
+        courseTitle: String,
+        courseContext: String,
+        history: List<Pair<String, String>>,
+        question: String,
+        language: String = "auto"
+    ): Result<String>
 }
 
 interface PreferencesRepository {
