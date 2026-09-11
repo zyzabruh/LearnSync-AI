@@ -278,6 +278,7 @@ fun LearnSyncNavigation(
                                             navController.popBackStack()
                                         },
                                         onExportCsv = { uri -> libraryViewModel.exportCourseToCsv(uri, course.id) },
+                                        onOpenDocument = { libraryViewModel.openCourseDocument(course.id) },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp) },
                                         onDeleteFlashcard = { cardId -> libraryViewModel.deleteFlashcard(cardId) },
@@ -292,6 +293,7 @@ fun LearnSyncNavigation(
 
                             composable(Screen.Review.route) {
                                 val aheadCards = allFlashcards.filter { it.dueDate > System.currentTimeMillis() }
+                                val canUndo by reviewViewModel.canUndo.collectAsState()
 
                                 ReviewScreen(
                                     dueCards = dueFlashcards,
@@ -303,7 +305,21 @@ fun LearnSyncNavigation(
                                     onStartSession = { limit -> reviewViewModel.startReviewSession(dueFlashcards, limit) },
                                     onStartAheadSession = { reviewViewModel.startReviewSession(aheadCards, null) },
                                     onEndSession = { reviewViewModel.endReviewSession() },
-                                    onFinishReview = { navController.navigate(Screen.Home.route) }
+                                    onFinishReview = { navController.navigate(Screen.Home.route) },
+                                    canUndo = canUndo,
+                                    onUndo = { reviewViewModel.undoLastRating() },
+                                    onUpdateCard = { card, q, a ->
+                                        libraryViewModel.updateFlashcardContent(card, q, a)
+                                        reviewViewModel.refreshQueueCard(card.id, q, a)
+                                    },
+                                    onPostponeCard = { card ->
+                                        libraryViewModel.postponeFlashcard(card)
+                                        reviewViewModel.removeCardFromQueue(card.id)
+                                    },
+                                    onSuspendCard = { card ->
+                                        libraryViewModel.setFlashcardSuspended(card, true)
+                                        reviewViewModel.removeCardFromQueue(card.id)
+                                    }
                                 )
                             }
 
@@ -314,6 +330,7 @@ fun LearnSyncNavigation(
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
                                 val courseDueFlashcards by reviewViewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
                                 val courseAheadCards = allFlashcards.filter { it.courseId == courseId && it.dueDate > System.currentTimeMillis() }
+                                val canUndoCourse by reviewViewModel.canUndo.collectAsState()
 
                                 ReviewScreen(
                                     dueCards = courseDueFlashcards,
@@ -325,7 +342,21 @@ fun LearnSyncNavigation(
                                     onStartSession = { limit -> reviewViewModel.startReviewSession(courseDueFlashcards, limit) },
                                     onStartAheadSession = { reviewViewModel.startReviewSession(courseAheadCards, null) },
                                     onEndSession = { reviewViewModel.endReviewSession() },
-                                    onFinishReview = { navController.popBackStack() }
+                                    onFinishReview = { navController.popBackStack() },
+                                    canUndo = canUndoCourse,
+                                    onUndo = { reviewViewModel.undoLastRating() },
+                                    onUpdateCard = { card, q, a ->
+                                        libraryViewModel.updateFlashcardContent(card, q, a)
+                                        reviewViewModel.refreshQueueCard(card.id, q, a)
+                                    },
+                                    onPostponeCard = { card ->
+                                        libraryViewModel.postponeFlashcard(card)
+                                        reviewViewModel.removeCardFromQueue(card.id)
+                                    },
+                                    onSuspendCard = { card ->
+                                        libraryViewModel.setFlashcardSuspended(card, true)
+                                        reviewViewModel.removeCardFromQueue(card.id)
+                                    }
                                 )
                             }
 
@@ -360,7 +391,9 @@ fun LearnSyncNavigation(
                                     reviewLogs = reviewLogs,
                                     reviewSessions = reviewSessions,
                                     allFlashcards = allFlashcards,
-                                    courses = courses
+                                    courses = courses,
+                                    onSuspendCard = { card -> libraryViewModel.setFlashcardSuspended(card, true) },
+                                    onUnsuspendCard = { card -> libraryViewModel.setFlashcardSuspended(card, false) }
                                 )
                             }
 

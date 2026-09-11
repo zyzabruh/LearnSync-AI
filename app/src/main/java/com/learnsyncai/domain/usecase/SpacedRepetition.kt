@@ -39,6 +39,12 @@ object SpacedRepetition {
     // de disparaître pendant 1 jour.
     const val AGAIN_RELEARN_DELAY_MS = 10L * 60L * 1000L
 
+    /**
+     * Seuil « sangsue » (comme Anki) : une carte oubliée autant de fois coûte
+     * plus qu'elle ne rapporte — à reformuler ou suspendre.
+     */
+    const val LEECH_LAPSE_THRESHOLD = 8
+
     // FSRS default stability anchors (days) for initial review
     private val INITIAL_STABILITY = mapOf(
         RATING_AGAIN to 0.4f,

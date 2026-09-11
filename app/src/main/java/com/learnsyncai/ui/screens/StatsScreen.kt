@@ -39,7 +39,9 @@ fun StatsScreen(
     reviewLogs: List<ReviewLog>,
     reviewSessions: List<ReviewSession>,
     allFlashcards: List<Flashcard>,
-    courses: List<Course> = emptyList()
+    courses: List<Course> = emptyList(),
+    onSuspendCard: (Flashcard) -> Unit = {},
+    onUnsuspendCard: (Flashcard) -> Unit = {}
 ) {
     val totalReviews = reviewLogs.size
     val streak = remember(reviewLogs) { SpacedRepetition.calculateStreak(reviewLogs) }
@@ -86,6 +88,40 @@ fun StatsScreen(
     val maxDayCount = remember(last7DaysData) {
         (last7DaysData.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
     }
+
+    // Charge à venir : cartes dues par jour sur 7 jours (suspendues exclues).
+    val forecast = remember(allFlashcards) {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now()
+        (0..6).map { offset ->
+            val date = today.plusDays(offset.toLong())
+            val dayStart = date.atStartOfDay(zone).toInstant().toEpochMilli()
+            val dayEnd = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val count = if (offset == 0) {
+                allFlashcards.count { !it.suspended && it.dueDate < dayEnd }
+            } else {
+                allFlashcards.count { !it.suspended && it.dueDate >= dayStart && it.dueDate < dayEnd }
+            }
+            val label = if (offset == 0) "Auj." else
+                date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.FRANCE).take(3).uppercase()
+            label to count
+        }
+    }
+    val maxForecast = remember(forecast) {
+        (forecast.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
+    }
+
+    // Sangsues : cartes oubliées ≥ seuil, non suspendues, à reformuler/suspendre.
+    val leeches = remember(allFlashcards) {
+        allFlashcards
+            .filter { !it.suspended && it.lapses >= SpacedRepetition.LEECH_LAPSE_THRESHOLD }
+            .sortedByDescending { it.lapses }
+            .take(5)
+    }
+    val suspendedCards = remember(allFlashcards) {
+        allFlashcards.filter { it.suspended }.take(20)
+    }
+    val courseTitleById = remember(courses) { courses.associate { it.id to it.title } }
 
     Scaffold(
         topBar = {
@@ -249,6 +285,162 @@ fun StatsScreen(
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Charge à venir (7 jours)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = LearnSyncShapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(LearnSyncSpacing.large),
+                        verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+                    ) {
+                        Text(
+                            text = "Charge à venir",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Cartes dues jour par jour (suspendues exclues)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        forecast.forEach { (day, count) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                            ) {
+                                Text(
+                                    text = day,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(36.dp)
+                                )
+                                LinearProgressIndicator(
+                                    progress = { (count.toFloat() / maxForecast.toFloat()).coerceIn(0f, 1f) },
+                                    modifier = Modifier.weight(1f).height(8.dp).clip(CircleShape),
+                                    color = IndigoPrimary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                Text(
+                                    text = "$count",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = IndigoPrimary,
+                                    modifier = Modifier.width(32.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sangsues : cartes qui coûtent plus qu'elles ne rapportent
+            if (leeches.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = LearnSyncShapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(LearnSyncSpacing.large),
+                            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                            ) {
+                                Icon(
+                                    Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = AmberDark,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Cartes en difficulté (${leeches.size})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = "Oubliées ${SpacedRepetition.LEECH_LAPSE_THRESHOLD} fois ou plus : reformulez-les ou suspendez-les.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            leeches.forEach { card ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = card.question.take(80),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 2
+                                        )
+                                        Text(
+                                            text = "${courseTitleById[card.courseId] ?: "Cours"} · ${card.lapses} oublis",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    TextButton(onClick = { onSuspendCard(card) }) {
+                                        Text("Suspendre")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Cartes suspendues (réactivation)
+            if (suspendedCards.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = LearnSyncShapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(LearnSyncSpacing.large),
+                            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+                        ) {
+                            Text(
+                                text = "Cartes suspendues (${allFlashcards.count { it.suspended }})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            suspendedCards.forEach { card ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                                ) {
+                                    Text(
+                                        text = card.question.take(80),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(onClick = { onUnsuspendCard(card) }) {
+                                        Text("Réactiver")
+                                    }
                                 }
                             }
                         }

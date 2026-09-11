@@ -58,6 +58,7 @@ fun CourseDetailScreen(
     onDeleteCourse: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onExportCsv: (android.net.Uri) -> Unit = {},
+    onOpenDocument: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String) -> Unit = { _, _, _ -> },
     onDeleteFlashcard: (flashcardId: String) -> Unit = {},
     onAddQuizQuestion: (question: String, options: List<String>, correctAnswer: String, explanation: String) -> Unit = { _, _, _, _ -> },
@@ -170,6 +171,14 @@ fun CourseDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onRegenerate()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Ouvrir le document") },
+                            leadingIcon = { Icon(Icons.Default.Description, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onOpenDocument()
                             }
                         )
                         DropdownMenuItem(

@@ -69,7 +69,8 @@ data class FlashcardEntity(
     val repetitions: Int,
     val lapses: Int,
     val lastReviewedAt: Long?,
-    val createdAt: Long
+    val createdAt: Long,
+    val suspended: Boolean = false
 )
 
 @Entity(

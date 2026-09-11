@@ -72,6 +72,45 @@ class CourseContentStorage(private val context: Context) {
         }
     }
 
+    // ==================== FICHIER D'ORIGINE (ouverture in-app) ====================
+
+    /**
+     * Conserve une copie locale du fichier importé pour pouvoir l'ouvrir
+     * depuis l'application (l'URI du sélecteur système est temporaire).
+     * Best effort : ne lève jamais, retourne false en cas d'échec.
+     */
+    suspend fun saveOriginalFile(courseId: String, fileName: String, input: java.io.InputStream): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val dir = File(coursesDir, "originals/${sanitizeCourseId(courseId)}").apply { mkdirs() }
+                // Nettoie les anciennes copies (ré-import, nom différent).
+                dir.listFiles()?.forEach { it.delete() }
+                val target = File(dir, sanitizeFileName(fileName).ifBlank { "document" })
+                input.use { src -> target.outputStream().use { dst -> src.copyTo(dst) } }
+                true
+            } catch (e: Exception) {
+                android.util.Log.w("LearnSyncAI", "Copie locale du document impossible : ${e.message}")
+                false
+            }
+        }
+    }
+
+    /** Copie locale du fichier d'origine, ou null si absente. */
+    fun getOriginalFile(courseId: String): File? {
+        val dir = File(coursesDir, "originals/${sanitizeCourseId(courseId)}")
+        return dir.listFiles()?.firstOrNull { it.isFile }
+    }
+
+    suspend fun deleteOriginalFiles(courseId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                File(coursesDir, "originals/${sanitizeCourseId(courseId)}").deleteRecursively()
+            } catch (e: Exception) {
+                android.util.Log.w("LearnSyncAI", "Nettoyage du document local impossible : ${e.message}")
+            }
+        }
+    }
+
     suspend fun exists(courseId: String): Boolean {
         return withContext(Dispatchers.IO) {
             val sanitizedId = sanitizeCourseId(courseId)
@@ -82,5 +121,11 @@ class CourseContentStorage(private val context: Context) {
 
     private fun sanitizeCourseId(courseId: String): String {
         return courseId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+    }
+
+    private fun sanitizeFileName(fileName: String): String {
+        // Garde l'extension (utile pour le MIME à l'ouverture) mais neutralise les chemins.
+        return fileName.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[^a-zA-Z0-9._-]"), "_").takeLast(120)
     }
 }

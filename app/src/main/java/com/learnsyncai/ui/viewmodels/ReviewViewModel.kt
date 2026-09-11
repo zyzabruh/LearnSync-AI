@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -83,6 +84,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Démarre une session mélangée sur les cartes fournies (limit = 20, 30... ou null = tout). */
     fun startReviewSession(cards: List<Flashcard>, limit: Int? = null) {
+        _lastRating.value = null
         val shuffled = cards.distinctBy { it.id }.shuffled()
         _reviewQueue.value = if (limit != null) shuffled.take(limit) else shuffled
 
@@ -102,6 +104,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
 
     fun endReviewSession() {
         _reviewQueue.value = null
+        _lastRating.value = null
         val sessionId = currentSessionId
         currentSessionId = null
         if (sessionId != null) {
@@ -117,22 +120,30 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
      */
     fun rateCurrentCard(card: Flashcard, rating: Int, responseTimeMs: Long) {
         val sessionId = currentSessionId
+        // Calcul pur synchrone : la carte précédente + le log sont connus
+        // avant l'écriture, ce qui rend l'annulation possible.
+        val reviewResult = SpacedRepetition.calculateReview(card, rating, responseTimeMs)
+        val log = ReviewLog(
+            id = UUID.randomUUID().toString(),
+            flashcardId = card.id,
+            courseId = card.courseId,
+            reviewedAt = System.currentTimeMillis(),
+            rating = rating,
+            previousInterval = card.interval,
+            newInterval = reviewResult.newInterval,
+            responseTime = responseTimeMs
+        )
+        _lastRating.value = LastRating(
+            previousCard = card,
+            logId = log.id,
+            sessionId = sessionId
+        )
         viewModelScope.launch {
-            val reviewResult = SpacedRepetition.calculateReview(card, rating, responseTimeMs)
-            val log = ReviewLog(
-                id = UUID.randomUUID().toString(),
-                flashcardId = card.id,
-                courseId = card.courseId,
-                reviewedAt = System.currentTimeMillis(),
-                rating = rating,
-                previousInterval = card.interval,
-                newInterval = reviewResult.newInterval,
-                responseTime = responseTimeMs
-            )
             try {
                 reviewRepo.rateCardAtomically(reviewResult.updatedCard, log, sessionId)
             } catch (e: Exception) {
                 android.util.Log.e("LearnSyncAI", "Notation atomique échouée pour la carte ${card.id}", e)
+                _lastRating.value = null
             }
             // Rafraîchit le widget (nombre de cartes dues)
             DueCardsWidgetProvider.updateAll(getApplication())
@@ -142,6 +153,45 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
                 val rest = q.dropWhile { it.id == card.id }
                 if (rating == SpacedRepetition.RATING_AGAIN) rest + card else rest
             }
+        }
+    }
+
+    /** Dernière notation annulable (null = rien à annuler). */
+    private val _lastRating = MutableStateFlow<LastRating?>(null)
+    val canUndo: StateFlow<Boolean> = _lastRating
+        .map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /**
+     * Annule la dernière notation : restaure la carte en tête de file,
+     * supprime le log et décrémente le compteur de session.
+     */
+    fun undoLastRating() {
+        val last = _lastRating.value ?: return
+        _lastRating.value = null
+        viewModelScope.launch {
+            try {
+                reviewRepo.undoRateAtomically(last.previousCard, last.logId, last.sessionId)
+            } catch (e: Exception) {
+                android.util.Log.e("LearnSyncAI", "Annulation échouée pour la carte ${last.previousCard.id}", e)
+            }
+            DueCardsWidgetProvider.updateAll(getApplication())
+        }
+        _reviewQueue.update { queue ->
+            queue?.let { q -> listOf(last.previousCard) + q.filterNot { it.id == last.previousCard.id } }
+        }
+    }
+
+    /** Retire une carte de la file (report/suspension depuis la session). */
+    fun removeCardFromQueue(cardId: String) {
+        _lastRating.value = null
+        _reviewQueue.update { queue -> queue?.filterNot { it.id == cardId } }
+    }
+
+    /** Met à jour le texte d'une carte dans la file après correction. */
+    fun refreshQueueCard(cardId: String, question: String, answer: String) {
+        _reviewQueue.update { queue ->
+            queue?.map { if (it.id == cardId) it.copy(question = question, answer = answer) else it }
         }
     }
 
@@ -159,4 +209,11 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
         ttsController.release()
         super.onCleared()
     }
+
+    /** État minimal pour annuler exactement la dernière notation. */
+    private data class LastRating(
+        val previousCard: Flashcard,
+        val logId: String,
+        val sessionId: String?
+    )
 }

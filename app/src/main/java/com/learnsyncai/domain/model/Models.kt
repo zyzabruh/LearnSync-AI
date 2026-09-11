@@ -40,7 +40,9 @@ data class Flashcard(
     val repetitions: Int,
     val lapses: Int,
     val lastReviewedAt: Long?,
-    val createdAt: Long
+    val createdAt: Long,
+    /** Carte suspendue : exclue des cartes dues jusqu'à réactivation (sangsues, choix manuel). */
+    val suspended: Boolean = false
 )
 
 data class QuizQuestion(

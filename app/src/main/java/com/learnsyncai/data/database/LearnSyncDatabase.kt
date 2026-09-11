@@ -23,7 +23,7 @@ import com.learnsyncai.domain.model.Tombstone
         TombstoneEntity::class,
         SyncStatusEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 abstract class LearnSyncDatabase : RoomDatabase() {
@@ -110,6 +110,23 @@ abstract class LearnSyncDatabase : RoomDatabase() {
         reviewLogDao().insertReviewLog(log)
         if (sessionId != null) {
             reviewSessionDao().incrementCardsReviewed(sessionId)
+        }
+    }
+
+    /**
+     * Annulation d'une notation : restaure l'état FSRS précédent, supprime
+     * le log et décrémente le compteur de session — en une seule transaction.
+     */
+    @Transaction
+    open suspend fun undoRateAtomically(
+        previousCard: FlashcardEntity,
+        logId: String,
+        sessionId: String?
+    ) {
+        flashcardDao().updateFlashcard(previousCard)
+        reviewLogDao().deleteReviewLogById(logId)
+        if (sessionId != null) {
+            reviewSessionDao().decrementCardsReviewed(sessionId)
         }
     }
 
@@ -345,6 +362,12 @@ abstract class LearnSyncDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE flashcards ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         /** Clé de rapprochement des questions entre deux générations (casse/espacements ignorés). */
         internal fun normalizeQuestion(question: String): String =
             question.trim().lowercase().replace(Regex("\\s+"), " ")
@@ -356,7 +379,7 @@ abstract class LearnSyncDatabase : RoomDatabase() {
                     LearnSyncDatabase::class.java,
                     "learn_sync_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .build()
                 INSTANCE = instance
                 instance

@@ -78,6 +78,12 @@ interface ReviewRepository {
      * (+ compteur de session) dans une seule transaction Room.
      */
     suspend fun rateCardAtomically(updatedCard: Flashcard, log: ReviewLog, sessionId: String?)
+
+    /**
+     * Annulation de la dernière notation : restaure la carte, supprime le
+     * log et décrémente le compteur de session, en une seule transaction.
+     */
+    suspend fun undoRateAtomically(previousCard: Flashcard, logId: String, sessionId: String?)
 }
 
 interface AiRepository {

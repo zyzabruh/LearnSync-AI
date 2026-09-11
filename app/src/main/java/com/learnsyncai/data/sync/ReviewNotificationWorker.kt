@@ -2,7 +2,9 @@ package com.learnsyncai.data.sync
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -64,6 +66,7 @@ class ReviewNotificationWorker(
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(reviewPendingIntent(applicationContext))
             .setAutoCancel(true)
             .build()
 
@@ -73,6 +76,23 @@ class ReviewNotificationWorker(
 
     companion object {
         const val WORK_NAME = "LearnSyncDailyReviewReminder"
+
+        /** Ouvre l'écran de révision au tap (MainActivity route vers "review"). */
+        private fun reviewPendingIntent(context: Context): PendingIntent {
+            val intent = context.packageManager
+                .getLaunchIntentForPackage(context.packageName)
+                ?.apply { putExtra("navigate_to", "review") }
+                ?: Intent(Intent.ACTION_MAIN).apply {
+                    setPackage(context.packageName)
+                    putExtra("navigate_to", "review")
+                }
+            return PendingIntent.getActivity(
+                context,
+                2001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
 
         fun scheduleDailyReminder(context: Context, reminderTimeString: String = "08:00") {
             try {

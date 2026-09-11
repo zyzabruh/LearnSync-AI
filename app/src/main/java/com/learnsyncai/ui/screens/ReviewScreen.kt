@@ -47,7 +47,12 @@ fun ReviewScreen(
     onStartSession: (Int?) -> Unit,
     onStartAheadSession: () -> Unit,
     onEndSession: () -> Unit,
-    onFinishReview: () -> Unit
+    onFinishReview: () -> Unit,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
+    onUpdateCard: (Flashcard, String, String) -> Unit = { _, _, _ -> },
+    onPostponeCard: (Flashcard) -> Unit = {},
+    onSuspendCard: (Flashcard) -> Unit = {}
 ) {
     var sessionTotal by remember { mutableIntStateOf(0) }
     var totalReviewedCount by remember { mutableIntStateOf(0) }
@@ -55,6 +60,7 @@ fun ReviewScreen(
     var hardCount by remember { mutableIntStateOf(0) }
     var goodCount by remember { mutableIntStateOf(0) }
     var easyCount by remember { mutableIntStateOf(0) }
+    var lastSessionRating by remember { mutableIntStateOf(0) }
     var sessionStartTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     val resetStats = {
@@ -64,7 +70,23 @@ fun ReviewScreen(
         hardCount = 0
         goodCount = 0
         easyCount = 0
+        lastSessionRating = 0
         sessionStartTime = System.currentTimeMillis()
+    }
+
+    /** Annule la dernière note en corrigeant aussi les compteurs locaux. */
+    val undoLast = {
+        if (lastSessionRating != 0) {
+            totalReviewedCount = (totalReviewedCount - 1).coerceAtLeast(0)
+            when (lastSessionRating) {
+                SpacedRepetition.RATING_AGAIN -> againCount = (againCount - 1).coerceAtLeast(0)
+                SpacedRepetition.RATING_HARD -> hardCount = (hardCount - 1).coerceAtLeast(0)
+                SpacedRepetition.RATING_GOOD -> goodCount = (goodCount - 1).coerceAtLeast(0)
+                else -> easyCount = (easyCount - 1).coerceAtLeast(0)
+            }
+            lastSessionRating = 0
+        }
+        onUndo()
     }
 
     when {
@@ -106,8 +128,10 @@ fun ReviewScreen(
             ReviewSessionScreen(
                 queue = reviewQueue,
                 sessionTotal = sessionTotal,
+                canUndo = canUndo,
                 onRate = { card, rating, reviewTime ->
                     totalReviewedCount++
+                    lastSessionRating = rating
                     when (rating) {
                         SpacedRepetition.RATING_AGAIN -> againCount++
                         SpacedRepetition.RATING_HARD -> hardCount++
@@ -116,6 +140,10 @@ fun ReviewScreen(
                     }
                     onReviewCard(card, rating, reviewTime)
                 },
+                onUndo = undoLast,
+                onUpdateCard = onUpdateCard,
+                onPostponeCard = onPostponeCard,
+                onSuspendCard = onSuspendCard,
                 onSpeakQuestion = onSpeakQuestion,
                 onSpeakAnswer = onSpeakAnswer,
                 onNewSession = onEndSession,
@@ -269,7 +297,12 @@ private fun ReviewSessionScreen(
     onSpeakAnswer: (String) -> Unit,
     onNewSession: () -> Unit,
     onFinishReview: () -> Unit,
-    onSessionSizeInitialized: (Int) -> Unit
+    onSessionSizeInitialized: (Int) -> Unit,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
+    onUpdateCard: (Flashcard, String, String) -> Unit = { _, _, _ -> },
+    onPostponeCard: (Flashcard) -> Unit = {},
+    onSuspendCard: (Flashcard) -> Unit = {}
 ) {
     // Taille totale de la session mémorisée une seule fois (résiste au requeue des "Again")
     if (queue.isNotEmpty()) {
@@ -353,6 +386,63 @@ private fun ReviewSessionScreen(
                     }
                 },
                 actions = {
+                    if (canUndo) {
+                        IconButton(onClick = onUndo) {
+                            Icon(
+                                imageVector = Icons.Default.Undo,
+                                contentDescription = "Annuler la dernière note"
+                            )
+                        }
+                    }
+                    var showCardMenu by remember { mutableStateOf(false) }
+                    var showEditDialog by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showCardMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Options de la carte"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showCardMenu,
+                            onDismissRequest = { showCardMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Modifier la carte") },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                onClick = {
+                                    showCardMenu = false
+                                    showEditDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Reporter à demain") },
+                                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) },
+                                onClick = {
+                                    showCardMenu = false
+                                    currentCard?.let(onPostponeCard)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Suspendre la carte") },
+                                leadingIcon = { Icon(Icons.Default.PauseCircle, contentDescription = null) },
+                                onClick = {
+                                    showCardMenu = false
+                                    currentCard?.let(onSuspendCard)
+                                }
+                            )
+                        }
+                    }
+                    if (showEditDialog && currentCard != null) {
+                        EditFlashcardDialog(
+                            card = currentCard,
+                            onDismiss = { showEditDialog = false },
+                            onConfirm = { question, answer ->
+                                showEditDialog = false
+                                onUpdateCard(currentCard, question, answer)
+                            }
+                        )
+                    }
                     IconButton(onClick = onNewSession) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
@@ -826,6 +916,46 @@ private fun ReviewSessionCompleteScreen(
             }
         }
     }
+}
+
+/** Dialogue de correction d'une carte pendant la session (état FSRS inchangé). */
+@Composable
+private fun EditFlashcardDialog(
+    card: Flashcard,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit
+) {
+    var question by remember(card.id) { mutableStateOf(card.question) }
+    var answer by remember(card.id) { mutableStateOf(card.answer) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Modifier la carte") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = question,
+                    onValueChange = { question = it },
+                    label = { Text("Question") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = answer,
+                    onValueChange = { answer = it },
+                    label = { Text("Réponse") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(question.trim(), answer.trim()) },
+                enabled = question.isNotBlank() && answer.isNotBlank()
+            ) { Text("Enregistrer") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
 }
 
 private fun formatIntervalDays(days: Int): String {

@@ -64,10 +64,10 @@ interface FlashcardDao {
     @Query("SELECT * FROM flashcards WHERE courseId = :courseId")
     suspend fun getFlashcardsForCourseSync(courseId: String): List<FlashcardEntity>
 
-    @Query("SELECT * FROM flashcards WHERE dueDate <= :currentTime")
+    @Query("SELECT * FROM flashcards WHERE dueDate <= :currentTime AND suspended = 0")
     fun getDueFlashcards(currentTime: Long): Flow<List<FlashcardEntity>>
 
-    @Query("SELECT * FROM flashcards WHERE courseId = :courseId AND dueDate <= :currentTime")
+    @Query("SELECT * FROM flashcards WHERE courseId = :courseId AND dueDate <= :currentTime AND suspended = 0")
     fun getDueFlashcardsForCourse(courseId: String, currentTime: Long): Flow<List<FlashcardEntity>>
 
     @Query("SELECT * FROM flashcards")
@@ -129,6 +129,9 @@ interface ReviewLogDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReviewLogs(logs: List<ReviewLogEntity>)
+
+    @Query("DELETE FROM review_logs WHERE id = :logId")
+    suspend fun deleteReviewLogById(logId: String)
 }
 
 @Dao
@@ -150,6 +153,9 @@ interface ReviewSessionDao {
 
     @Query("UPDATE review_sessions SET cardsReviewed = cardsReviewed + 1 WHERE id = :sessionId")
     suspend fun incrementCardsReviewed(sessionId: String)
+
+    @Query("UPDATE review_sessions SET cardsReviewed = CASE WHEN cardsReviewed > 0 THEN cardsReviewed - 1 ELSE 0 END WHERE id = :sessionId")
+    suspend fun decrementCardsReviewed(sessionId: String)
 }
 
 @Dao

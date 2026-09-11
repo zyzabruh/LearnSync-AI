@@ -111,6 +111,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 val parseResult = documentParser.parseDocument(uri, fileName)
                 val courseId = UUID.randomUUID().toString()
                 courseContentStorage.saveExtractedText(courseId, parseResult.text)
+                // Conserve une copie locale + l'accès persistant pour l'ouverture depuis l'app.
+                persistImportForOpening(uri, courseId, fileName)
                 val course = Course(
                     id = courseId,
                     title = parseResult.title,
@@ -156,6 +158,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }.getOrThrow()
                 val courseId = UUID.randomUUID().toString()
                 courseContentStorage.saveExtractedText(courseId, result)
+                // Conserve une copie locale + l'accès persistant pour l'ouverture depuis l'app.
+                persistImportForOpening(request.uri, courseId, request.displayName)
                 val course = Course(
                     id = courseId,
                     title = request.displayName.substringBeforeLast('.'),
@@ -215,6 +219,42 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = UiState.Success("Page web importée : « ${parsed.title} »")
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Erreur d'import web : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    /**
+     * Conserve l'accès au fichier importé pour l'ouverture depuis l'app :
+     * permission persistante sur l'URI du sélecteur + copie locale (best effort,
+     * l'import reste valide même si la copie échoue).
+     */
+    private suspend fun persistImportForOpening(uri: Uri, courseId: String, fileName: String) {
+        val app = getApplication<Application>()
+        try {
+            app.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (e: SecurityException) {
+            android.util.Log.w("LearnSyncAI", "Permission persistante refusée pour $fileName : ${e.message}")
+        }
+        try {
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                courseContentStorage.saveOriginalFile(courseId, fileName, input)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("LearnSyncAI", "Copie locale différée pour $fileName : ${e.message}")
+        }
+    }
+
+    /** Ouvre le document source du cours dans le visualiseur système. */
+    fun openCourseDocument(courseId: String) {
+        viewModelScope.launch {
+            try {
+                val course = courseRepo.getCourseById(courseId)
+                    ?: return@launch.also { _uiState.value = UiState.Error("Cours introuvable.") }
+                com.learnsyncai.data.storage.FileOpener
+                    .openCourseDocument(getApplication(), courseContentStorage, course)
+                    .onFailure { _uiState.value = UiState.Error(it.message ?: "Ouverture impossible.") }
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Ouverture impossible : ${e.localizedMessage}")
             }
         }
     }
@@ -598,6 +638,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             try {
                 // 1. Delete local extracted text file
                 courseContentStorage.deleteExtractedText(courseId)
+                courseContentStorage.deleteOriginalFiles(courseId)
                 // 2. Cascading delete + tombstones (cours et contenus enfants)
                 courseRepo.deleteCourse(courseId)
                 // 3. Propage les suppressions vers le cloud en marqueurs deletedAt
@@ -641,6 +682,43 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             flashcardRepo.deleteFlashcard(flashcardId)
             _uiState.value = UiState.Success("Flashcard supprimée.")
+        }
+    }
+
+    /** Corrige question/réponse d'une carte sans toucher à son état FSRS. */
+    fun updateFlashcardContent(card: Flashcard, question: String, answer: String) {
+        viewModelScope.launch {
+            if (question.isBlank() || answer.isBlank()) {
+                _uiState.value = UiState.Error("La question et la réponse ne peuvent pas être vides.")
+                return@launch
+            }
+            flashcardRepo.updateFlashcard(card.copy(question = question.trim(), answer = answer.trim()))
+            _uiState.value = UiState.Success("Carte mise à jour.")
+        }
+    }
+
+    /** Reporte une carte au lendemain matin (retirée des dues du jour). */
+    fun postponeFlashcard(card: Flashcard) {
+        viewModelScope.launch {
+            val tomorrow = java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.DAY_OF_YEAR, 1)
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            flashcardRepo.updateFlashcard(card.copy(dueDate = tomorrow))
+            _uiState.value = UiState.Success("Carte reportée à demain.")
+        }
+    }
+
+    /** Suspend (ou réactive) une carte : exclue des dues jusqu'à réactivation. */
+    fun setFlashcardSuspended(card: Flashcard, suspended: Boolean) {
+        viewModelScope.launch {
+            flashcardRepo.updateFlashcard(card.copy(suspended = suspended))
+            _uiState.value = UiState.Success(
+                if (suspended) "Carte suspendue." else "Carte réactivée."
+            )
         }
     }
 
