@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -114,6 +116,7 @@ fun PdfReaderScreen(
     onLoadInkStrokes: (suspend () -> List<InkStroke>)? = null,
     onSaveInkStroke: (page: Int, stroke: InkStroke) -> Unit = { _, _ -> },
     onClearInkPage: (page: Int) -> Unit = {},
+    onAskTutor: (String) -> Unit = {},
     onDeleteAnnotation: (String) -> Unit,
     onCardsFromAnnotation: (PdfAnnotation) -> Unit,
     onBackClick: () -> Unit
@@ -121,6 +124,7 @@ fun PdfReaderScreen(
     var noteText by remember { mutableStateOf("") }
     var noteKind by remember { mutableStateOf(PdfAnnotation.KIND_NOTE) }
     var textMode by remember { mutableStateOf(false) }
+    var nightMode by remember { mutableStateOf(false) }
     var drawMode by remember { mutableStateOf(false) }
     var inkColor by remember { mutableLongStateOf(0xFFFFFF00L) }
     var tempInk by remember { mutableStateOf(emptyList<Offset>()) }
@@ -313,6 +317,11 @@ fun PdfReaderScreen(
                         },
                         label = { Text("Recherche") }
                     )
+                    FilterChip(
+                        selected = nightMode,
+                        onClick = { nightMode = !nightMode },
+                        label = { Text("Nuit") }
+                    )
                 }
             }
             if (drawMode) {
@@ -445,6 +454,8 @@ fun PdfReaderScreen(
                                 Text(
                                     text = entry.title,
                                     style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (entry.pageIndex == safeIndex) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (entry.pageIndex == safeIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
@@ -661,6 +672,17 @@ fun PdfReaderScreen(
                                     // FillBounds dans une boîte au ratio exact : pas de
                                     // distorsion, et correspondance exacte pour l'overlay.
                                     contentScale = ContentScale.FillBounds,
+                                    // Mode nuit : inversion des couleurs (lecture du soir).
+                                    colorFilter = if (nightMode) ColorFilter.colorMatrix(
+                                        ColorMatrix(
+                                            floatArrayOf(
+                                                -1f, 0f, 0f, 0f, 255f,
+                                                0f, -1f, 0f, 0f, 255f,
+                                                0f, 0f, -1f, 0f, 255f,
+                                                0f, 0f, 0f, 1f, 0f
+                                            )
+                                        )
+                                    ) else null,
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 if (highlightRects.isNotEmpty()) {
@@ -875,6 +897,11 @@ fun PdfReaderScreen(
                                     },
                                     modifier = Modifier.weight(1f)
                                 )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 LearnSyncButton(
                                     text = "Surligner",
                                     icon = Icons.Default.Star,
@@ -882,6 +909,12 @@ fun PdfReaderScreen(
                                         onAddAnnotation(safeIndex, selectedText, PdfAnnotation.KIND_KEY)
                                         wordSel = null
                                     },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                LearnSyncButton(
+                                    text = "Tuteur",
+                                    icon = Icons.Default.SmartToy,
+                                    onClick = { onAskTutor(selectedText) },
                                     modifier = Modifier.weight(1f)
                                 )
                             }

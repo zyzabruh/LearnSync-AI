@@ -34,9 +34,10 @@ fun CourseTutorScreen(
     onSend: (String) -> Unit,
     onCreateCard: (question: String, answer: String) -> Unit,
     onClearError: () -> Unit,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    initialInput: String = ""
 ) {
-    var input by remember { mutableStateOf("") }
+    var input by remember(initialInput) { mutableStateOf(initialInput) }
     var feedback by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()

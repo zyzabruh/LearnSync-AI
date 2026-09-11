@@ -295,6 +295,7 @@ fun LearnSyncNavigation(
                                             navController.popBackStack()
                                         },
                                         onExportCsv = { uri -> libraryViewModel.exportCourseToCsv(uri, course.id) },
+                                        onExportApkg = { uri -> libraryViewModel.exportCourseToApkg(uri, course.id) },
                                         onOpenDocument = { libraryViewModel.openCourseDocument(course.id) },
                                         onNavigateToTutor = { navController.navigate("course_tutor/${course.id}") },
                                         onNavigateToLearn = { navController.navigate("course_learn/${course.id}") },
@@ -453,14 +454,23 @@ fun LearnSyncNavigation(
                             }
 
                             composable(
-                                route = "course_tutor/{courseId}",
-                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                                route = "course_tutor/{courseId}?ask={ask}",
+                                arguments = listOf(
+                                    navArgument("courseId") { type = NavType.StringType },
+                                    navArgument("ask") { type = NavType.StringType; defaultValue = "" }
+                                )
                             ) { backStackEntry ->
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
                                 val course = courses.find { it.id == courseId }
                                 val tutorMessages by tutorViewModel.messages.collectAsState()
                                 val tutorSending by tutorViewModel.sending.collectAsState()
                                 val tutorError by tutorViewModel.error.collectAsState()
+                                val askRaw = backStackEntry.arguments?.getString("ask").orEmpty()
+                                val askInitial = remember(askRaw) {
+                                    try {
+                                        java.net.URLDecoder.decode(askRaw, "UTF-8")
+                                    } catch (_: Exception) { askRaw }
+                                }
                                 CourseTutorScreen(
                                     courseTitle = course?.title ?: "Cours",
                                     messages = tutorMessages,
@@ -469,7 +479,8 @@ fun LearnSyncNavigation(
                                     onSend = { q -> tutorViewModel.send(courseId, q) },
                                     onCreateCard = { q, a -> tutorViewModel.createCardFromAnswer(courseId, q, a) },
                                     onClearError = { tutorViewModel.clearError() },
-                                    onBackClick = { navController.popBackStack() }
+                                    onBackClick = { navController.popBackStack() },
+                                    initialInput = askInitial
                                 )
                             }
 
@@ -652,6 +663,15 @@ fun LearnSyncNavigation(
                                     onLoadInkStrokes = { try { libraryViewModel.getInkStrokes(courseId) } catch (_: Exception) { emptyList() } },
                                     onSaveInkStroke = { page, stroke -> libraryViewModel.saveInkStroke(courseId, stroke) },
                                     onClearInkPage = { page -> libraryViewModel.clearInkPage(courseId, page) },
+                                    onAskTutor = { passage ->
+                                        val encoded = try {
+                                            java.net.URLEncoder.encode(
+                                                "Explique-moi ce passage : « ${passage.trim().take(300)} »",
+                                                "UTF-8"
+                                            )
+                                        } catch (_: Exception) { "" }
+                                        navController.navigate("course_tutor/$courseId?ask=$encoded")
+                                    },
                                     onDeleteAnnotation = { id -> libraryViewModel.deleteAnnotation(id) },
                                     onCardsFromAnnotation = { annotation ->
                                         if (course != null) libraryViewModel.cardsFromAnnotation(course, annotation)

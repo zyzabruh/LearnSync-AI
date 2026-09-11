@@ -59,6 +59,7 @@ fun CourseDetailScreen(
     onDeleteCourse: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onExportCsv: (android.net.Uri) -> Unit = {},
+    onExportApkg: (android.net.Uri) -> Unit = {},
     onOpenDocument: () -> Unit = {},
     onNavigateToTutor: () -> Unit = {},
     onNavigateToLearn: () -> Unit = {},
@@ -120,6 +121,11 @@ fun CourseDetailScreen(
         contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv")
     ) { uri: android.net.Uri? ->
         if (uri != null) onExportCsv(uri)
+    }
+    val apkgExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri: android.net.Uri? ->
+        if (uri != null) onExportApkg(uri)
     }
 
     Scaffold(
@@ -257,6 +263,15 @@ fun CourseDetailScreen(
                                 showMenu = false
                                 val safeTitle = course.title.replace(Regex("[^a-zA-Z0-9 _-]"), "").trim().ifBlank { "cours" }
                                 exportLauncher.launch("$safeTitle.csv")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Exporter en .apkg (Anki)") },
+                            leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                val safeTitle = course.title.replace(Regex("[^a-zA-Z0-9 _-]"), "").trim().ifBlank { "cours" }
+                                apkgExportLauncher.launch("$safeTitle.apkg")
                             }
                         )
                         HorizontalDivider()

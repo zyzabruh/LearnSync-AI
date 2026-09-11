@@ -305,6 +305,32 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Export Anki (.apkg) : paquet importable dans Anki Desktop / AnkiDroid. */
+    fun exportCourseToApkg(uri: Uri, courseId: String) {
+        viewModelScope.launch {
+            try {
+                val cards = flashcardRepo.getFlashcardsForCourse(courseId).firstOrNull() ?: emptyList()
+                if (cards.isEmpty()) {
+                    _uiState.value = UiState.Error("Aucune flashcard à exporter pour ce cours.")
+                    return@launch
+                }
+                val bytes = withContext(Dispatchers.IO) {
+                    AnkiExporter.exportDeck(
+                        getApplication(),
+                        courseRepo.getCourseById(courseId)?.title ?: "LearnSync",
+                        cards.map { it.question to it.answer }
+                    )
+                }
+                getApplication<Application>().contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(bytes)
+                }
+                _uiState.value = UiState.Success("Export réussi : ${cards.size} cartes (.apkg Anki).")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Erreur d'export : ${e.localizedMessage}")
+            }
+        }
+    }
+
     private fun csvEscape(value: String): String {
         val v = value.replace("\n", " ").replace("\r", " ")
         return if (v.contains('"') || v.contains(',')) "\"${v.replace("\"", "\"\"")}\"" else v
