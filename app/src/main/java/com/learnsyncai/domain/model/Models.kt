@@ -15,6 +15,8 @@ data class Course(
     val tag: String = "",
     /** Dossier de rangement ("" = sans dossier). */
     val folder: String = "",
+    /** Date d'examen en ms (0 = aucune) : pilote le compte à rebours. */
+    val examDate: Long = 0L,
     // Langue de réponse IA : "auto" = langue du document, sinon code (fr, en...)
     val language: String = "auto"
 ) {
@@ -65,7 +67,14 @@ data class Flashcard(
     /** Si vrai, la révision demande de taper la réponse au clavier. */
     val typeAnswer: Boolean = false,
     /** Extrait du texte source d'où vient la carte (contexte affiché en révision). */
-    val sourceExcerpt: String = ""
+    val sourceExcerpt: String = "",
+    /** Chemin local d'image ("" = aucune) : carte image / occlusion. */
+    val imagePath: String = "",
+    /** Masque d'occultation en fractions 0..1 (x, y, largeur, hauteur). */
+    val maskX: Float = 0f,
+    val maskY: Float = 0f,
+    val maskW: Float = 0f,
+    val maskH: Float = 0f
 )
 
 /** Types de cartes (pilier RemNote : basic, cloze…). */
@@ -93,6 +102,31 @@ data class ReviewItem(
 ) {
     fun key(): String = "${card.id}|$reversed|${clozeIndex ?: -1}"
 }
+
+/** Annotation PDF par page : note libre ou passage à retenir (cartes). */
+data class PdfAnnotation(
+    val id: String,
+    val courseId: String,
+    val page: Int,
+    val text: String,
+    val kind: String = "note",
+    val createdAt: Long
+) {
+    companion object {
+        const val KIND_NOTE = "note"
+        const val KIND_KEY = "key"
+    }
+}
+
+/** Média attaché à un cours : enregistrement audio + transcription. */
+data class CourseMedia(
+    val id: String,
+    val courseId: String,
+    val kind: String = "audio",
+    val path: String = "",
+    val transcript: String = "",
+    val createdAt: Long
+)
 
 /** Notes libres d'un cours (style RemNote) : une carte par ligne via >>, <<, <>, ;;, ::, {{}}. */
 data class CourseNote(
@@ -155,7 +189,9 @@ data class UserPreferences(
     val calendarStartTime: String = "",
     val calendarDurationMinutes: Int = 30,
     val calendarReminderMinutes: Int = 15,
-    val periodicSyncEnabled: Boolean = false
+    val periodicSyncEnabled: Boolean = false,
+    /** Points d'expérience (gamification) : +2/carte notée, +5/carte créée, +50/examen. */
+    val xp: Int = 0
 ) {
     companion object {
         val DEFAULT = UserPreferences(

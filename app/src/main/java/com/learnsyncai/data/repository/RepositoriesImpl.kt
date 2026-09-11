@@ -229,6 +229,41 @@ class NoteRepositoryImpl(
 fun CourseNoteEntity.toDomain() = CourseNote(id, courseId, content, updatedAt)
 fun CourseNote.toEntity() = CourseNoteEntity(id, courseId, content, updatedAt)
 
+fun PdfAnnotationEntity.toDomain() = PdfAnnotation(id, courseId, page, text, kind, createdAt)
+fun PdfAnnotation.toEntity() = PdfAnnotationEntity(id, courseId, page, text, kind, createdAt)
+
+fun CourseMediaEntity.toDomain() = CourseMedia(id, courseId, kind, path, transcript, createdAt)
+fun CourseMedia.toEntity() = CourseMediaEntity(id, courseId, kind, path, transcript, createdAt)
+
+class AnnotationRepositoryImpl(
+    private val annotationDao: PdfAnnotationDao
+) : AnnotationRepository {
+    override fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotation>> =
+        annotationDao.getAnnotationsForCourse(courseId).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun addAnnotation(annotation: PdfAnnotation) =
+        annotationDao.insertAnnotation(annotation.toEntity())
+
+    override suspend fun deleteAnnotation(id: String) =
+        annotationDao.deleteAnnotationById(id)
+}
+
+class MediaRepositoryImpl(
+    private val mediaDao: CourseMediaDao
+) : MediaRepository {
+    override fun getMediaForCourse(courseId: String): Flow<List<CourseMedia>> =
+        mediaDao.getMediaForCourse(courseId).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun addMedia(media: CourseMedia) =
+        mediaDao.insertMedia(media.toEntity())
+
+    override suspend fun updateMedia(media: CourseMedia) =
+        mediaDao.insertMedia(media.toEntity())
+
+    override suspend fun deleteMedia(id: String) =
+        mediaDao.deleteMediaById(id)
+}
+
 class ReviewRepositoryImpl(
     private val reviewLogDao: ReviewLogDao,
     private val reviewSessionDao: ReviewSessionDao? = null,
@@ -358,8 +393,8 @@ class TombstoneRepositoryImpl(private val tombstoneDao: TombstoneDao) : Tombston
 }
 
 // Mappers
-fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, folder, language)
-fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, folder, language)
+fun CourseEntity.toDomain() = Course(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, folder, examDate, language)
+fun Course.toEntity() = CourseEntity(id, title, description, sourceFileName, sourceFileUri, createdAt, updatedAt, progress, color, generationStatus, tag, folder, examDate, language)
 
 fun StudyMaterialEntity.toDomain() = StudyMaterial(
     id = id,
@@ -380,8 +415,8 @@ fun StudyMaterial.toEntity() = StudyMaterialEntity(
     version = version
 )
 
-fun FlashcardEntity.toDomain() = Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt)
-fun Flashcard.toEntity() = FlashcardEntity(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt)
+fun FlashcardEntity.toDomain() = Flashcard(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt, imagePath, maskX, maskY, maskW, maskH)
+fun Flashcard.toEntity() = FlashcardEntity(id, courseId, question, answer, explanation, difficulty, box, dueDate, interval, easeFactor, repetitions, lapses, lastReviewedAt, createdAt, suspended, cardType, direction, typeAnswer, sourceExcerpt, imagePath, maskX, maskY, maskW, maskH)
 
 fun QuizQuestionEntity.toDomain(): QuizQuestion {
     val optList = mutableListOf<String>()
@@ -414,13 +449,15 @@ fun UserPreferencesEntity.toDomain() = UserPreferences(
     notificationsEnabled, dailyGoal, reminderTime, theme, language,
     aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount,
     quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled,
-    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes, periodicSyncEnabled
+    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes, periodicSyncEnabled,
+    xp
 )
 fun UserPreferences.toEntity() = UserPreferencesEntity(
     1, notificationsEnabled, dailyGoal, reminderTime, theme, language,
     aiProvider, aiBaseUrl, aiApiKey, aiModelName, flashcardsMode, flashcardsCustomCount,
     quizMode, quizCustomCount, mnemonicTipsMode, mnemonicTipsCustomCount, autoTtsEnabled,
-    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes, periodicSyncEnabled
+    calendarHorizonDays, calendarStartTime, calendarDurationMinutes, calendarReminderMinutes, periodicSyncEnabled,
+    xp
 )
 
 fun CalendarEventEntity.toDomain() = CalendarEvent(id, courseId, title, scheduledDate, androidEventId, updatedAt)

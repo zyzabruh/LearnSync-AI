@@ -67,6 +67,19 @@ interface NoteRepository {
     suspend fun deleteNotesForCourse(courseId: String)
 }
 
+interface AnnotationRepository {
+    fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotation>>
+    suspend fun addAnnotation(annotation: PdfAnnotation)
+    suspend fun deleteAnnotation(id: String)
+}
+
+interface MediaRepository {
+    fun getMediaForCourse(courseId: String): Flow<List<CourseMedia>>
+    suspend fun addMedia(media: CourseMedia)
+    suspend fun updateMedia(media: CourseMedia)
+    suspend fun deleteMedia(id: String)
+}
+
 interface ReviewRepository {
     fun getAllReviewLogs(): Flow<List<ReviewLog>>
     fun getReviewLogsSince(startTime: Long): Flow<List<ReviewLog>>

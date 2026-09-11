@@ -104,6 +104,36 @@ interface CourseNoteDao {
 }
 
 @Dao
+interface PdfAnnotationDao {
+    @Query("SELECT * FROM pdf_annotations WHERE courseId = :courseId ORDER BY page ASC, createdAt ASC")
+    fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotationEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAnnotation(annotation: PdfAnnotationEntity)
+
+    @Query("DELETE FROM pdf_annotations WHERE id = :id")
+    suspend fun deleteAnnotationById(id: String)
+
+    @Query("DELETE FROM pdf_annotations WHERE courseId = :courseId")
+    suspend fun deleteAnnotationsForCourse(courseId: String)
+}
+
+@Dao
+interface CourseMediaDao {
+    @Query("SELECT * FROM course_media WHERE courseId = :courseId ORDER BY createdAt DESC")
+    fun getMediaForCourse(courseId: String): Flow<List<CourseMediaEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMedia(media: CourseMediaEntity)
+
+    @Query("DELETE FROM course_media WHERE id = :id")
+    suspend fun deleteMediaById(id: String)
+
+    @Query("DELETE FROM course_media WHERE courseId = :courseId")
+    suspend fun deleteMediaForCourse(courseId: String)
+}
+
+@Dao
 interface QuizQuestionDao {
     @Query("SELECT * FROM quiz_questions WHERE courseId = :courseId")
     fun getQuizQuestionsForCourse(courseId: String): Flow<List<QuizQuestionEntity>>

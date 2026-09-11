@@ -98,6 +98,48 @@ data class CourseNoteEntity(
 )
 
 @Entity(
+    tableName = "pdf_annotations",
+    foreignKeys = [
+        ForeignKey(
+            entity = CourseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["courseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["courseId"])]
+)
+data class PdfAnnotationEntity(
+    @PrimaryKey val id: String,
+    val courseId: String,
+    val page: Int,
+    val text: String,
+    val kind: String = "note",
+    val createdAt: Long
+)
+
+@Entity(
+    tableName = "course_media",
+    foreignKeys = [
+        ForeignKey(
+            entity = CourseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["courseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["courseId"])]
+)
+data class CourseMediaEntity(
+    @PrimaryKey val id: String,
+    val courseId: String,
+    val kind: String = "audio",
+    val path: String = "",
+    val transcript: String = "",
+    val createdAt: Long
+)
+
+@Entity(
     tableName = "quiz_questions",
     foreignKeys = [
         ForeignKey(
@@ -186,7 +228,8 @@ data class UserPreferencesEntity(
     val calendarStartTime: String = "",
     val calendarDurationMinutes: Int = 30,
     val calendarReminderMinutes: Int = 15,
-    val periodicSyncEnabled: Boolean = false
+    val periodicSyncEnabled: Boolean = false,
+    val xp: Int = 0
 )
 
 @Entity(

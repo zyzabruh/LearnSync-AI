@@ -35,6 +35,10 @@ class AppContainer(application: Application) {
         QuizRepositoryImpl(database.quizQuestionDao(), database.tombstoneDao())
     val noteRepository: NoteRepository =
         NoteRepositoryImpl(database.courseNoteDao())
+    val annotationRepository: AnnotationRepository =
+        AnnotationRepositoryImpl(database.pdfAnnotationDao())
+    val mediaRepository: MediaRepository =
+        MediaRepositoryImpl(database.courseMediaDao())
     val reviewRepository: ReviewRepository =
         ReviewRepositoryImpl(database.reviewLogDao(), database.reviewSessionDao(), database.flashcardDao(), database)
     val preferencesRepository: PreferencesRepository =
