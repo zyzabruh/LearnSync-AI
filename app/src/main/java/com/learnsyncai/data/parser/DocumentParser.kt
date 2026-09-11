@@ -255,25 +255,8 @@ class DocumentParser(private val context: Context) {
         return try {
             PDDocument.load(file).use { document ->
                 if (pageIndex < 0 || pageIndex >= document.numberOfPages) return emptyList()
-                val page = document.getPage(pageIndex)
-                val pageW = page.cropBox.width
-                val pageH = page.cropBox.height
-                if (pageW <= 0f || pageH <= 0f) return emptyList()
-                val chars = mutableListOf<TextChar>()
-                val stripper = object : PDFTextStripper() {
-                    override fun processTextPosition(text: TextPosition) {
-                        super.processTextPosition(text)
-                        val glyph = text.unicode
-                        if (!glyph.isBlank()) {
-                            chars.add(TextChar(glyph, text.xDirAdj, text.yDirAdj, text.widthDirAdj, text.heightDir))
-                        }
-                    }
-                }
-                stripper.sortByPosition = true
-                stripper.startPage = pageIndex + 1
-                stripper.endPage = pageIndex + 1
-                stripper.getText(document)
-                queries.take(3).flatMap { q -> matchTextSpan(chars, q, pageW, pageH).take(8) }.take(24)
+                val data = loadPageChars(document, pageIndex) ?: return emptyList()
+                queries.take(3).flatMap { q -> matchTextSpan(data.chars, q, data.pageW, data.pageH).take(8) }.take(24)
             }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t
@@ -282,6 +265,71 @@ class DocumentParser(private val context: Context) {
     }
 
     private data class TextChar(val ch: String, val x: Float, val y: Float, val w: Float, val h: Float)
+
+    /** Caractères d'une page + dimensions (base du surlignage et de la sélection au doigt). */
+    private data class PageChars(val chars: List<TextChar>, val pageW: Float, val pageH: Float)
+
+    private fun loadPageChars(document: PDDocument, pageIndex: Int): PageChars? {
+        val page = document.getPage(pageIndex)
+        val pageW = page.cropBox.width
+        val pageH = page.cropBox.height
+        if (pageW <= 0f || pageH <= 0f) return null
+        val chars = mutableListOf<TextChar>()
+        val stripper = object : PDFTextStripper() {
+            override fun processTextPosition(text: TextPosition) {
+                super.processTextPosition(text)
+                chars.add(TextChar(text.unicode, text.xDirAdj, text.yDirAdj, text.widthDirAdj, text.heightDir))
+            }
+        }
+        stripper.sortByPosition = true
+        stripper.startPage = pageIndex + 1
+        stripper.endPage = pageIndex + 1
+        stripper.getText(document)
+        return PageChars(chars, pageW, pageH)
+    }
+
+    /** Mot d'une page avec boîte normalisée 0..1, origine en haut à gauche (sélection au doigt). */
+    data class PageWord(val text: String, val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+    fun getPageWords(file: java.io.File, pageIndex: Int): List<PageWord> {
+        if (!file.exists()) return emptyList()
+        return try {
+            PDDocument.load(file).use { document ->
+                if (pageIndex < 0 || pageIndex >= document.numberOfPages) return emptyList()
+                val data = loadPageChars(document, pageIndex) ?: return emptyList()
+                val words = mutableListOf<PageWord>()
+                var current = mutableListOf<TextChar>()
+                fun flush() {
+                    if (current.isEmpty()) return
+                    val text = current.joinToString("") { it.ch }
+                    if (text.trim().length >= 2) {
+                        val x0 = current.minOf { it.x }.coerceAtLeast(0f)
+                        val x1 = current.maxOf { it.x + it.w }
+                        val yT = current.minOf { it.y }
+                        val yB = current.maxOf { it.y + it.h }
+                        words.add(
+                            PageWord(
+                                text.trim(),
+                                x0 / data.pageW,
+                                1f - yB / data.pageH,
+                                (x1 / data.pageW).coerceAtMost(1f),
+                                (1f - yT / data.pageH).coerceAtMost(1f)
+                            )
+                        )
+                    }
+                    current = mutableListOf()
+                }
+                for (c in data.chars) {
+                    if (c.ch.isBlank()) flush() else current.add(c)
+                }
+                flush()
+                words.take(2000)
+            }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            emptyList()
+        }
+    }
 
     private fun matchTextSpan(
         chars: List<TextChar>,

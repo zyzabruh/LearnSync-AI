@@ -630,6 +630,9 @@ fun LearnSyncNavigation(
                                     pdfFile = remember(courseId) { libraryViewModel.getLocalDocument(courseId) },
                                     initialPage = startPage,
                                     onLoadPageText = loadPageText,
+                                    onLoadPageWords = { page ->
+                                        try { libraryViewModel.getPageWords(courseId, page) } catch (_: Exception) { emptyList() }
+                                    },
                                     outline = pdfOutline,
                                     annotations = pdfAnnotations,
                                     onAddAnnotation = { page, text, kind -> libraryViewModel.addAnnotation(courseId, page, text, kind) },

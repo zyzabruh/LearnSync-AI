@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.parser.AnkiImporter
 import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.parser.OutlineEntry
+import com.learnsyncai.data.parser.PageWord
 import com.learnsyncai.data.parser.ScannedPdfException
 import com.learnsyncai.data.sync.CloudSyncWorker
 import com.learnsyncai.data.sync.FirestoreSyncManager
@@ -1030,9 +1031,29 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Mots d'une page mémorisés en session (sélection au doigt). */
+    private val pageWordsCache = mutableMapOf<String, List<PageWord>>()
+
+    suspend fun getPageWords(courseId: String, pageIndex: Int): List<PageWord> = withContext(Dispatchers.IO) {
+        val key = "$courseId#$pageIndex"
+        pageWordsCache[key] ?: run {
+            val file = courseContentStorage.getOriginalFile(courseId)
+            val words = if (file != null && file.exists() && file.extension.lowercase() == "pdf") {
+                try {
+                    documentParser.getPageWords(file, pageIndex)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+            pageWordsCache[key] = words
+            words
+        }
+    }
+
     /** Boîtes de surlignage d'un passage « à retenir », mémorisées en session. */
     private val highlightCache = mutableMapOf<String, List<android.graphics.RectF>>()
-
     suspend fun getHighlightRectsForPage(courseId: String, page: Int, texts: List<String>): List<android.graphics.RectF> =
         withContext(Dispatchers.IO) {
             val key = "$courseId#$page#${texts.joinToString("|").take(200).hashCode()}"

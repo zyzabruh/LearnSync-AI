@@ -8,6 +8,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,13 +36,17 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.data.parser.OutlineEntry
+import com.learnsyncai.data.parser.PageWord
 import com.learnsyncai.domain.model.InkStroke
 import com.learnsyncai.domain.model.PdfAnnotation
 import com.learnsyncai.ui.components.*
@@ -57,6 +64,7 @@ fun PdfReaderScreen(
     pdfFile: File?,
     initialPage: Int = 0,
     onLoadPageText: (suspend (Int) -> String)? = null,
+    onLoadPageWords: (suspend (page: Int) -> List<PageWord>)? = null,
     outline: List<OutlineEntry> = emptyList(),
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
@@ -81,6 +89,19 @@ fun PdfReaderScreen(
     LaunchedEffect(pdfFile, inkVersion) {
         inkStrokes = try { onLoadInkStrokes?.invoke() } catch (_: Exception) { null } ?: emptyList()
     }
+    // Zoom (pincement quand zoomé, double-tap 1x/2.5x) + sélection d'un mot au doigt.
+    var zoomScale by remember { mutableFloatStateOf(1f) }
+    var zoomPan by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        zoomScale = (zoomScale * zoomChange).coerceIn(1f, 5f)
+        zoomPan = if (zoomScale <= 1f) Offset.Zero else zoomPan + panChange
+    }
+    var boxPx by remember { mutableStateOf(IntSize.Zero) }
+    var pageWords by remember { mutableStateOf(emptyList<PageWord>()) }
+    var showQuickCard by remember { mutableStateOf(false) }
+    var quickQuestion by remember { mutableStateOf("") }
+    var quickAnswer by remember { mutableStateOf("") }
+    var wordSel by remember { mutableStateOf<IntRange?>(null) }
 
     if (pdfFile == null || !pdfFile.exists()) {
         Scaffold(
@@ -129,6 +150,12 @@ fun PdfReaderScreen(
     val pageCount = rendererState?.third ?: 0
     val safeIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     val textIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    LaunchedEffect(pdfFile, safeIndex) {
+        zoomScale = 1f
+        zoomPan = Offset.Zero
+        wordSel = null
+        pageWords = try { onLoadPageWords?.invoke(safeIndex) } catch (_: Exception) { null } ?: emptyList()
+    }
     val bitmap = remember(rendererState, safeIndex) {
         try {
             val renderer = rendererState?.second ?: return@remember null
@@ -223,7 +250,15 @@ fun PdfReaderScreen(
                     )
                     FilterChip(
                         selected = drawMode,
-                        onClick = { drawMode = !drawMode; if (drawMode) textMode = false },
+                        onClick = {
+                            drawMode = !drawMode
+                            if (drawMode) {
+                                textMode = false
+                                zoomScale = 1f
+                                zoomPan = Offset.Zero
+                                wordSel = null
+                            }
+                        },
                         label = { Text("Dessiner") }
                     )
                 }
@@ -363,9 +398,6 @@ fun PdfReaderScreen(
                                         )
                                     }.getOrDefault("")
                                 }
-                                var showQuickCard by remember { mutableStateOf(false) }
-                                var quickQuestion by remember { mutableStateOf("") }
-                                var quickAnswer by remember { mutableStateOf("") }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -458,6 +490,33 @@ fun PdfReaderScreen(
                             Box(
                                 modifier = Modifier.fillMaxWidth()
                                     .aspectRatio(if (aspect.isFinite() && aspect > 0f) aspect else 1f)
+                                    .onSizeChanged { boxPx = it }
+                                    .graphicsLayer {
+                                        scaleX = zoomScale
+                                        scaleY = zoomScale
+                                        translationX = zoomPan.x
+                                        translationY = zoomPan.y
+                                    }
+                                    // Pincement actif seulement quand zoomé (sinon le
+                                    // scroll vertical de la liste reste prioritaire).
+                                    .transformable(transformState, enabled = zoomScale > 1f && !drawMode)
+                                    .pointerInput(drawMode, safeIndex) {
+                                        detectTapGestures(
+                                            onDoubleTap = {
+                                                zoomScale = if (zoomScale > 1.5f) 1f else 2.5f
+                                                zoomPan = Offset.Zero
+                                            },
+                                            onTap = { offset ->
+                                                if (drawMode || boxPx.width <= 0 || boxPx.height <= 0) return@detectTapGestures
+                                                val fx = 0.5f + ((offset.x - boxPx.width / 2f - zoomPan.x) / zoomScale) / boxPx.width
+                                                val fy = 0.5f + ((offset.y - boxPx.height / 2f - zoomPan.y) / zoomScale) / boxPx.height
+                                                val idx = pageWords.indexOfFirst { w ->
+                                                    fx in w.left..w.right && fy in w.top..w.bottom
+                                                }
+                                                wordSel = if (idx >= 0) idx..idx else null
+                                            }
+                                        )
+                                    }
                             ) {
                                 Image(
                                     bitmap = bitmap.asImageBitmap(),
@@ -491,6 +550,30 @@ fun PdfReaderScreen(
                                                 tempInk.flatMap { listOf(it.x, it.y) },
                                                 Color(inkColor.toULong()),
                                                 size
+                                            )
+                                        }
+                                    }
+                                }
+                                val selBoxes = remember(wordSel, pageWords) {
+                                    wordSel?.let { r ->
+                                        if (pageWords.isEmpty()) emptyList()
+                                        else {
+                                            val a = r.first.coerceIn(0, pageWords.size - 1)
+                                            val b = r.last.coerceIn(0, pageWords.size - 1)
+                                            if (a > b) emptyList()
+                                            else pageWords.subList(a, b + 1).map { w ->
+                                                android.graphics.RectF(w.left, w.top, w.right, w.bottom)
+                                            }
+                                        }
+                                    }.orEmpty()
+                                }
+                                if (selBoxes.isNotEmpty()) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        for (r in selBoxes) {
+                                            drawRect(
+                                                color = Color.Blue.copy(alpha = 0.30f),
+                                                topLeft = Offset(r.left * size.width, r.top * size.height),
+                                                size = Size(r.width() * size.width, r.height() * size.height)
                                             )
                                         }
                                     }
@@ -539,6 +622,91 @@ fun PdfReaderScreen(
                                 modifier = Modifier.padding(LearnSyncSpacing.large),
                                 style = MaterialTheme.typography.bodyMedium
                             )
+                        }
+                    }
+                }
+            }
+            val selectedText = remember(wordSel, pageWords) {
+                wordSel?.let { r ->
+                    if (pageWords.isEmpty()) ""
+                    else {
+                        val a = r.first.coerceIn(0, pageWords.size - 1)
+                        val b = r.last.coerceIn(0, pageWords.size - 1)
+                        if (a > b) "" else pageWords.subList(a, b + 1).joinToString(" ") { it.text }
+                    }
+                }.orEmpty()
+            }
+            if (selectedText.isNotBlank()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = LearnSyncShapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(LearnSyncSpacing.medium),
+                            verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                        ) {
+                            Text(selectedText, style = MaterialTheme.typography.bodyMedium, maxLines = 5)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        wordSel = wordSel?.let { r ->
+                                            val a = (r.first + 1).coerceAtMost(r.last)
+                                            val b = (r.last - 1).coerceAtLeast(a)
+                                            if (a > b) null else a..b
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("−") }
+                                OutlinedButton(
+                                    onClick = {
+                                        wordSel = wordSel?.let { r ->
+                                            (r.first - 1).coerceAtLeast(0)..(r.last + 1).coerceAtMost(pageWords.size - 1)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("+") }
+                                TextButton(onClick = { wordSel = null }) { Text("Fermer") }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                LearnSyncButton(
+                                    text = "Noter",
+                                    icon = Icons.Default.Add,
+                                    onClick = {
+                                        onAddAnnotation(safeIndex, selectedText, noteKind)
+                                        wordSel = null
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                LearnSyncButton(
+                                    text = "Carte",
+                                    icon = Icons.Default.Bolt,
+                                    onClick = {
+                                        quickQuestion = selectedText
+                                        quickAnswer = ""
+                                        showQuickCard = true
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                LearnSyncButton(
+                                    text = "Surligner",
+                                    icon = Icons.Default.Star,
+                                    onClick = {
+                                        onAddAnnotation(safeIndex, selectedText, PdfAnnotation.KIND_KEY)
+                                        wordSel = null
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
