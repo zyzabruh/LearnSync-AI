@@ -5,6 +5,10 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.PDOutlineNode
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDActionGoTo
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDActionGoToR
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.BufferedReader
 import java.io.InputStream
@@ -14,11 +18,19 @@ import java.nio.charset.StandardCharsets
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
+/** Entrée d'arbre du sommaire (outline) d'un PDF, issue de PdfBox. */
+data class OutlineEntry(
+    val title: String,
+    val pageIndex: Int,
+    val children: List<OutlineEntry> = emptyList()
+)
+
 data class ParseResult(
     val title: String,
     val text: String,
     val pageCount: Int,
-    val isScanOrEmpty: Boolean = false
+    val isScanOrEmpty: Boolean = false,
+    val outline: List<OutlineEntry> = emptyList()
 )
 
 class ScannedPdfException(
@@ -38,13 +50,8 @@ class DocumentParser(private val context: Context) {
     }
 
     fun parseDocument(uri: Uri, fileName: String): ParseResult {
-        // Le nom transmis par l'UI vient souvent de lastPathSegment (ex. "msf:26"),
-        // sans extension : on interroge le ContentResolver pour le vrai nom.
         val resolvedName = resolveDisplayName(uri) ?: fileName
         val extension = resolvedName.substringAfterLast('.', "").lowercase()
-
-        // La signature binaire est plus fiable que l'extension : un PDF choisi
-        // via SAF peut arriver avec un nom sans ".pdf" et être sinon lu comme texte.
         val magic = readMagicBytes(uri)
         return when {
             magic.startsWith("%PDF-") || extension == "pdf" -> parsePdf(uri, resolvedName)
@@ -55,7 +62,6 @@ class DocumentParser(private val context: Context) {
         }
     }
 
-    /** Un conteneur ZIP (PK) sans extension exploitable : on regarde son contenu. */
     private fun detectAndParseOffice(uri: Uri, fileName: String): ParseResult {
         val inputStream: InputStream = context.contentResolver.openInputStream(uri)
             ?: throw IllegalArgumentException("Impossible d'ouvrir le fichier : $fileName")
@@ -81,18 +87,10 @@ class DocumentParser(private val context: Context) {
             isXIncludeAware = false
             isExpandEntityReferences = false
         }
-        try {
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        } catch (_: Exception) {}
-        try {
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
-        } catch (_: Exception) {}
-        try {
-            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        } catch (_: Exception) {}
-        try {
-            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-        } catch (_: Exception) {}
+        try { factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) } catch (_: Exception) {}
+        try { factory.setFeature("http://xml.org/sax/features/external-general-entities", false) } catch (_: Exception) {}
+        try { factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false) } catch (_: Exception) {}
+        try { factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) } catch (_: Exception) {}
 
         ZipInputStream(inputStream).use { zipStream ->
             var entry = zipStream.nextEntry
@@ -128,7 +126,6 @@ class DocumentParser(private val context: Context) {
         return ParseResult(title = title, text = extractedText, pageCount = slideTexts.size)
     }
 
-    /** Télécharge une page web et en extrait le texte (import par URL). */
     fun parseWebUrl(url: String): ParseResult {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             throw IllegalArgumentException("L'URL doit commencer par http:// ou https://")
@@ -141,9 +138,7 @@ class DocumentParser(private val context: Context) {
         connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) LearnSyncAI/1.0")
 
         val html = try {
-            connection.inputStream.use { stream ->
-                stream.readBytes().toString(Charsets.UTF_8)
-            }
+            connection.inputStream.use { stream -> stream.readBytes().toString(Charsets.UTF_8) }
         } finally {
             connection.disconnect()
         }
@@ -182,9 +177,7 @@ class DocumentParser(private val context: Context) {
     private fun resolveDisplayName(uri: Uri): String? = try {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-    } catch (_: Exception) {
-        null
-    }
+    } catch (_: Exception) { null }
 
     private fun readMagicBytes(uri: Uri): String = try {
         context.contentResolver.openInputStream(uri)?.use { stream ->
@@ -192,9 +185,7 @@ class DocumentParser(private val context: Context) {
             val read = stream.read(buffer)
             if (read > 0) String(buffer, 0, read, StandardCharsets.US_ASCII) else ""
         } ?: ""
-    } catch (_: Exception) {
-        ""
-    }
+    } catch (_: Exception) { "" }
 
     private fun parsePdf(uri: Uri, fileName: String): ParseResult {
         val inputStream: InputStream = context.contentResolver.openInputStream(uri)
@@ -208,8 +199,6 @@ class DocumentParser(private val context: Context) {
                 val extractedText = stripper.getText(document).trim()
 
                 val title = fileName.substringBeforeLast('.')
-                
-                // Validate if text is genuinely present (not just whitespace or unparseable chars)
                 val alphanumericCount = extractedText.count { it.isLetterOrDigit() }
                 if (alphanumericCount < 20) {
                     throw ScannedPdfException(uri, fileName, pageCount)
@@ -219,24 +208,46 @@ class DocumentParser(private val context: Context) {
                     title = title,
                     text = extractedText,
                     pageCount = if (pageCount > 0) pageCount else 1,
-                    isScanOrEmpty = false
+                    isScanOrEmpty = false,
+                    outline = extractOutline(document, pageCount)
                 )
             }
         }
+    }
+
+    private fun extractOutline(document: PDDocument, pageCount: Int): List<OutlineEntry> {
+        val root = document.documentCatalog.documentOutline ?: return emptyList()
+        return root.children.map { node -> buildOutlineEntry(node, document, pageCount) }
+    }
+
+    private fun buildOutlineEntry(node: PDOutlineNode, document: PDDocument, pageCount: Int): OutlineEntry {
+        val pageIndex = resolvePageIndex(node, document, pageCount)
+        val children = node.children.map { child -> buildOutlineEntry(child, document, pageCount) }
+        return OutlineEntry(
+            title = node.title,
+            pageIndex = pageIndex,
+            children = children
+        )
+    }
+
+    private fun resolvePageIndex(node: PDOutlineNode, document: PDDocument, pageCount: Int): Int {
+        val dest = node.destination
+        if (dest is PDActionGoTo) {
+            return document.indexOfPage(dest.page).coerceIn(0, pageCount - 1)
+        }
+        if (dest is PDActionGoToR) {
+            return document.indexOfPage(dest.page).coerceIn(0, pageCount - 1)
+        }
+        return 0
     }
 
     private fun parseTxt(uri: Uri, fileName: String): ParseResult {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IllegalArgumentException("Impossible d'ouvrir le fichier texte : $fileName")
 
-        // Try UTF-8 first, then fallback to ISO-8859-1 (common for French accents in older files)
         val text = try {
             val utf8 = String(bytes, StandardCharsets.UTF_8)
-            if (utf8.contains('\uFFFD')) {
-                String(bytes, Charset.forName("ISO-8859-1"))
-            } else {
-                utf8
-            }
+            if (utf8.contains('\uFFFD')) String(bytes, Charset.forName("ISO-8859-1")) else utf8
         } catch (_: Exception) {
             String(bytes, StandardCharsets.UTF_8)
         }.trim()
@@ -245,14 +256,10 @@ class DocumentParser(private val context: Context) {
             throw IllegalStateException("Le fichier texte est vide ou ne contient aucun contenu lisible.")
         }
 
-        // Filet de sécurité : un binaire (PDF/DOCX non reconnu) décodé en texte
-        // contient des caractères de contrôle et des marqueurs PDF — on refuse.
         val controlChars = text.count { it.code < 32 && it != '\n' && it != '\r' && it != '\t' }
         val looksLikeRawPdf = text.contains("endstream") || text.contains("FlateDecode") || text.contains("%PDF-")
         if (controlChars > text.length / 100 || looksLikeRawPdf) {
-            throw IllegalStateException(
-                "Le fichier importé est un document binaire (PDF ou DOCX) qui n'a pas pu être décodé en texte. Réessayez de l'importer depuis sa source d'origine."
-            )
+            throw IllegalStateException("Le fichier importé est un document binaire (PDF ou DOCX) qui n'a pas pu être décodé en texte. Réessayez de l'importer depuis sa source d'origine.")
         }
 
         val title = fileName.substringBeforeLast('.')
@@ -265,45 +272,29 @@ class DocumentParser(private val context: Context) {
 
         val stringBuilder = StringBuilder()
         val maxEntries = 1000
-        val maxTotalBytes = 50 * 1024 * 1024L // 50MB protection against zip bombs
-        var totalBytesRead = 0L
-        var entryCount = 0
 
         ZipInputStream(inputStream).use { zipStream ->
             var entry = zipStream.nextEntry
             while (entry != null) {
-                entryCount++
                 if (entryCount > maxEntries) {
                     throw SecurityException("Fichier DOCX corrompu ou suspect (dépassement du nombre maximal d'entrées).")
                 }
-
                 if (entry.name == "word/document.xml") {
                     val factory = DocumentBuilderFactory.newInstance().apply {
                         isNamespaceAware = true
                         isXIncludeAware = false
                         isExpandEntityReferences = false
                     }
-
-                    // Security: Disable external DTDs and entities against XXE injection
-                    try {
-                        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-                    } catch (_: Exception) {}
-                    try {
-                        factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
-                    } catch (_: Exception) {}
-                    try {
-                        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-                    } catch (_: Exception) {}
-                    try {
-                        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-                    } catch (_: Exception) {}
+                    try { factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) } catch (_: Exception) {}
+                    try { factory.setFeature("http://xml.org/sax/features/external-general-entities", false) } catch (_: Exception) {}
+                    try { factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false) } catch (_: Exception) {}
+                    try { factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) } catch (_: Exception) {}
 
                     val builder = factory.newDocumentBuilder()
                     val doc = builder.parse(zipStream)
                     val nodeList = doc.getElementsByTagName("w:t")
                     for (i in 0 until nodeList.length) {
-                        val node = nodeList.item(i)
-                        stringBuilder.append(node.textContent).append(" ")
+                        stringBuilder.append(nodeList.item(i).textContent).append(" ")
                     }
                     break
                 }

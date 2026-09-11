@@ -59,7 +59,9 @@ object FileOpener {
                 // Le lancement peut venir d'un contexte applicatif (ViewModel).
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(Intent.createChooser(intent, "Ouvrir le document"))
+            context.startActivity(Intent.createChooser(intent, "Ouvrir le document").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
             Result.success(Unit)
         } catch (e: ActivityNotFoundException) {
             Result.failure(IllegalStateException("Aucune application installée pour ouvrir ce type de fichier."))

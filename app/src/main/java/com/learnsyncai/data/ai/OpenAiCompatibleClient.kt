@@ -50,12 +50,13 @@ class OpenAiCompatibleClient(
      */
     suspend fun generateChatCompletion(
         baseUrl: String,
-        apiKey: String,
+        apiKey: ***
         modelName: String,
         prompt: String,
         systemPrompt: String? = null,
         temperature: Double = 0.2,
-        maxTokens: Int = 262144
+        maxTokens: Int = 262144,
+        useJsonFormat: Boolean? = null
     ): String = withContext(Dispatchers.IO) {
         val cleanBaseUrl = baseUrl.trim().trimEnd('/')
         if (cleanBaseUrl.isBlank()) {
@@ -63,11 +64,15 @@ class OpenAiCompatibleClient(
         }
         val effectiveModel = normalizeModelName(modelName, cleanBaseUrl)
 
+        val useJsonFormatEffective = useJsonFormat ?: (cleanBaseUrl.contains("googleapis.com") || cleanBaseUrl.contains("openai.com") || cleanBaseUrl.contains("openrouter.ai"))
+
         val endpoint = if (cleanBaseUrl.endsWith("/chat/completions")) {
             cleanBaseUrl
         } else {
             "$cleanBaseUrl/chat/completions"
         }
+
+        android.util.Log.i("OpenAiClient", "generateChatCompletion: url=$cleanBaseUrl model=$effectiveModel maxTokens=$maxTokens useJsonFormat=$useJsonFormatEffective apiKey=${if (apiKey.isNotBlank()) "***" else "EMPTY"}")
 
         val messagesArray = JSONArray()
         if (!systemPrompt.isNullOrBlank()) {
@@ -82,12 +87,10 @@ class OpenAiCompatibleClient(
             .put("content", prompt)
         messagesArray.put(userMsg)
 
-        val hasJsonFormat = cleanBaseUrl.contains("googleapis.com") || cleanBaseUrl.contains("openai.com") || cleanBaseUrl.contains("openrouter.ai")
-
         val fallbacks = (listOf(maxTokens) + MAX_TOKENS_FALLBACKS.toList())
             .distinct()
             .filter { it <= maxTokens }
-        var lastError: IOException? = null
+        var lastError: Throwable? = null
         var success: String? = null
         for (attemptMaxTokens in fallbacks) {
             try {
@@ -98,15 +101,18 @@ class OpenAiCompatibleClient(
                     messagesArray = messagesArray,
                     temperature = temperature,
                     maxTokens = attemptMaxTokens,
-                    useJsonFormat = hasJsonFormat
+                    useJsonFormat = useJsonFormatEffective
                 )
                 break
             } catch (e: MaxTokensExceededException) {
                 lastError = e
-                // Le plafond du modèle est plus bas : on retente avec la valeur suivante.
+            } catch (e: Throwable) {
+                lastError = e
+                break
             }
         }
-        success ?: throw lastError ?: IOException("Échec de la requête IA.")
+        if (success != null) return success
+        throw IllegalStateException("Échec de la requête IA : ${lastError?.message ?: "aucune erreur"}, cause=${lastError?.cause?.message}", lastError)
     }
 
     private class MaxTokensExceededException(message: String) : IOException(message)
@@ -145,25 +151,32 @@ class OpenAiCompatibleClient(
             requestBuilder.addHeader("Authorization", "Bearer ${apiKey.trim()}")
         }
 
+        android.util.Log.d("OpenAiClient", "HTTP POST $endpoint model=$model maxTokens=$maxTokens useJsonFormat=$useJsonFormat")
+
         val response = try {
             client.newCall(requestBuilder.build()).execute()
         } catch (e: IOException) {
+            android.util.Log.e("OpenAiClient", "Connexion HTTP échouée: ${e.localizedMessage}", e)
             throw e
         } catch (e: Exception) {
+            android.util.Log.e("OpenAiClient", "Erreur inattendue lors de la requête HTTP: ${e.localizedMessage}", e)
             throw IOException("Échec de connexion au service IA : ${e.localizedMessage}", e)
         }
 
         var shouldRetryWithoutJsonFormat = false
         val content = response.use { resp ->
             val responseBodyString = resp.body?.string() ?: ""
+            android.util.Log.d("OpenAiClient", "HTTP response: code=${resp.code} success=${resp.isSuccessful} bodyPreview=${responseBodyString.take(400)}")
             if (!resp.isSuccessful) {
                 if (resp.code == 400 && isMaxTokensError(responseBodyString)) {
+                    android.util.Log.w("OpenAiClient", "max_tokens exceeded, retrying with smaller value")
                     throw MaxTokensExceededException("max_tokens dépasse le plafond du modèle : $maxTokens")
                 } else if (resp.code == 400 && useJsonFormat) {
                     shouldRetryWithoutJsonFormat = true
                     ""
                 } else {
                     val errorMessage = extractErrorMessage(resp.code, responseBodyString)
+                    android.util.Log.e("OpenAiClient", "Erreur HTTP: $errorMessage")
                     throw IOException(errorMessage)
                 }
             } else {
@@ -254,6 +267,7 @@ class OpenAiCompatibleClient(
     }
 
     private fun extractContentFromResponse(responseBody: String): String {
+        android.util.Log.d("OpenAiClient", "Parsing response, length=${responseBody.length}")
         return try {
             val json = JSONObject(responseBody)
             val choices = json.optJSONArray("choices")

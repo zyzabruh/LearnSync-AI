@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.parser.DocumentParser
+import com.learnsyncai.data.parser.OutlineEntry
 import com.learnsyncai.data.parser.ScannedPdfException
 import com.learnsyncai.data.sync.CloudSyncWorker
 import com.learnsyncai.data.sync.FirestoreSyncManager
@@ -114,6 +115,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 val parseResult = documentParser.parseDocument(uri, fileName)
                 val courseId = UUID.randomUUID().toString()
                 courseContentStorage.saveExtractedText(courseId, parseResult.text)
+                // Sommaire du PDF (outline) : extrait par PdfBox, conservé pour l'affichage.
+                courseContentStorage.saveOutlineForCourse(courseId, parseResult.outline)
                 // Conserve une copie locale + l'accès persistant pour l'ouverture depuis l'app.
                 persistImportForOpening(uri, courseId, fileName)
                 val course = Course(
@@ -932,6 +935,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotation>> =
         annotationRepo.getAnnotationsForCourse(courseId)
+
+    /** Sommaire (outline) du PDF, extrait au moment de l'import et stocké localement. */
+    fun getOutlineForCourse(courseId: String): Flow<List<OutlineEntry>> =
+        flow {
+            emit(courseContentStorage.getOutlineForCourse(courseId))
+        }
 
     fun addAnnotation(courseId: String, page: Int, text: String, kind: String) {
         viewModelScope.launch {

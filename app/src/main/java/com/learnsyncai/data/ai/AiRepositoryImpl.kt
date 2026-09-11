@@ -288,9 +288,11 @@ class AiRepositoryImpl(
                 ${if (historyBlock.isNotBlank()) "ÉCHANGES PRÉCÉDENTS :\n$historyBlock\n" else ""}
                 QUESTION DE L'ÉLÈVE : ${question.trim().take(1000)}
             """.trimIndent()
+            android.util.Log.d("AiRepo", "tutorAsk: courseTitle=$courseTitle contextLen=${context.length} history=${history.size} question=$q language=$language")
             val config = configProvider?.invoke() ?: AiConfig()
+            android.util.Log.d("AiRepo", "tutorAsk config: baseUrl=${config.baseUrl} apiKey=${if (config.apiKey.isNotBlank()) "***" else "EMPTY"} model=${config.modelName} isLocal=${config.isLocal}")
             val answer = executeWithRetry(maxAttempts = 2) {
-                chatCompletion(config, prompt, temperature = 0.5)
+                chatCompletion(config, prompt, temperature = 0.5, useJsonFormat = false)
             }
             Result.success(answer.trim())
         } catch (t: Throwable) {
@@ -675,7 +677,7 @@ class AiRepositoryImpl(
      * Point d'entrée unique des appels IA : route vers l'API cloud
      * OpenAI-compatible ou vers le moteur local Gemma (MediaPipe).
      */
-    private suspend fun chatCompletion(config: AiConfig, prompt: String, temperature: Double): String {
+    private suspend fun chatCompletion(config: AiConfig, prompt: String, temperature: Double, useJsonFormat: Boolean = true): String {
         return if (config.isLocal) {
             val client = localLlmClient
                 ?: throw IllegalStateException("Moteur local indisponible.")

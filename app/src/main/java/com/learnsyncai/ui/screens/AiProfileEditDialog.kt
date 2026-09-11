@@ -251,7 +251,7 @@ internal fun AiProfileEditDialog(
                         )
                         IconButton(
                             onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/settings/tokens")))
+                                context.startAppUrl("https://huggingface.co/settings/tokens")
                             },
                             modifier = Modifier.size(28.dp)
                         ) {
@@ -312,7 +312,7 @@ internal fun AiProfileEditDialog(
                             }
                             IconButton(
                                 onClick = {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
+                                    context.startAppUrl(pageUrl)
                                 },
                                 modifier = Modifier.size(36.dp)
                             ) {
@@ -343,7 +343,7 @@ internal fun AiProfileEditDialog(
                                 )
                                 Button(
                                     onClick = {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/settings/tokens")))
+                                        context.startAppUrl("https://huggingface.co/settings/tokens")
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -353,7 +353,7 @@ internal fun AiProfileEditDialog(
                                 }
                                 Button(
                                     onClick = {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(pageUrl)))
+                                        context.startAppUrl(pageUrl)
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {

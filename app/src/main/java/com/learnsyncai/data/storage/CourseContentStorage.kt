@@ -1,6 +1,8 @@
 package com.learnsyncai.data.storage
 
 import android.content.Context
+import com.hermes_tools.json.gson.Gson
+import com.learnsyncai.data.parser.OutlineEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -41,11 +43,7 @@ class CourseContentStorage(private val context: Context) {
         }
     }
 
-    /**
-     * Lecture pour la génération : distingue document absent et erreur de
-     * lecture, afin d'interrompre la génération avec un message clair au lieu
-     * de produire du contenu à partir d'un texte vide.
-     */
+    /** Lecture pour la génération : distingue document absent et erreur de lecture. */
     suspend fun readExtractedTextChecked(courseId: String): ExtractedText {
         return withContext(Dispatchers.IO) {
             val file = File(coursesDir, "${sanitizeCourseId(courseId)}.txt")
@@ -66,24 +64,17 @@ class CourseContentStorage(private val context: Context) {
         withContext(Dispatchers.IO) {
             val sanitizedId = sanitizeCourseId(courseId)
             val file = File(coursesDir, "$sanitizedId.txt")
-            if (file.exists()) {
-                file.delete()
-            }
+            if (file.exists()) file.delete()
         }
     }
 
     // ==================== FICHIER D'ORIGINE (ouverture in-app) ====================
 
-    /**
-     * Conserve une copie locale du fichier importé pour pouvoir l'ouvrir
-     * depuis l'application (l'URI du sélecteur système est temporaire).
-     * Best effort : ne lève jamais, retourne false en cas d'échec.
-     */
+    /** Conserve une copie locale du fichier importé pour pouvoir l'ouvrir depuis l'application. */
     suspend fun saveOriginalFile(courseId: String, fileName: String, input: java.io.InputStream): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 val dir = File(coursesDir, "originals/${sanitizeCourseId(courseId)}").apply { mkdirs() }
-                // Nettoie les anciennes copies (ré-import, nom différent).
                 dir.listFiles()?.forEach { it.delete() }
                 val target = File(dir, sanitizeFileName(fileName).ifBlank { "document" })
                 input.use { src -> target.outputStream().use { dst -> src.copyTo(dst) } }
@@ -114,8 +105,36 @@ class CourseContentStorage(private val context: Context) {
     suspend fun exists(courseId: String): Boolean {
         return withContext(Dispatchers.IO) {
             val sanitizedId = sanitizeCourseId(courseId)
-            val file = File(coursesDir, "$sanitizedId.txt")
-            file.exists()
+            File(coursesDir, "$sanitizedId.txt").exists()
+        }
+    }
+
+    // ==================== SOMMAIRE PDF (outline) ====================
+
+    private val gson = Gson()
+
+    suspend fun saveOutlineForCourse(courseId: String, outline: List<OutlineEntry>) {
+        withContext(Dispatchers.IO) {
+            val sanitizedId = sanitizeCourseId(courseId)
+            val file = File(coursesDir, "$sanitizedId.outline.json")
+            file.writeText(gson.toJson(outline), Charsets.UTF_8)
+        }
+    }
+
+    suspend fun getOutlineForCourse(courseId: String): List<OutlineEntry> {
+        return withContext(Dispatchers.IO) {
+            val sanitizedId = sanitizeCourseId(courseId)
+            val file = File(coursesDir, "$sanitizedId.outline.json")
+            if (file.exists()) {
+                try {
+                    gson.fromJson(file.readText(Charsets.UTF_8), Array<OutlineEntry>::class.java).toList()
+                } catch (e: Exception) {
+                    android.util.Log.w("LearnSyncAI", "Outline illisible pour le cours $courseId : ${e.message}")
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
         }
     }
 
@@ -124,7 +143,6 @@ class CourseContentStorage(private val context: Context) {
     }
 
     private fun sanitizeFileName(fileName: String): String {
-        // Garde l'extension (utile pour le MIME à l'ouverture) mais neutralise les chemins.
         return fileName.substringAfterLast('/').substringAfterLast('\\')
             .replace(Regex("[^a-zA-Z0-9._-]"), "_").takeLast(120)
     }

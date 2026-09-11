@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.learnsyncai.data.parser.OutlineEntry
 import com.learnsyncai.domain.model.PdfAnnotation
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
@@ -34,6 +35,7 @@ import java.io.File
 fun PdfReaderScreen(
     courseTitle: String,
     pdfFile: File?,
+    outline: List<OutlineEntry> = emptyList(),
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
     onDeleteAnnotation: (String) -> Unit,
@@ -94,7 +96,7 @@ fun PdfReaderScreen(
         try {
             val renderer = rendererState?.second ?: return@remember null
             renderer.openPage(safeIndex).use { page ->
-                val scale = 2f
+                val scale = 4f
                 val bmp = Bitmap.createBitmap(
                     (page.width * scale).toInt(),
                     (page.height * scale).toInt(),
@@ -146,6 +148,47 @@ fun PdfReaderScreen(
                     }
                 }
             }
+
+            if (outline.isNotEmpty()) {
+                item {
+                    Text(
+                        "Sommaire (${outline.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                fun LazyListScope.outlineItems(entries: List<OutlineEntry>, depth: Int = 0) {
+                    entries.forEach { entry ->
+                        item(key = "outline_${entry.title}_${entry.pageIndex}_$depth".hashCode()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = (depth * 16).dp, top = 4.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = entry.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "p. ${entry.pageIndex + 1}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                IconButton(onClick = { pageIndex = entry.pageIndex }, enabled = entry.pageIndex >= 0) {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = "Aller à la page", modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                        if (entry.children.isNotEmpty()) {
+                            outlineItems(entry.children, depth + 1)
+                        }
+                    }
+                }
+                outlineItems(outline)
+            }
+
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -157,8 +200,10 @@ fun PdfReaderScreen(
                         Image(
                             bitmap = bitmap.asImageBitmap(),
                             contentDescription = "Page ${safeIndex + 1}",
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier.fillMaxWidth()
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 512.dp)
                         )
                     } else {
                         Text(

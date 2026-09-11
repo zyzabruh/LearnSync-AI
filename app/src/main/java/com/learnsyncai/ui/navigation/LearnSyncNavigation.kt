@@ -20,6 +20,7 @@ import androidx.navigation.navArgument
 import com.learnsyncai.ui.screens.*
 import com.learnsyncai.ui.theme.*
 import com.learnsyncai.domain.usecase.SpacedRepetition
+import com.learnsyncai.data.parser.OutlineEntry
 import com.learnsyncai.ui.viewmodels.LibraryViewModel
 import com.learnsyncai.ui.viewmodels.ProfileViewModel
 import com.learnsyncai.ui.viewmodels.ReviewViewModel
@@ -569,9 +570,11 @@ fun LearnSyncNavigation(
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
                                 val course = courses.find { it.id == courseId }
                                 val pdfAnnotations by libraryViewModel.getAnnotationsForCourse(courseId).collectAsState(initial = emptyList())
+                                val pdfOutline by libraryViewModel.getOutlineForCourse(courseId).collectAsState(initial = emptyList())
                                 PdfReaderScreen(
                                     courseTitle = course?.title ?: "Cours",
                                     pdfFile = remember(courseId) { libraryViewModel.getLocalDocument(courseId) },
+                                    outline = pdfOutline,
                                     annotations = pdfAnnotations,
                                     onAddAnnotation = { page, text, kind -> libraryViewModel.addAnnotation(courseId, page, text, kind) },
                                     onDeleteAnnotation = { id -> libraryViewModel.deleteAnnotation(id) },
