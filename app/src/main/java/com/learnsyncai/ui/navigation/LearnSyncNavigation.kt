@@ -259,6 +259,8 @@ fun LearnSyncNavigation(
                                 if (course != null) {
                                     val coursePreview by libraryViewModel.getCoursePreview(course.id)
                                         .collectAsState(initial = "")
+                                    val courseNote by libraryViewModel.getNoteForCourse(course.id)
+                                        .collectAsState(initial = null)
                                     CourseDetailScreen(
                                         course = course,
                                         materials = materials,
@@ -283,6 +285,9 @@ fun LearnSyncNavigation(
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onQuickAddFlashcard = { q, a, excerpt -> libraryViewModel.quickAddFlashcard(course.id, q, a, excerpt) },
                                         onGenerateFromExcerpt = { excerpt -> libraryViewModel.generateFlashcardsFromExcerpt(course, excerpt) },
+                                        courseNote = courseNote,
+                                        onSaveNote = { content -> libraryViewModel.saveNote(course.id, content) },
+                                        onConvertNotes = { content -> libraryViewModel.convertNotesToCards(course.id, content) },
                                         onDeleteFlashcard = { cardId -> libraryViewModel.deleteFlashcard(cardId) },
                                         onAddQuizQuestion = { q, opts, ans, exp -> libraryViewModel.addCustomQuizQuestion(course.id, q, opts, ans, exp) },
                                         onDeleteQuizQuestion = { qId -> libraryViewModel.deleteQuizQuestion(qId) },

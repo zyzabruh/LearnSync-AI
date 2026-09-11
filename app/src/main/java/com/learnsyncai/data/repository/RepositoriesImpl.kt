@@ -210,6 +210,22 @@ class QuizRepositoryImpl(
         quizQuestionDao.deleteQuizQuestionsForCourse(courseId)
 }
 
+class NoteRepositoryImpl(
+    private val noteDao: CourseNoteDao
+) : NoteRepository {
+    override fun getNoteForCourse(courseId: String): Flow<CourseNote?> =
+        noteDao.getNoteForCourse(courseId).map { list -> list.firstOrNull()?.toDomain() }
+
+    override suspend fun upsertNote(note: CourseNote) =
+        noteDao.upsertNote(note.toEntity())
+
+    override suspend fun deleteNotesForCourse(courseId: String) =
+        noteDao.deleteNotesForCourse(courseId)
+}
+
+fun CourseNoteEntity.toDomain() = CourseNote(id, courseId, content, updatedAt)
+fun CourseNote.toEntity() = CourseNoteEntity(id, courseId, content, updatedAt)
+
 class ReviewRepositoryImpl(
     private val reviewLogDao: ReviewLogDao,
     private val reviewSessionDao: ReviewSessionDao? = null,

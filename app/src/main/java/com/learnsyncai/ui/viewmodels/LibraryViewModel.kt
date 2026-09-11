@@ -32,6 +32,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val aiProfileRepo = container.aiProfileRepository
     private val tombstoneRepo = container.tombstoneRepository
     private val aiRepo = container.aiRepository
+    private val noteRepo = container.noteRepository
     private val documentParser = container.documentParser
     private val pdfOcrService = container.pdfOcrService
     private val firestoreSyncManager = container.firestoreSyncManager
@@ -810,6 +811,62 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = UiState.Success("${fresh.size} carte(s) créée(s) depuis la sélection !")
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Génération impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    // --- Notes libres (style RemNote) : une note par cours, cartes via >>, <<, <>, ;;, ::, {{}} ---
+
+    fun getNoteForCourse(courseId: String): Flow<CourseNote?> =
+        noteRepo.getNoteForCourse(courseId)
+
+    fun saveNote(courseId: String, content: String) {
+        viewModelScope.launch {
+            try {
+                val existing = kotlinx.coroutines.flow.firstOrNull(noteRepo.getNoteForCourse(courseId))
+                noteRepo.upsertNote(
+                    (existing ?: CourseNote(
+                        id = UUID.randomUUID().toString(),
+                        courseId = courseId,
+                        content = "",
+                        updatedAt = 0L
+                    )).copy(content = content, updatedAt = System.currentTimeMillis())
+                )
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Sauvegarde impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    /** Convertit les lignes marquées des notes en flashcards (anti-doublons). */
+    fun convertNotesToCards(courseId: String, content: String) {
+        viewModelScope.launch {
+            try {
+                val parsed = com.learnsyncai.domain.usecase.NoteCards.parse(content)
+                if (parsed.isEmpty()) {
+                    _uiState.value = UiState.Error("Aucune carte détectée : utilisez >>, <<, <>, ;;, :: ou {{}}.")
+                    return@launch
+                }
+                val existingKeys = flashcardRepo.getFlashcardsForCourse(courseId)
+                    .let { flow -> kotlinx.coroutines.flow.firstOrNull(flow)?.map { it.question.trim().lowercase() } }
+                    ?.toMutableSet() ?: mutableSetOf()
+                val fresh = parsed.filter { existingKeys.add(it.question.trim().lowercase()) }
+                if (fresh.isEmpty()) {
+                    _uiState.value = UiState.Success("Ces cartes existent déjà.")
+                    return@launch
+                }
+                flashcardRepo.insertFlashcards(
+                    fresh.map {
+                        newFlashcard(
+                            courseId, it.question, it.answer, "",
+                            direction = it.direction,
+                            sourceExcerpt = "Note personnelle"
+                        )
+                    }
+                )
+                _uiState.value = UiState.Success("${fresh.size} carte(s) créée(s) depuis les notes !")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Conversion impossible : ${e.localizedMessage}")
             }
         }
     }

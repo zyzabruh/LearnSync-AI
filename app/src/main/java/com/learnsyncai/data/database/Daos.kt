@@ -2,7 +2,6 @@ package com.learnsyncai.data.database
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
-
 @Dao
 interface CourseDao {
     @Query("SELECT * FROM courses ORDER BY updatedAt DESC")
@@ -87,6 +86,18 @@ interface FlashcardDao {
 
     @Query("DELETE FROM flashcards WHERE courseId = :courseId")
     suspend fun deleteFlashcardsForCourse(courseId: String)
+}
+
+@Dao
+interface CourseNoteDao {
+    @Query("SELECT * FROM course_notes WHERE courseId = :courseId LIMIT 1")
+    fun getNoteForCourse(courseId: String): Flow<List<CourseNoteEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertNote(note: CourseNoteEntity)
+
+    @Query("DELETE FROM course_notes WHERE courseId = :courseId")
+    suspend fun deleteNotesForCourse(courseId: String)
 }
 
 @Dao

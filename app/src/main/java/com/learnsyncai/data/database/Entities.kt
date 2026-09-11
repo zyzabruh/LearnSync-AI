@@ -78,6 +78,25 @@ data class FlashcardEntity(
 )
 
 @Entity(
+    tableName = "course_notes",
+    foreignKeys = [
+        ForeignKey(
+            entity = CourseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["courseId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["courseId"])]
+)
+data class CourseNoteEntity(
+    @PrimaryKey val id: String,
+    val courseId: String,
+    val content: String,
+    val updatedAt: Long
+)
+
+@Entity(
     tableName = "quiz_questions",
     foreignKeys = [
         ForeignKey(

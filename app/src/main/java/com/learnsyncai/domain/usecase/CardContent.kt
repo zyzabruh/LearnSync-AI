@@ -97,3 +97,56 @@ object ReviewQueue {
         return items.shuffled()
     }
 }
+
+/** Carte brute extraite d'une ligne de notes (avant attribution FSRS). */
+data class ParsedNoteCard(
+    val question: String,
+    val answer: String,
+    val direction: String = CardDirection.FORWARD,
+    val typeAnswer: Boolean = false
+)
+
+/**
+ * Parseur de notes style RemNote (une carte par ligne, marqueurs espacés) :
+ * - `Question >> Réponse` : carte simple (sens aller)
+ * - `Réponse << Question` : sens retour
+ * - `Concept <> Définition` : les deux sens
+ * - `attribut ;; description` : descripteur (aller)
+ * - `Concept :: définition` : concept (les deux sens)
+ * - ligne avec {{trou}} : carte cloze (marqueurs prioritaires)
+ * - autre ligne : simple note, ignorée.
+ */
+object NoteCards {
+    private data class Marker(val token: String, val direction: String)
+
+    private val MARKERS = listOf(
+        Marker(" >> ", CardDirection.FORWARD),
+        Marker(" << ", CardDirection.REVERSE),
+        Marker(" <> ", CardDirection.BOTH),
+        Marker(" ;; ", CardDirection.FORWARD),
+        Marker(" :: ", CardDirection.BOTH)
+    )
+
+    fun parse(text: String): List<ParsedNoteCard> =
+        text.lines().mapNotNull { parseLine(it) }
+
+    fun parseLine(rawLine: String): ParsedNoteCard? {
+        val line = rawLine.trim()
+        if (line.length < 4) return null
+        if (CardContent.hasClozes(line)) {
+            val answer = CardContent.stripMarkers(line)
+            if (answer.isBlank()) return null
+            return ParsedNoteCard(question = line, answer = answer)
+        }
+        for (marker in MARKERS) {
+            val idx = line.indexOf(marker.token)
+            if (idx >= 0) {
+                val left = line.substring(0, idx).trim()
+                val right = line.substring(idx + marker.token.length).trim()
+                if (left.length < 2 || right.length < 2) return null
+                return ParsedNoteCard(question = left, answer = right, direction = marker.direction)
+            }
+        }
+        return null
+    }
+}

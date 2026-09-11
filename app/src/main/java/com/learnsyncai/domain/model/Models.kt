@@ -79,6 +79,14 @@ data class ReviewItem(
     fun key(): String = "${card.id}|$reversed|${clozeIndex ?: -1}"
 }
 
+/** Notes libres d'un cours (style RemNote) : une carte par ligne via >>, <<, <>, ;;, ::, {{}}. */
+data class CourseNote(
+    val id: String,
+    val courseId: String,
+    val content: String,
+    val updatedAt: Long
+)
+
 data class QuizQuestion(
     val id: String,
     val courseId: String,

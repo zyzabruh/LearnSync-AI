@@ -62,6 +62,9 @@ fun CourseDetailScreen(
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
     onGenerateFromExcerpt: (String) -> Unit = {},
+    courseNote: com.learnsyncai.domain.model.CourseNote? = null,
+    onSaveNote: (String) -> Unit = {},
+    onConvertNotes: (String) -> Unit = {},
     onDeleteFlashcard: (flashcardId: String) -> Unit = {},
     onAddQuizQuestion: (question: String, options: List<String>, correctAnswer: String, explanation: String) -> Unit = { _, _, _, _ -> },
     onDeleteQuizQuestion: (quizQuestionId: String) -> Unit = {},
@@ -80,7 +83,7 @@ fun CourseDetailScreen(
     var showEditSummaryDialog by remember { mutableStateOf(false) }
     var showAddKeyPointDialog by remember { mutableStateOf(false) }
 
-    val tabs = listOf("Résumé", "Notions clés", "Flashcards (${flashcards.size})", "QCM (${quizQuestions.size})")
+    val tabs = listOf("Résumé", "Notions clés", "Flashcards (${flashcards.size})", "QCM (${quizQuestions.size})", "Notes")
 
     val dueFlashcardsCount = remember(flashcards) {
         val now = System.currentTimeMillis()
@@ -517,6 +520,12 @@ fun CourseDetailScreen(
                     onAddQuizQuestion = { showAddQuizDialog = true },
                     onDeleteQuizQuestion = onDeleteQuizQuestion,
                     onRegenerate = onRegenerate
+                )
+
+                4 -> CourseNotesTab(
+                    note = courseNote,
+                    onSaveNote = onSaveNote,
+                    onConvertNotes = onConvertNotes
                 )
             }
         }

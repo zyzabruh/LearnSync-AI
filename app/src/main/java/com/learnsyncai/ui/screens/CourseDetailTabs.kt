@@ -477,3 +477,77 @@ private fun sentenceAround(text: String, selStart: Int, selEnd: Int): String {
         text.substring(selStart.coerceIn(0, text.length), selEnd.coerceIn(0, text.length)).trim()
     }
 }
+
+/**
+ * Onglet Notes : prise de notes libre (style RemNote). Chaque ligne marquée
+ * (>>, <<, <>, ;;, ::, {{}}) devient une flashcard via « Créer les cartes ».
+ */
+internal fun LazyListScope.CourseNotesTab(
+    note: com.learnsyncai.domain.model.CourseNote?,
+    onSaveNote: (String) -> Unit,
+    onConvertNotes: (String) -> Unit
+) {
+    item {
+        Text(
+            text = "Mes notes",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+    }
+    item {
+        var content by remember(note?.id, note?.updatedAt) { mutableStateOf(note?.content ?: "") }
+        var showHelp by remember { mutableStateOf(false) }
+        val detectedCount = remember(content) {
+            com.learnsyncai.domain.usecase.NoteCards.parse(content).size
+        }
+        val dirty = content != (note?.content ?: "")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = LearnSyncShapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier.padding(LearnSyncSpacing.large),
+                verticalArrangement = Arrangement.spacedBy(LearnSyncSpacing.medium)
+            ) {
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text("Écrivez vos notes (une idée par ligne)") },
+                    placeholder = { Text("Ex.\nMitochondrie >> centrale énergétique de la cellule\nLa {{mitochondrie}} produit l'ATP") },
+                    minLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextButton(onClick = { showHelp = !showHelp }) {
+                    Text(if (showHelp) "Masquer la syntaxe" else "Voir la syntaxe des cartes")
+                }
+                if (showHelp) {
+                    Text(
+                        text = ">> aller   •   << retour   •   <> les deux\n;; descripteur   •   :: concept (les deux)\n{{texte}} trou cloze   •   autre ligne = simple note",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { onSaveNote(content) },
+                        enabled = dirty
+                    ) {
+                        Text("Enregistrer")
+                    }
+                    Button(
+                        onClick = { onConvertNotes(content) },
+                        enabled = detectedCount > 0
+                    ) {
+                        Text("Créer les cartes ($detectedCount)")
+                    }
+                }
+            }
+        }
+    }
+}

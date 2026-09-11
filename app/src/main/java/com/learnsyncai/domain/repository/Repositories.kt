@@ -60,6 +60,12 @@ interface QuizRepository {
     suspend fun deleteQuizQuestionsForCourse(courseId: String)
 }
 
+interface NoteRepository {
+    fun getNoteForCourse(courseId: String): Flow<CourseNote?>
+    suspend fun upsertNote(note: CourseNote)
+    suspend fun deleteNotesForCourse(courseId: String)
+}
+
 interface ReviewRepository {
     fun getAllReviewLogs(): Flow<List<ReviewLog>>
     fun getReviewLogsSince(startTime: Long): Flow<List<ReviewLog>>
