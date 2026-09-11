@@ -219,6 +219,8 @@ fun LearnSyncNavigation(
                                     dueCards = dueFlashcards,
                                     hasValidAiConfig = hasValidAiConfig,
                                     onImportCourse = { uri, name -> libraryViewModel.importCourse(uri, name) },
+                                    onImportApkg = { uri, name -> libraryViewModel.importApkg(uri, name) },
+                                    onNavigateToGraph = { navController.navigate("knowledge_graph") },
                                     onImportFromUrl = { url -> libraryViewModel.importCourseFromUrl(url) },
                                     onImportFromTranscript = { title, url, transcript -> libraryViewModel.importFromTranscript(title, url, transcript) },
                                     onGenerateMaterial = { course -> libraryViewModel.generateMaterial(course) },
@@ -629,6 +631,21 @@ fun LearnSyncNavigation(
                                     onDeleteAnnotation = { id -> libraryViewModel.deleteAnnotation(id) },
                                     onCardsFromAnnotation = { annotation ->
                                         if (course != null) libraryViewModel.cardsFromAnnotation(course, annotation)
+                                    },
+                                    onBackClick = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable("knowledge_graph") {
+                                val sharedConcepts by libraryViewModel.getSharedConcepts().collectAsState(initial = emptyList())
+                                KnowledgeGraphScreen(
+                                    courses = courses,
+                                    sharedConcepts = sharedConcepts,
+                                    onOpenConcept = { courseId, name ->
+                                        val encoded = try {
+                                            java.net.URLEncoder.encode(name, "UTF-8")
+                                        } catch (_: Exception) { name }
+                                        navController.navigate("concept/$courseId/$encoded")
                                     },
                                     onBackClick = { navController.popBackStack() }
                                 )

@@ -120,6 +120,13 @@ data class PdfAnnotation(
     }
 }
 
+/** Concept [[lié]] partagé entre plusieurs cours (graphe de connaissances). */
+data class SharedConcept(
+    val name: String,
+    val courseIds: List<String>,
+    val cardCount: Int
+)
+
 /** Média attaché à un cours : enregistrement audio + transcription. */
 data class CourseMedia(
     val id: String,

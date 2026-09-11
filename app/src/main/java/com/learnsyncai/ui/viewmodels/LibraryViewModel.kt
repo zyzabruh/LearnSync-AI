@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.learnsyncai.data.parser.AnkiImporter
 import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.parser.OutlineEntry
 import com.learnsyncai.data.parser.ScannedPdfException
@@ -967,6 +968,45 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             emit(courseContentStorage.getOutlineForCourse(courseId))
         }
 
+    /** Concepts [[liés]] présents dans au moins 2 cours (graphe de connaissances). */
+    fun getSharedConcepts(): Flow<List<SharedConcept>> = flow {
+        val allCourses = try {
+            courseRepo.getAllCourses().firstOrNull()
+        } catch (_: Exception) {
+            null
+        }.orEmpty()
+        val perCourse = allCourses.associate { course ->
+            val note = try {
+                noteRepo.getNoteForCourse(course.id).firstOrNull()?.content
+            } catch (_: Exception) {
+                null
+            }.orEmpty()
+            val cards = try {
+                flashcardRepo.getFlashcardsForCourse(course.id).firstOrNull()
+            } catch (_: Exception) {
+                null
+            }.orEmpty()
+            val corpus = note + "\n" + cards.joinToString("\n") { it.question + "\n" + it.answer }
+            course.id to (com.learnsyncai.domain.usecase.Concepts.extract(corpus) to cards)
+        }
+        val courseIdsByName = mutableMapOf<String, MutableSet<String>>()
+        val displayName = mutableMapOf<String, String>()
+        perCourse.forEach { (courseId, pair) ->
+            pair.first.forEach { name ->
+                courseIdsByName.getOrPut(name.lowercase()) { mutableSetOf() }.add(courseId)
+                displayName.putIfAbsent(name.lowercase(), name)
+            }
+        }
+        val shared = courseIdsByName.filter { it.value.size >= 2 }.map { (key, ids) ->
+            val label = displayName[key] ?: key
+            val count = ids.sumOf { cid ->
+                perCourse[cid]?.second?.count { com.learnsyncai.domain.usecase.Concepts.cardMentions(it, label) } ?: 0
+            }
+            SharedConcept(label, ids.sorted(), count)
+        }.sortedByDescending { it.cardCount }
+        emit(shared)
+    }.flowOn(Dispatchers.IO)
+
     fun addAnnotation(courseId: String, page: Int, text: String, kind: String) {
         viewModelScope.launch {
             val t = text.trim()
@@ -1031,6 +1071,53 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = UiState.Success("Transcription importée : lancez la génération.")
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Erreur d'import : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    /** Import Anki (.apkg) : paquet → cours + flashcards, anti-doublons. */
+    fun importApkg(uri: Uri, fileName: String) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading("Import du paquet Anki...")
+            try {
+                val (deckName, imported) = withContext(Dispatchers.IO) {
+                    AnkiImporter.importApkg(getApplication(), uri)
+                }
+                if (imported.isEmpty()) {
+                    _uiState.value = UiState.Error("Aucune carte lisible dans ce paquet Anki.")
+                    return@launch
+                }
+                val courseId = UUID.randomUUID().toString()
+                val title = deckName.ifBlank { fileName.substringBeforeLast('.') }
+                    .trim().take(120).ifBlank { "Paquet Anki" }
+                courseContentStorage.saveExtractedText(
+                    courseId,
+                    imported.joinToString("\n\n") { "Q : ${it.question}\nR : ${it.answer}" }.take(200000)
+                )
+                courseRepo.insertCourse(
+                    Course(
+                        id = courseId,
+                        title = title,
+                        description = "Importé depuis Anki ($fileName, ${imported.size} cartes)",
+                        sourceFileName = fileName,
+                        sourceFileUri = uri.toString(),
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis(),
+                        progress = 0f,
+                        color = "#3B82F6",
+                        generationStatus = "NONE"
+                    )
+                )
+                val existingKeys = flashcardRepo.getFlashcardsForCourse(courseId)
+                    .firstOrNull()?.map { it.question.trim().lowercase() }
+                    ?.toMutableSet() ?: mutableSetOf()
+                val fresh = imported.filter { existingKeys.add(it.question.trim().lowercase()) }
+                flashcardRepo.insertFlashcards(
+                    fresh.map { newFlashcard(courseId, it.question, it.answer, "", sourceExcerpt = "Anki") }
+                )
+                _uiState.value = UiState.Success("Paquet Anki importé : ${fresh.size} carte(s) !")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Import Anki impossible : ${e.localizedMessage}")
             }
         }
     }

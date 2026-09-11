@@ -30,7 +30,9 @@ private val IMPORT_MIME_TYPES = arrayOf(
     "application/pdf",
     "text/plain",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    // Paquets Anki (.apkg) : routés vers l'import Anki dans le callback.
+    "application/octet-stream"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +43,8 @@ fun CoursesScreen(
     dueCards: List<Flashcard> = emptyList(),
     hasValidAiConfig: Boolean = true,
     onImportCourse: (Uri, String) -> Unit,
+    onImportApkg: (Uri, String) -> Unit = { _, _ -> },
+    onNavigateToGraph: () -> Unit = {},
     onImportFromUrl: (String) -> Unit = {},
     onImportFromTranscript: (title: String, url: String, transcript: String) -> Unit = { _, _, _ -> },
     onGenerateMaterial: (Course) -> Unit,
@@ -69,7 +73,8 @@ fun CoursesScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "document.pdf"
-            onImportCourse(uri, fileName)
+            if (fileName.lowercase().endsWith(".apkg")) onImportApkg(uri, fileName)
+            else onImportCourse(uri, fileName)
         }
     }
 
@@ -120,6 +125,13 @@ fun CoursesScreen(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
+                    IconButton(onClick = onNavigateToGraph) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Graphe des connaissances",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
@@ -154,7 +166,7 @@ fun CoursesScreen(
             ) {
                 EmptyState(
                     title = "Aucun cours pour le moment",
-                    description = "Importe tes cours au format PDF, DOCX, PPTX ou TXT (ou via une URL). LearnSync créera automatiquement tes fiches, synthèses, flashcards et QCMs d'entraînement.",
+                    description = "Importe tes cours au format PDF, DOCX, PPTX ou TXT (ou via une URL), ou un paquet Anki (.apkg). LearnSync créera automatiquement tes fiches, synthèses, flashcards et QCMs d'entraînement.",
                     icon = Icons.Default.UploadFile,
                     actionLabel = "Choisir un document",
                     onActionClick = { filePickerLauncher.launch(IMPORT_MIME_TYPES) }
