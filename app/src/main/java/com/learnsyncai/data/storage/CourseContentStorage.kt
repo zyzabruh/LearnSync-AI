@@ -1,7 +1,7 @@
 package com.learnsyncai.data.storage
 
 import android.content.Context
-import com.hermes_tools.json.gson.Gson
+import com.google.gson.Gson
 import com.learnsyncai.data.parser.OutlineEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

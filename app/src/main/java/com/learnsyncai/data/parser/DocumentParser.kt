@@ -272,13 +272,12 @@ class DocumentParser(private val context: Context) {
 
         val stringBuilder = StringBuilder()
         val maxEntries = 1000
+        var entryCount = 0
 
         ZipInputStream(inputStream).use { zipStream ->
             var entry = zipStream.nextEntry
-            while (entry != null) {
-                if (entryCount > maxEntries) {
-                    throw SecurityException("Fichier DOCX corrompu ou suspect (dépassement du nombre maximal d'entrées).")
-                }
+            while (entry != null && entryCount < maxEntries) {
+                entryCount++
                 if (entry.name == "word/document.xml") {
                     val factory = DocumentBuilderFactory.newInstance().apply {
                         isNamespaceAware = true

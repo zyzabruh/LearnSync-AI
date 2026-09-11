@@ -50,7 +50,7 @@ class OpenAiCompatibleClient(
      */
     suspend fun generateChatCompletion(
         baseUrl: String,
-        apiKey: ***
+        apiKey: String,
         modelName: String,
         prompt: String,
         systemPrompt: String? = null,
@@ -255,7 +255,7 @@ class OpenAiCompatibleClient(
             baseUrl = baseUrl,
             apiKey = apiKey,
             modelName = effectiveModel,
-            prompt = "{\"test\": true}",
+            prompt = """{"test": true}""",
             systemPrompt = "Réponds avec {\"status\": \"ok\"} en JSON.",
             temperature = 0.0
         )
