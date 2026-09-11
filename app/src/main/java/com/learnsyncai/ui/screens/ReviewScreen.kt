@@ -63,7 +63,13 @@ fun ReviewScreen(
     onUpdateCard: (Flashcard, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onPostponeCard: (Flashcard) -> Unit = {},
     onSuspendCard: (Flashcard) -> Unit = {},
-    onOpenPdfPage: (Flashcard) -> Unit = {}
+    onOpenPdfPage: (Flashcard) -> Unit = {},
+    examCount: Int = 0,
+    onStartExam: () -> Unit = {},
+    explanation: String? = null,
+    explaining: Boolean = false,
+    onExplainCard: (Flashcard, String, String) -> Unit = { _, _, _ -> },
+    onDismissExplanation: () -> Unit = {}
 ) {
     var sessionTotal by remember { mutableIntStateOf(0) }
     var totalReviewedCount by remember { mutableIntStateOf(0) }
@@ -107,6 +113,11 @@ fun ReviewScreen(
                 dueCount = dueCards.size,
                 aheadCount = aheadCount,
                 gapCount = gapCount,
+                examCount = examCount,
+                onStartExam = {
+                    resetStats()
+                    onStartExam()
+                },
                 onStart = { limit ->
                     resetStats()
                     onStartSession(limit)
@@ -159,6 +170,10 @@ fun ReviewScreen(
                 onUndo = undoLast,
                 onUpdateCard = onUpdateCard,
                 onOpenPdfPage = onOpenPdfPage,
+                explanation = explanation,
+                explaining = explaining,
+                onExplainCard = onExplainCard,
+                onDismissExplanation = onDismissExplanation,
                 onPostponeCard = onPostponeCard,
                 onSuspendCard = onSuspendCard,
                 onSpeakQuestion = onSpeakQuestion,
@@ -181,7 +196,9 @@ private fun ReviewSessionStartScreen(
     onStartAhead: () -> Unit,
     onFinishReview: () -> Unit,
     gapCount: Int = 0,
-    onStartGap: () -> Unit = {}
+    onStartGap: () -> Unit = {},
+    examCount: Int = 0,
+    onStartExam: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -287,6 +304,15 @@ private fun ReviewSessionStartScreen(
                             )
                         }
 
+                        // Session Examen : cartes dues avant la date butoir.
+                        if (examCount > 0) {
+                            LearnSyncSecondaryButton(
+                                text = "Session Examen ($examCount avant l'échéance)",
+                                onClick = onStartExam,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
                         // Révision anticipée : possible même quand rien n'est dû
                         if (aheadCount > 0) {
                             if (dueCount == 0) {
@@ -331,7 +357,11 @@ private fun ReviewSessionScreen(
     onUpdateCard: (Flashcard, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onPostponeCard: (Flashcard) -> Unit = {},
     onSuspendCard: (Flashcard) -> Unit = {},
-    onOpenPdfPage: (Flashcard) -> Unit = {}
+    onOpenPdfPage: (Flashcard) -> Unit = {},
+    explanation: String? = null,
+    explaining: Boolean = false,
+    onExplainCard: (Flashcard, String, String) -> Unit = { _, _, _ -> },
+    onDismissExplanation: () -> Unit = {}
 ) {
     // Taille totale de la session mémorisée une seule fois (résiste au requeue des "Again")
     if (queue.isNotEmpty()) {
@@ -353,8 +383,10 @@ private fun ReviewSessionScreen(
 
     // Anti double-tap : ignore une seconde note sur la même carte
     var lastRatedKey by remember { mutableStateOf<String?>(null) }
+    var showExplanation by remember { mutableStateOf(false) }
     LaunchedEffect(currentItem.key()) {
         lastRatedKey = null
+        showExplanation = false
         isAnswerRevealed = false
         typedAnswer = ""
         answerChecked = false
@@ -485,6 +517,15 @@ private fun ReviewSessionScreen(
                                     }
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text("Expliquer avec l'IA") },
+                                leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
+                                onClick = {
+                                    showCardMenu = false
+                                    showExplanation = true
+                                    onExplainCard(currentItem.card, promptText, answerText)
+                                }
+                            )
                         }
                     }
                     if (showEditDialog && currentCard != null) {
@@ -494,6 +535,30 @@ private fun ReviewSessionScreen(
                             onConfirm = { question, answer, direction, typeAns ->
                                 showEditDialog = false
                                 onUpdateCard(currentCard, question, answer, direction, typeAns)
+                            }
+                        )
+                    }
+                    if (showExplanation) {
+                        AlertDialog(
+                            onDismissRequest = { showExplanation = false; onDismissExplanation() },
+                            title = { Text("Explication IA") },
+                            text = {
+                                if (explaining && explanation == null) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        Text("Génération de l'explication…")
+                                    }
+                                } else {
+                                    Text(explanation ?: "Explication indisponible (vérifie ta connexion et ta clé IA).")
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showExplanation = false; onDismissExplanation() }) {
+                                    Text("Fermer")
+                                }
                             }
                         )
                     }

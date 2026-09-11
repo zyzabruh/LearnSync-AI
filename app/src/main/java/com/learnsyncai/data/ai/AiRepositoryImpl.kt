@@ -302,6 +302,32 @@ class AiRepositoryImpl(
         }
     }
 
+    override suspend fun explainCard(
+        question: String,
+        answer: String,
+        sourceExcerpt: String,
+        language: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val config = configProvider?.invoke() ?: AiConfig()
+            val prompt = """
+                Tu es un tuteur pédagogique. Explique brièvement (3 phrases maximum) pourquoi la réponse ci-dessous répond à la question. Pas d'introduction, pas de conclusion.
+                ${languageInstruction(language)}
+
+                QUESTION : ${question.trim().take(500)}
+
+                RÉPONSE ATTENDUE : ${answer.trim().take(800)}
+                ${if (sourceExcerpt.isNotBlank()) "CONTEXTE DU COURS : ${sourceExcerpt.trim().take(1000)}" else ""}
+            """.trimIndent()
+            val explanation = executeWithRetry(maxAttempts = 2) {
+                chatCompletion(config, prompt, temperature = 0.3, useJsonFormat = false)
+            }
+            Result.success(explanation.trim())
+        } catch (t: Throwable) {
+            Result.failure(mapUserFacingException(t))
+        }
+    }
+
     /**
      * Contexte pertinent pour le tuteur : découpe le cours en passages, score
      * chacun par recouvrement de mots-clés avec la question et conserve les

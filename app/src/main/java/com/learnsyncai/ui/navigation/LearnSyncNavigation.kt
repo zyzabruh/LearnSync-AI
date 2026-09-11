@@ -333,6 +333,16 @@ fun LearnSyncNavigation(
                                 val gapCount = remember(dueFlashcards, reviewLogs) {
                                     reviewViewModel.gapCount(dueFlashcards, reviewLogs)
                                 }
+                                val explanation by reviewViewModel.explanation.collectAsState()
+                                val explaining by reviewViewModel.explaining.collectAsState()
+                                val examByCourse = remember(courses) { courses.associate { it.id to it.examDate } }
+                                val examCards = remember(allFlashcards, examByCourse) {
+                                    val now = System.currentTimeMillis()
+                                    allFlashcards.filter { c ->
+                                        val ex = examByCourse[c.courseId] ?: 0L
+                                        ex > now && !c.suspended && c.dueDate <= ex
+                                    }.sortedBy { it.dueDate }
+                                }
 
                                 ReviewScreen(
                                     dueCards = dueFlashcards,
@@ -345,6 +355,12 @@ fun LearnSyncNavigation(
                                     onStartAheadSession = { reviewViewModel.startReviewSession(aheadCards, null) },
                                     onStartGapSession = { reviewViewModel.startGapSession(dueFlashcards, reviewLogs) },
                                     gapCount = gapCount,
+                                    examCount = examCards.size,
+                                    onStartExam = { reviewViewModel.startExamSession(examCards) },
+                                    explanation = explanation,
+                                    explaining = explaining,
+                                    onExplainCard = { card, q, a -> reviewViewModel.explainCard(card, q, a) },
+                                    onDismissExplanation = { reviewViewModel.clearExplanation() },
                                     onEndSession = { reviewViewModel.endReviewSession() },
                                     onFinishReview = { navController.navigate(Screen.Home.route) },
                                     canUndo = canUndo,
@@ -380,6 +396,14 @@ fun LearnSyncNavigation(
                                 val courseGapCount = remember(courseDueFlashcards, reviewLogs) {
                                     reviewViewModel.gapCount(courseDueFlashcards, reviewLogs)
                                 }
+                                val courseExplanation by reviewViewModel.explanation.collectAsState()
+                                val courseExplaining by reviewViewModel.explaining.collectAsState()
+                                val courseExamCards = remember(courseId, allFlashcards, course?.examDate) {
+                                    reviewViewModel.examEligible(
+                                        allFlashcards.filter { it.courseId == courseId },
+                                        course?.examDate ?: 0L
+                                    )
+                                }
 
                                 ReviewScreen(
                                     dueCards = courseDueFlashcards,
@@ -392,6 +416,12 @@ fun LearnSyncNavigation(
                                     onStartAheadSession = { reviewViewModel.startReviewSession(courseAheadCards, null) },
                                     onStartGapSession = { reviewViewModel.startGapSession(courseDueFlashcards, reviewLogs) },
                                     gapCount = courseGapCount,
+                                    examCount = courseExamCards.size,
+                                    onStartExam = { reviewViewModel.startExamSession(courseExamCards) },
+                                    explanation = courseExplanation,
+                                    explaining = courseExplaining,
+                                    onExplainCard = { card, q, a -> reviewViewModel.explainCard(card, q, a) },
+                                    onDismissExplanation = { reviewViewModel.clearExplanation() },
                                     onEndSession = { reviewViewModel.endReviewSession() },
                                     onFinishReview = { navController.popBackStack() },
                                     canUndo = canUndoCourse,

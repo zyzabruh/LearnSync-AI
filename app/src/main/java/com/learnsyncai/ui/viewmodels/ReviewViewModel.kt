@@ -33,12 +33,20 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     private val flashcardRepo = container.flashcardRepository
     private val reviewRepo = container.reviewRepository
     private val prefsRepo = container.preferencesRepository
+    private val aiRepo = container.aiRepository
 
     /** Lecture vocale possédée par ce ViewModel (moteur initialisé paresseusement). */
     private val ttsController by lazy { TtsController(getApplication()) }
 
     /** Dernière carte dont la question a été lue automatiquement (anti-doublon). */
     private var lastAutoSpokenCardId: String? = null
+
+    /** Explication IA de la carte courante (null = aucune demandée). */
+    private val _explanation = MutableStateFlow<String?>(null)
+    val explanation: StateFlow<String?> = _explanation.asStateFlow()
+    private val _explaining = MutableStateFlow(false)
+    val explaining: StateFlow<Boolean> = _explaining.asStateFlow()
+    private var lastExplainedCardId: String? = null
 
     /**
      * File de la session de révision en cours : null = aucune session active
@@ -87,6 +95,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     /** Démarre une session mélangée sur les cartes fournies (limit = 20, 30... ou null = tout). */
     fun startReviewSession(cards: List<Flashcard>, limit: Int? = null, shuffle: Boolean = true) {
         _lastRating.value = null
+        _explanation.value = null
         val expanded = ReviewQueue.expand(cards, shuffle)
         _reviewQueue.value = if (limit != null) expanded.take(limit) else expanded
 
@@ -121,6 +130,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
      * dans une seule transaction Room, puis rafraîchissement du widget.
      */
     fun rateCurrentCard(item: ReviewItem, rating: Int, responseTimeMs: Long) {
+        _explanation.value = null
         val card = item.card
         val sessionId = currentSessionId
         // Calcul pur synchrone : la carte précédente + le log sont connus
@@ -229,6 +239,69 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
         return cards.count { card ->
             card.lapses >= 2 || lastRatingByCard[card.id] == SpacedRepetition.RATING_AGAIN
         }
+    }
+
+    /**
+     * Cartes éligibles à une session « Examen » : non suspendues et dues
+     * avant la date butoir, triées par échéance croissante (vide sans date future).
+     */
+    fun examEligible(cards: List<Flashcard>, examDate: Long): List<Flashcard> {
+        if (examDate <= System.currentTimeMillis()) return emptyList()
+        return cards.filter { !it.suspended && it.dueDate <= examDate }.sortedBy { it.dueDate }
+    }
+
+    /** Session « Examen » : la liste éligible, sans mélange (urgent d'abord). */
+    fun startExamSession(cards: List<Flashcard>, limit: Int = 30) {
+        val ranked = cards.sortedBy { it.dueDate }
+        if (ranked.isEmpty()) return
+        _lastRating.value = null
+        _explanation.value = null
+        _reviewQueue.value = ReviewQueue.expand(ranked.take(limit.coerceAtLeast(1)), shuffle = false)
+        val session = ReviewSession(
+            id = UUID.randomUUID().toString(),
+            courseId = ranked.map { it.courseId }.distinct().singleOrNull(),
+            startedAt = System.currentTimeMillis(),
+            endedAt = null,
+            cardsReviewed = 0
+        )
+        currentSessionId = session.id
+        viewModelScope.launch {
+            runCatching { reviewRepo.insertSession(session) }
+        }
+    }
+
+    /**
+     * Explication IA de la carte (style RemNote) : affichée puis persistée
+     * sur la carte (file + base). Appels redondants ignorés.
+     */
+    fun explainCard(card: Flashcard, question: String, answer: String) {
+        if (_explaining.value && lastExplainedCardId == card.id) return
+        if (_explanation.value != null && lastExplainedCardId == card.id) return
+        lastExplainedCardId = card.id
+        _explanation.value = null
+        viewModelScope.launch {
+            _explaining.value = true
+            try {
+                aiRepo.explainCard(question, answer, card.sourceExcerpt).onSuccess { text ->
+                    _explanation.value = text
+                    runCatching { flashcardRepo.updateFlashcard(card.copy(explanation = text)) }
+                    refreshQueueExplanation(card.id, text)
+                }.onFailure {
+                    _explanation.value = null
+                }
+            } finally {
+                _explaining.value = false
+            }
+        }
+    }
+
+    fun clearExplanation() {
+        _explanation.value = null
+    }
+
+    /** Met à jour l'explication d'une carte dans la file après génération IA. */
+    fun refreshQueueExplanation(cardId: String, explanation: String) {
+        _reviewQueue.update { queue -> queue?.map { if (it.card.id == cardId) it.copy(card = it.card.copy(explanation = explanation)) else it } }
     }
 
     /** Met à jour le texte d'une carte dans la file après correction. */

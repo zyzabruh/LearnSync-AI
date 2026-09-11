@@ -148,6 +148,17 @@ interface AiRepository {
         question: String,
         language: String = "auto"
     ): Result<String>
+
+    /**
+     * Explication courte d'une carte (style RemNote : explication IA sur
+     * chaque carte) : pourquoi la réponse répond à la question.
+     */
+    suspend fun explainCard(
+        question: String,
+        answer: String,
+        sourceExcerpt: String = "",
+        language: String = "auto"
+    ): Result<String>
 }
 
 interface PreferencesRepository {
