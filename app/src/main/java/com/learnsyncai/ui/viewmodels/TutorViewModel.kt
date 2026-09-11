@@ -41,6 +41,11 @@ class TutorViewModel(application: Application) : AndroidViewModel(application) {
     fun send(courseId: String, question: String) {
         val q = question.trim()
         if (q.isEmpty() || _sending.value) return
+        // Historique capturé AVANT d'ajouter la question : sinon elle serait
+        // dupliquée dans le prompt (historique « Élève : » + « QUESTION DE L'ÉLÈVE »).
+        val priorHistory = _messages.value
+            .takeLast(6)
+            .map { it.role to it.text }
         _sending.value = true
         _error.value = null
         _messages.update { it + TutorMessage(TutorMessage.USER, q) }
@@ -48,9 +53,7 @@ class TutorViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val course = courseRepo.getCourseById(courseId)
                 val context = courseContentStorage.readExtractedText(courseId)
-                val history = _messages.value
-                    .takeLast(7)
-                    .map { it.role to it.text }
+                val history = priorHistory
                 val answer = aiRepo.tutorAsk(
                     courseTitle = course?.title ?: "Cours",
                     courseContext = context,

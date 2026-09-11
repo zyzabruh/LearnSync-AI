@@ -268,7 +268,9 @@ class AiRepositoryImpl(
         language: String
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val context = courseContext.trim().take(12000)
+            // Contexte centré sur les passages pertinents pour la question
+            // (sinon le tuteur ne voyait que le début du document).
+            val context = selectRelevantContext(courseContext, question, maxChars = 20000)
             if (context.isEmpty()) {
                 return@withContext Result.failure(
                     IllegalStateException("Aucun contenu de cours disponible pour le tuteur.")
@@ -292,12 +294,70 @@ class AiRepositoryImpl(
             val config = configProvider?.invoke() ?: AiConfig()
             android.util.Log.d("AiRepo", "tutorAsk config: baseUrl=${config.baseUrl} apiKey=${if (config.apiKey.isNotBlank()) "***" else "EMPTY"} model=${config.modelName} isLocal=${config.isLocal}")
             val answer = executeWithRetry(maxAttempts = 2) {
-                chatCompletion(config, prompt, temperature = 0.5, useJsonFormat = false)
+                chatCompletion(config, prompt, temperature = 0.3, useJsonFormat = false)
             }
             Result.success(answer.trim())
         } catch (t: Throwable) {
             Result.failure(mapUserFacingException(t))
         }
+    }
+
+    /**
+     * Contexte pertinent pour le tuteur : découpe le cours en passages, score
+     * chacun par recouvrement de mots-clés avec la question et conserve les
+     * meilleurs jusqu'au budget (ordre d'origine préservé). Repli : début du document.
+     */
+    internal fun selectRelevantContext(courseContext: String, question: String, maxChars: Int = 20000): String {
+        val text = courseContext.trim()
+        if (text.length <= maxChars) return text
+        val keywords = extractKeywords(question)
+        if (keywords.isEmpty()) return text.take(maxChars)
+        val scored = splitIntoPassages(text, targetSize = 2000).mapIndexedNotNull { index, passage ->
+            val hits = keywords.count { it in passage.lowercase() }
+            if (hits > 0) Triple(index, hits, passage) else null
+        }.sortedWith(compareByDescending<Triple<Int, Int, String>> { it.second }.thenBy { it.first })
+        if (scored.isEmpty()) return text.take(maxChars)
+        val picked = mutableListOf<Triple<Int, Int, String>>()
+        var used = 0
+        for (entry in scored) {
+            if (used >= maxChars) break
+            picked.add(entry)
+            used += entry.third.length
+        }
+        return picked.sortedBy { it.first }.joinToString("\n\n") { it.third }.take(maxChars)
+    }
+
+    private fun splitIntoPassages(text: String, targetSize: Int): List<String> {
+        val paragraphs = text.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
+        val passages = mutableListOf<String>()
+        val current = StringBuilder()
+        for (p in paragraphs) {
+            if (current.length + p.length + 2 > targetSize && current.isNotEmpty()) {
+                passages.add(current.toString())
+                current.clear()
+            }
+            if (current.isNotEmpty()) current.append("\n\n")
+            current.append(p)
+        }
+        if (current.isNotEmpty()) passages.add(current.toString())
+        return passages.ifEmpty { listOf(text) }
+    }
+
+    private fun extractKeywords(question: String): Set<String> {
+        return question.lowercase()
+            .split(Regex("[^a-zàâäéèêëîïôöùûüçœæ0-9]+"))
+            .filter { it.length >= 4 && it !in TUTOR_STOPWORDS }
+            .toSet()
+    }
+
+    private companion object {
+        private val TUTOR_STOPWORDS = setOf(
+            "avec", "avoir", "cette", "comme", "comment", "dans", "donne", "dont",
+            "elle", "entre", "explique", "expliquer", "faire", "leurs", "mais",
+            "nous", "pour", "pourquoi", "quand", "quelle", "quelles", "quels",
+            "sont", "tout", "toute", "toutes", "vous", "quoi", "that", "this",
+            "with", "what", "when", "which", "votre", "notre", "définition"
+        )
     }
 
     /** Consigne de langue de sortie pour les prompts : "auto" suit la langue du document. */

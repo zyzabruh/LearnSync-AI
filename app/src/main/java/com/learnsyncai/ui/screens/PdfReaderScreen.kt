@@ -97,7 +97,8 @@ fun PdfReaderScreen(
         try {
             val renderer = rendererState?.second ?: return@remember null
             renderer.openPage(safeIndex).use { page ->
-                val scale = 4f
+                // Échelle 2.5x : net sur écran haute densité sans bitmap démesuré.
+                val scale = 2.5f
                 val bmp = Bitmap.createBitmap(
                     (page.width * scale).toInt(),
                     (page.height * scale).toInt(),
@@ -201,10 +202,9 @@ fun PdfReaderScreen(
                         Image(
                             bitmap = bitmap.asImageBitmap(),
                             contentDescription = "Page ${safeIndex + 1}",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 512.dp)
+                            // Fit : la page entière reste visible (Crop rognait haut/bas).
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     } else {
                         Text(
