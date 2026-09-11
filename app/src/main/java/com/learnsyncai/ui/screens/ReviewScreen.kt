@@ -661,7 +661,7 @@ private fun ReviewSessionScreen(
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                            imageVector = Icons.Filled.VolumeUp,
                             contentDescription = "Lire la question à voix haute",
                             tint = IndigoPrimary,
                             modifier = Modifier.size(20.dp)
@@ -709,7 +709,7 @@ private fun ReviewSessionScreen(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                    imageVector = Icons.Filled.VolumeUp,
                                     contentDescription = "Lire la réponse à voix haute",
                                     tint = EmeraldDark,
                                     modifier = Modifier.size(20.dp)

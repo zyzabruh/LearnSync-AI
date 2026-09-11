@@ -19,6 +19,7 @@ data class CourseEntity(
     val generationStatus: String, // "NONE", "GENERATING", "COMPLETED", "ERROR"
     val tag: String = "",
     val folder: String = "",
+    val examDate: Long = 0L,
     val language: String = "auto"
 )
 
@@ -75,7 +76,12 @@ data class FlashcardEntity(
     val cardType: String = "basic",
     val direction: String = "forward",
     val typeAnswer: Boolean = false,
-    val sourceExcerpt: String = ""
+    val sourceExcerpt: String = "",
+    val imagePath: String = "",
+    val maskX: Float = 0f,
+    val maskY: Float = 0f,
+    val maskW: Float = 0f,
+    val maskH: Float = 0f
 )
 
 @Entity(

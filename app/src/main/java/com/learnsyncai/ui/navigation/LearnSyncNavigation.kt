@@ -25,6 +25,7 @@ import com.learnsyncai.ui.viewmodels.ProfileViewModel
 import com.learnsyncai.ui.viewmodels.ReviewViewModel
 import com.learnsyncai.ui.viewmodels.SearchViewModel
 import com.learnsyncai.ui.viewmodels.SyncViewModel
+import com.learnsyncai.ui.viewmodels.TutorViewModel
 import com.learnsyncai.ui.viewmodels.UiState
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
