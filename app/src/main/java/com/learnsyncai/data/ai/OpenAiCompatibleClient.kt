@@ -112,7 +112,9 @@ class OpenAiCompatibleClient(
             }
         }
         if (success != null) return@withContext success
-        throw IllegalStateException("Échec de la requête IA : ${lastError?.message ?: "aucune erreur"}, cause=${lastError?.cause?.message}", lastError)
+        // Propage l'erreur d'origine (ex. IOException avec le message extrait)
+        // plutôt qu'une enveloppe : le contrat historique des appelants et des tests.
+        throw lastError ?: IllegalStateException("Échec de la requête IA sans erreur capturée")
     }
 
     private class MaxTokensExceededException(message: String) : IOException(message)
