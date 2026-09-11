@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.learnsyncai.data.parser.AnkiExporter
 import com.learnsyncai.data.parser.AnkiImporter
 import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.parser.OutlineEntry

@@ -811,7 +811,6 @@ fun PdfReaderScreen(
                         }
                     }
                 }
-                }
             } else {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
