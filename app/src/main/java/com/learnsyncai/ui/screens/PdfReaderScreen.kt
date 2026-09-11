@@ -825,6 +825,7 @@ fun PdfReaderScreen(
                     )
                 }
             }
+            }
             val selectedText = remember(wordSel, pageWords) {
                 wordSel?.let { r ->
                     if (pageWords.isEmpty()) ""
