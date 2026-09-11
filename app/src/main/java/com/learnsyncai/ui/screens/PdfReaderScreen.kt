@@ -7,6 +7,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -15,6 +16,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -40,23 +43,54 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.data.parser.OutlineEntry
+import com.learnsyncai.data.parser.PageLink
 import com.learnsyncai.data.parser.PageWord
 import com.learnsyncai.domain.model.InkStroke
 import com.learnsyncai.domain.model.PdfAnnotation
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
  * Lecteur PDF intégré : pages rendues localement, note par page et
  * passages « à retenir » convertibles en cartes IA.
  */
+/** Bitmap d'une page, mis en cache par page (pager à défilement). */
+@Composable
+private fun rememberPageBitmap(
+    rendererState: Triple<ParcelFileDescriptor, PdfRenderer, Int>?,
+    page: Int
+): Bitmap? {
+    return remember(rendererState, page) {
+        try {
+            val renderer = rendererState?.second ?: return@remember null
+            if (page < 0 || page >= renderer.pageCount) return@remember null
+            renderer.openPage(page).use { pg ->
+                val longestSide = maxOf(pg.width, pg.height).coerceAtLeast(1)
+                val scale = minOf(2.5f, 2048f / longestSide.toFloat())
+                val bmp = Bitmap.createBitmap(
+                    (pg.width * scale).toInt(),
+                    (pg.height * scale).toInt(),
+                    Bitmap.Config.ARGB_8888
+                )
+                pg.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                bmp
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PdfReaderScreen(
@@ -65,6 +99,7 @@ fun PdfReaderScreen(
     initialPage: Int = 0,
     onLoadPageText: (suspend (Int) -> String)? = null,
     onLoadPageWords: (suspend (page: Int) -> List<PageWord>)? = null,
+    onLoadPageLinks: (suspend (page: Int) -> List<PageLink>)? = null,
     outline: List<OutlineEntry> = emptyList(),
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
@@ -78,7 +113,6 @@ fun PdfReaderScreen(
     onCardsFromAnnotation: (PdfAnnotation) -> Unit,
     onBackClick: () -> Unit
 ) {
-    var pageIndex by remember(initialPage) { mutableIntStateOf(initialPage.coerceAtLeast(0)) }
     var noteText by remember { mutableStateOf("") }
     var noteKind by remember { mutableStateOf(PdfAnnotation.KIND_NOTE) }
     var textMode by remember { mutableStateOf(false) }
@@ -98,6 +132,7 @@ fun PdfReaderScreen(
     }
     var boxPx by remember { mutableStateOf(IntSize.Zero) }
     var pageWords by remember { mutableStateOf(emptyList<PageWord>()) }
+    var pageLinks by remember { mutableStateOf(emptyList<PageLink>()) }
     var showQuickCard by remember { mutableStateOf(false) }
     var quickQuestion by remember { mutableStateOf("") }
     var quickAnswer by remember { mutableStateOf("") }
@@ -148,35 +183,17 @@ fun PdfReaderScreen(
     }
 
     val pageCount = rendererState?.third ?: 0
-    val safeIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-    val textIndex = pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    val pagerState = rememberPagerState(initialPage = initialPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))) { pageCount }
+    val scope = rememberCoroutineScope()
+    val safeIndex = if (pageCount > 0) pagerState.currentPage.coerceIn(0, pageCount - 1) else 0
+    val textIndex = safeIndex
     LaunchedEffect(pdfFile, safeIndex) {
         zoomScale = 1f
         zoomPan = Offset.Zero
         wordSel = null
         pageWords = try { onLoadPageWords?.invoke(safeIndex) } catch (_: Exception) { null } ?: emptyList()
+        pageLinks = try { onLoadPageLinks?.invoke(safeIndex) } catch (_: Exception) { null } ?: emptyList()
     }
-    val bitmap = remember(rendererState, safeIndex) {
-        try {
-            val renderer = rendererState?.second ?: return@remember null
-            renderer.openPage(safeIndex).use { page ->
-                // Échelle adaptative : nette sur écran dense, mais plafonnée pour
-                // les scans très haute résolution (sinon bitmap géant = OOM).
-                val longestSide = maxOf(page.width, page.height).coerceAtLeast(1)
-                val scale = minOf(2.5f, 2048f / longestSide.toFloat())
-                val bmp = Bitmap.createBitmap(
-                    (page.width * scale).toInt(),
-                    (page.height * scale).toInt(),
-                    Bitmap.Config.ARGB_8888
-                )
-                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                bmp
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     /** Tracé d'encre (points normalisés 0..1) mis à l'échelle du Canvas. */
     fun DrawScope.drawInkStroke(points: List<Float>, color: Color, canvasSize: Size) {
         if (points.size < 4) return
@@ -219,7 +236,7 @@ fun PdfReaderScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { pageIndex = (safeIndex - 1).coerceAtLeast(0) }, enabled = safeIndex > 0) {
+                    IconButton(onClick = { scope.launch { pagerState.animateScrollToPage((safeIndex - 1).coerceAtLeast(0)) } }, enabled = safeIndex > 0) {
                         Icon(Icons.Default.ChevronLeft, contentDescription = "Page précédente")
                     }
                     Text(
@@ -227,7 +244,7 @@ fun PdfReaderScreen(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
-                    IconButton(onClick = { pageIndex = (safeIndex + 1).coerceAtMost(pageCount - 1) }, enabled = safeIndex < pageCount - 1) {
+                    IconButton(onClick = { scope.launch { pagerState.animateScrollToPage((safeIndex + 1).coerceAtMost(pageCount - 1)) } }, enabled = safeIndex < pageCount - 1) {
                         Icon(Icons.Default.ChevronRight, contentDescription = "Page suivante")
                     }
                 }
@@ -325,7 +342,7 @@ fun PdfReaderScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                IconButton(onClick = { pageIndex = entry.pageIndex }, enabled = entry.pageIndex >= 0) {
+                                IconButton(onClick = { scope.launch { pagerState.animateScrollToPage(entry.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))) } }, enabled = entry.pageIndex >= 0) {
                                     Icon(Icons.Default.OpenInNew, contentDescription = "Aller à la page", modifier = Modifier.size(18.dp))
                                 }
                             }
@@ -465,14 +482,21 @@ fun PdfReaderScreen(
                             }
                         }
                     }
-                } else {
-                    Card(
+                } else if (pageCount > 0) {
+                    HorizontalPager(
+                        state = pagerState,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = LearnSyncShapes.medium,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    ) {
-                        if (bitmap != null) {
+                        userScrollEnabled = zoomScale <= 1f && !drawMode,
+                        beyondViewportPageCount = 1
+                    ) { page ->
+                        val pageBitmap = rememberPageBitmap(rendererState, page)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = LearnSyncShapes.medium,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            if (pageBitmap != null) {
                             var highlightRects by remember(pdfFile, safeIndex) {
                                 mutableStateOf<List<android.graphics.RectF>>(emptyList())
                             }
@@ -486,7 +510,7 @@ fun PdfReaderScreen(
                                     null
                                 } ?: emptyList()
                             }
-                            val aspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+                            val aspect = pageBitmap.width.toFloat() / pageBitmap.height.toFloat()
                             Box(
                                 modifier = Modifier.fillMaxWidth()
                                     .aspectRatio(if (aspect.isFinite() && aspect > 0f) aspect else 1f)
@@ -519,7 +543,7 @@ fun PdfReaderScreen(
                                     }
                             ) {
                                 Image(
-                                    bitmap = bitmap.asImageBitmap(),
+                                    bitmap = pageBitmap.asImageBitmap(),
                                     contentDescription = "Page ${safeIndex + 1}",
                                     // FillBounds dans une boîte au ratio exact : pas de
                                     // distorsion, et correspondance exacte pour l'overlay.
@@ -578,6 +602,33 @@ fun PdfReaderScreen(
                                         }
                                     }
                                 }
+                                if (pageLinks.isNotEmpty() && !drawMode) {
+                                    Box(modifier = Modifier.fillMaxSize()) {
+                                        val density = LocalDensity.current
+                                        for (l in pageLinks) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .offset {
+                                                        IntOffset(
+                                                            (l.left * boxPx.width).toInt(),
+                                                            (l.top * boxPx.height).toInt()
+                                                        )
+                                                    }
+                                                    .size(
+                                                        width = with(density) { ((l.right - l.left) * boxPx.width).toDp() },
+                                                        height = with(density) { ((l.bottom - l.top) * boxPx.height).toDp() }
+                                                    )
+                                                    .clickable {
+                                                        scope.launch {
+                                                            pagerState.animateScrollToPage(
+                                                                l.targetPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                                                            )
+                                                        }
+                                                    }
+                                            )
+                                        }
+                                    }
+                                }
                                 if (drawMode) {
                                     Canvas(
                                         modifier = Modifier.fillMaxSize().pointerInput(safeIndex) {
@@ -624,6 +675,20 @@ fun PdfReaderScreen(
                             )
                         }
                     }
+                }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = LearnSyncShapes.medium,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Text(
+                        "Page illisible.",
+                        modifier = Modifier.padding(LearnSyncSpacing.large),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
             val selectedText = remember(wordSel, pageWords) {

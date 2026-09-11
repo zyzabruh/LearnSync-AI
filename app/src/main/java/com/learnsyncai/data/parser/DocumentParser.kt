@@ -7,6 +7,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionGoTo
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDDestination
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDNamedDestination
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageDestination
@@ -257,6 +258,55 @@ class DocumentParser(private val context: Context) {
                 if (pageIndex < 0 || pageIndex >= document.numberOfPages) return emptyList()
                 val data = loadPageChars(document, pageIndex) ?: return emptyList()
                 queries.take(3).flatMap { q -> matchTextSpan(data.chars, q, data.pageW, data.pageH).take(8) }.take(24)
+            }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            emptyList()
+        }
+    }
+
+    /** Lien interne d'une page (annotation Link → page cible), boîte normalisée 0..1. */
+    data class PageLink(val targetPage: Int, val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+    fun getPageLinks(file: java.io.File, pageIndex: Int): List<PageLink> {
+        if (!file.exists()) return emptyList()
+        return try {
+            PDDocument.load(file).use { document ->
+                if (pageIndex < 0 || pageIndex >= document.numberOfPages) return emptyList()
+                val page = document.getPage(pageIndex)
+                val pageW = page.cropBox.width
+                val pageH = page.cropBox.height
+                if (pageW <= 0f || pageH <= 0f) return emptyList()
+                val originX = page.cropBox.lowerLeftX
+                val originY = page.cropBox.lowerLeftY
+                val links = mutableListOf<PageLink>()
+                for (ann in page.annotations) {
+                    val link = ann as? PDAnnotationLink ?: continue
+                    val destPage = try {
+                        val explicit = link.destination
+                        if (explicit != null) {
+                            resolveDestinationToPage(explicit, document)
+                        } else {
+                            val action = try { link.action } catch (_: Exception) { null }
+                            if (action is PDActionGoTo) resolveDestinationToPage(action.destination, document)
+                            else null
+                        }
+                    } catch (_: Exception) {
+                        null
+                    } ?: continue
+                    val rect = link.rectangle ?: continue
+                    links.add(
+                        PageLink(
+                            targetPage = destPage,
+                            left = ((rect.lowerLeftX - originX) / pageW).coerceIn(0f, 1f),
+                            top = (1f - (rect.upperRightY - originY) / pageH).coerceIn(0f, 1f),
+                            right = ((rect.upperRightX - originX) / pageW).coerceIn(0f, 1f),
+                            bottom = (1f - (rect.lowerLeftY - originY) / pageH).coerceIn(0f, 1f)
+                        )
+                    )
+                    if (links.size >= 40) break
+                }
+                links
             }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t

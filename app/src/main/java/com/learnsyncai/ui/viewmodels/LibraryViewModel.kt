@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.learnsyncai.data.parser.AnkiImporter
 import com.learnsyncai.data.parser.DocumentParser
 import com.learnsyncai.data.parser.OutlineEntry
+import com.learnsyncai.data.parser.PageLink
 import com.learnsyncai.data.parser.PageWord
 import com.learnsyncai.data.parser.ScannedPdfException
 import com.learnsyncai.data.sync.CloudSyncWorker
@@ -1032,8 +1033,28 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Mots d'une page mémorisés en session (sélection au doigt). */
-    private val pageWordsCache = mutableMapOf<String, List<PageWord>>()
+    private val pageWordsCache = mutableMapOf<String, List<PageWord>>
 
+    /** Liens internes d'une page mémorisés en session (annotations Link). */
+    private val pageLinksCache = mutableMapOf<String, List<PageLink>>()
+
+    suspend fun getPageLinks(courseId: String, pageIndex: Int): List<PageLink> = withContext(Dispatchers.IO) {
+        val key = "$courseId#$pageIndex"
+        pageLinksCache[key] ?: run {
+            val file = courseContentStorage.getOriginalFile(courseId)
+            val links = if (file != null && file.exists() && file.extension.lowercase() == "pdf") {
+                try {
+                    documentParser.getPageLinks(file, pageIndex)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } else {
+                emptyList()
+            }
+            pageLinksCache[key] = links
+            links
+        }
+    }
     suspend fun getPageWords(courseId: String, pageIndex: Int): List<PageWord> = withContext(Dispatchers.IO) {
         val key = "$courseId#$pageIndex"
         pageWordsCache[key] ?: run {
