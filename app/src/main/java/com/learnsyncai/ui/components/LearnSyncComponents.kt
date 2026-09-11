@@ -463,6 +463,21 @@ fun CourseCard(
                         )
                     }
                 }
+                if (course.examDate > System.currentTimeMillis()) {
+                    val daysLeft = ((course.examDate - System.currentTimeMillis()) / 86_400_000L).toInt()
+                    Surface(
+                        color = RoseError.copy(alpha = 0.12f),
+                        shape = LearnSyncShapes.pill
+                    ) {
+                        Text(
+                            text = if (daysLeft == 0) "Examen aujourd'hui !" else "Examen J-$daysLeft",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = RoseError,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
             }
 
             // Statut de génération en direct

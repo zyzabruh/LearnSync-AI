@@ -223,6 +223,7 @@ fun LearnSyncNavigation(
                                     onDeleteCourse = { courseId -> libraryViewModel.deleteCourse(courseId) },
                                     onUpdateCourseTags = { courseId, tags -> libraryViewModel.updateCourseTags(courseId, tags) },
                                     onUpdateCourseFolder = { courseId, folder -> libraryViewModel.updateCourseFolder(courseId, folder) },
+                                    onUpdateExamDate = { courseId, date -> libraryViewModel.updateExamDate(courseId, date) },
                                     onNavigateToCalendar = { navController.navigate(Screen.Calendar.route) },
                                     onNavigateToSearch = { navController.navigate("search") },
                                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
@@ -288,6 +289,7 @@ fun LearnSyncNavigation(
                                         onOpenDocument = { libraryViewModel.openCourseDocument(course.id) },
                                         onNavigateToTutor = { navController.navigate("course_tutor/${course.id}") },
                                         onNavigateToLearn = { navController.navigate("course_learn/${course.id}") },
+                                        onNavigateToExam = { navController.navigate("course_exam/${course.id}") },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onQuickAddFlashcard = { q, a, excerpt -> libraryViewModel.quickAddFlashcard(course.id, q, a, excerpt) },
@@ -494,6 +496,21 @@ fun LearnSyncNavigation(
                                         reviewViewModel.startReviewSession(conceptCards, null)
                                         navController.navigate(Screen.Review.route)
                                     }
+                                )
+                            }
+
+                            composable(
+                                route = "course_exam/{courseId}",
+                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                            ) { backStackEntry ->
+                                val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val course = courses.find { it.id == courseId }
+                                val examQuiz by libraryViewModel.getQuizQuestionsForCourse(courseId).collectAsState(initial = emptyList())
+                                CourseExamScreen(
+                                    courseTitle = course?.title ?: "Cours",
+                                    quizQuestions = examQuiz,
+                                    onFinishExam = { _, _ -> libraryViewModel.addXp(50) },
+                                    onQuit = { navController.popBackStack() }
                                 )
                             }
 

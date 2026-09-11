@@ -47,6 +47,7 @@ fun CoursesScreen(
     onDeleteCourse: (String) -> Unit,
     onUpdateCourseTags: (String, List<String>) -> Unit = { _, _ -> },
     onUpdateCourseFolder: (String, String) -> Unit = { _, _ -> },
+    onUpdateExamDate: (String, Long) -> Unit = { _, _ -> },
     onNavigateToCalendar: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
@@ -287,16 +288,17 @@ fun CoursesScreen(
                 }
             }
 
-            // Dialogue Organiser : étiquettes + dossier
+            // Dialogue Organiser : étiquettes + dossier + examen
             if (courseToOrganize != null) {
                 OrganizeCourseDialog(
                     course = courseToOrganize!!,
                     allTags = availableTags,
                     allFolders = availableFolders,
                     onDismiss = { courseToOrganize = null },
-                    onConfirm = { tags, folder ->
+                    onConfirm = { tags, folder, examDate ->
                         onUpdateCourseTags(courseToOrganize!!.id, tags)
                         onUpdateCourseFolder(courseToOrganize!!.id, folder)
+                        onUpdateExamDate(courseToOrganize!!.id, examDate)
                         courseToOrganize = null
                     }
                 )
@@ -502,11 +504,26 @@ private fun OrganizeCourseDialog(
     allTags: List<String>,
     allFolders: List<String>,
     onDismiss: () -> Unit,
-    onConfirm: (tags: List<String>, folder: String) -> Unit
+    onConfirm: (tags: List<String>, folder: String, examDate: Long) -> Unit
 ) {
     var tagsText by remember(course.id) { mutableStateOf(course.tags().joinToString(", ")) }
     var folderText by remember(course.id) { mutableStateOf(course.folder) }
+    var examText by remember(course.id) {
+        mutableStateOf(
+            if (course.examDate > 0L) {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                sdf.format(java.util.Date(course.examDate))
+            } else ""
+        )
+    }
     val selectedTags = remember(tagsText) { CourseTags.parse(tagsText) }
+    val parsedExamDate = remember(examText) {
+        if (examText.isBlank()) 0L else try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            sdf.isLenient = false
+            sdf.parse(examText.trim())?.time ?: -1L
+        } catch (_: Exception) { -1L }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -542,6 +559,17 @@ private fun OrganizeCourseDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                OutlinedTextField(
+                    value = examText,
+                    onValueChange = { examText = it },
+                    label = { Text("Examen le (AAAA-MM-JJ, vide = aucun)") },
+                    singleLine = true,
+                    isError = examText.isNotBlank() && parsedExamDate < 0L,
+                    supportingText = {
+                        if (examText.isNotBlank() && parsedExamDate < 0L) Text("Format attendu : 2026-11-15")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
                 if (allFolders.isNotEmpty()) {
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -559,7 +587,10 @@ private fun OrganizeCourseDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(selectedTags, folderText.trim()) }) {
+            Button(
+                onClick = { onConfirm(selectedTags, folderText.trim(), if (parsedExamDate < 0L) 0L else parsedExamDate) },
+                enabled = parsedExamDate >= 0L
+            ) {
                 Text("Appliquer")
             }
         },

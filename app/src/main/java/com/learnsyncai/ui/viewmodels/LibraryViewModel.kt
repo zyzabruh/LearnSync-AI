@@ -331,6 +331,30 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Fixe la date d'examen d'un cours (0 = aucune) : pilote le compte à rebours. */
+    fun updateExamDate(courseId: String, examDate: Long) {
+        viewModelScope.launch {
+            val course = courseRepo.getCourseById(courseId) ?: return@launch
+            courseRepo.insertCourse(course.copy(examDate = examDate, updatedAt = System.currentTimeMillis()))
+            _uiState.value = if (examDate <= 0L) UiState.Success("Date d'examen retirée.")
+            else {
+                val days = ((examDate - System.currentTimeMillis()) / 86_400_000L).coerceAtLeast(0L)
+                UiState.Success("Examen dans $days jour(s).")
+            }
+        }
+    }
+
+    /** Ajoute des points d'expérience (gamification, local-only). */
+    fun addXp(amount: Int) {
+        if (amount <= 0) return
+        viewModelScope.launch {
+            try {
+                val prefs = prefsRepo.getPreferencesSync()
+                prefsRepo.updatePreferences(prefs.copy(xp = prefs.xp + amount))
+            } catch (_: Exception) { }
+        }
+    }
+
     /** Marque le cours en erreur et affiche un message clair à l'utilisateur. */
     private suspend fun markGenerationError(course: Course, message: String) {
         courseRepo.insertCourse(course.copy(generationStatus = "ERROR", updatedAt = System.currentTimeMillis()))

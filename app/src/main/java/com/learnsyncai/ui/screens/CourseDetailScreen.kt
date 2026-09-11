@@ -61,6 +61,7 @@ fun CourseDetailScreen(
     onOpenDocument: () -> Unit = {},
     onNavigateToTutor: () -> Unit = {},
     onNavigateToLearn: () -> Unit = {},
+    onNavigateToExam: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
     onGenerateFromExcerpt: (String) -> Unit = {},
@@ -203,6 +204,14 @@ fun CourseDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigateToLearn()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Examen blanc") },
+                            leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToExam()
                             }
                         )
                         DropdownMenuItem(

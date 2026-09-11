@@ -151,6 +151,7 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
             // Rafraîchit le widget (nombre de cartes dues)
             DueCardsWidgetProvider.updateAll(getApplication())
         }
+        grantReviewXp()
         _reviewQueue.update { queue ->
             queue?.let { q ->
                 val rest = if (q.isNotEmpty()) q.drop(1) else q
@@ -245,6 +246,16 @@ class ReviewViewModel(application: Application) : AndroidViewModel(application) 
     /** Lit une réponse à voix haute (bouton de l'écran de révision). */
     fun speakAnswer(text: String) {
         ttsController.speak(text, utteranceId = "answer")
+    }
+
+    /** +2 XP par carte notée (gamification, sans bloquer la notation). */
+    private fun grantReviewXp() {
+        viewModelScope.launch {
+            try {
+                val prefs = prefsRepo.getPreferencesSync()
+                prefsRepo.updatePreferences(prefs.copy(xp = prefs.xp + 2))
+            } catch (_: Exception) { }
+        }
     }
 
     override fun onCleared() {
