@@ -6,10 +6,13 @@ import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -20,16 +23,24 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.learnsyncai.data.parser.OutlineEntry
+import com.learnsyncai.domain.model.InkStroke
 import com.learnsyncai.domain.model.PdfAnnotation
 import com.learnsyncai.ui.components.*
 import com.learnsyncai.ui.theme.*
@@ -51,6 +62,10 @@ fun PdfReaderScreen(
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
     onQuickAddCard: (page: Int, question: String, answer: String) -> Unit = { _, _, _ -> },
     onLoadHighlightRects: (suspend (page: Int, text: String) -> List<android.graphics.RectF>)? = null,
+    inkVersion: Int = 0,
+    onLoadInkStrokes: (suspend () -> List<InkStroke>)? = null,
+    onSaveInkStroke: (page: Int, stroke: InkStroke) -> Unit = { _, _ -> },
+    onClearInkPage: (page: Int) -> Unit = {},
     onDeleteAnnotation: (String) -> Unit,
     onCardsFromAnnotation: (PdfAnnotation) -> Unit,
     onBackClick: () -> Unit
@@ -59,6 +74,13 @@ fun PdfReaderScreen(
     var noteText by remember { mutableStateOf("") }
     var noteKind by remember { mutableStateOf(PdfAnnotation.KIND_NOTE) }
     var textMode by remember { mutableStateOf(false) }
+    var drawMode by remember { mutableStateOf(false) }
+    var inkColor by remember { mutableLongStateOf(Color.Yellow.toArgb().toLong()) }
+    var tempInk by remember { mutableStateOf(emptyList<Offset>()) }
+    var inkStrokes by remember { mutableStateOf(emptyList<InkStroke>()) }
+    LaunchedEffect(pdfFile, inkVersion) {
+        inkStrokes = try { onLoadInkStrokes?.invoke() } catch (_: Exception) { null } ?: emptyList()
+    }
 
     if (pdfFile == null || !pdfFile.exists()) {
         Scaffold(
@@ -126,6 +148,23 @@ fun PdfReaderScreen(
         }
     }
 
+    /** Tracé d'encre (points normalisés 0..1) mis à l'échelle du Canvas. */
+    fun DrawScope.drawInkStroke(points: List<Float>, color: Color, canvasSize: Size) {
+        if (points.size < 4) return
+        val path = Path()
+        path.moveTo(points[0] * canvasSize.width, points[1] * canvasSize.height)
+        var i = 2
+        while (i + 1 < points.size) {
+            path.lineTo(points[i] * canvasSize.width, points[i + 1] * canvasSize.height)
+            i += 2
+        }
+        drawPath(
+            path,
+            color.copy(alpha = 0.55f),
+            style = Stroke(width = 12f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -171,15 +210,54 @@ fun PdfReaderScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilterChip(
-                        selected = !textMode,
-                        onClick = { textMode = false },
+                        selected = !textMode && !drawMode,
+                        onClick = { textMode = false; drawMode = false },
                         label = { Text("Page") }
                     )
                     FilterChip(
                         selected = textMode,
-                        onClick = { textMode = true },
+                        onClick = { textMode = true; drawMode = false },
                         label = { Text("Texte") }
                     )
+                    FilterChip(
+                        selected = drawMode,
+                        onClick = { drawMode = !drawMode; if (drawMode) textMode = false },
+                        label = { Text("Dessiner") }
+                    )
+                }
+            }
+            if (drawMode) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf(
+                            0xFFFFFF00L to "Jaune",
+                            0xFF4CAF50L to "Vert",
+                            0xFF2196F3L to "Bleu",
+                            0xFFF44336L to "Rouge",
+                            0xFF9C27AFL to "Violet"
+                        ).forEach { (c, label) ->
+                            FilterChip(
+                                selected = inkColor == c,
+                                onClick = { inkColor = c },
+                                label = {
+                                    Box(
+                                        modifier = Modifier.size(16.dp).clip(CircleShape)
+                                            .background(Color(c.toULong()))
+                                    )
+                                }
+                            )
+                        }
+                        IconButton(onClick = { tempInk = emptyList() }) {
+                            Icon(Icons.Default.Undo, contentDescription = "Annuler le trait")
+                        }
+                        IconButton(onClick = { onClearInkPage(safeIndex) }) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Effacer la page")
+                        }
+                    }
                 }
             }
 
@@ -399,6 +477,59 @@ fun PdfReaderScreen(
                                         }
                                     }
                                 }
+                                val pageInk = remember(inkStrokes, safeIndex) {
+                                    inkStrokes.filter { it.page == safeIndex }
+                                }
+                                if (pageInk.isNotEmpty() || tempInk.size >= 2) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        for (s in pageInk) {
+                                            drawInkStroke(s.points, Color(s.color.toULong()), size)
+                                        }
+                                        if (tempInk.size >= 2) {
+                                            drawInkStroke(
+                                                tempInk.flatMap { listOf(it.x, it.y) },
+                                                Color(inkColor.toULong()),
+                                                size
+                                            )
+                                        }
+                                    }
+                                }
+                                if (drawMode) {
+                                    Canvas(
+                                        modifier = Modifier.fillMaxSize().pointerInput(safeIndex) {
+                                            detectDragGestures(
+                                                onDragStart = { offset ->
+                                                    tempInk = listOf(
+                                                        Offset(
+                                                            (offset.x / size.width).coerceIn(0f, 1f),
+                                                            (offset.y / size.height).coerceIn(0f, 1f)
+                                                        )
+                                                    )
+                                                },
+                                                onDrag = { change, _ ->
+                                                    val o = change.position
+                                                    tempInk = tempInk + Offset(
+                                                        (o.x / size.width).coerceIn(0f, 1f),
+                                                        (o.y / size.height).coerceIn(0f, 1f)
+                                                    )
+                                                },
+                                                onDragEnd = {
+                                                    if (tempInk.size >= 2) {
+                                                        onSaveInkStroke(
+                                                            safeIndex,
+                                                            InkStroke(
+                                                                page = safeIndex,
+                                                                color = inkColor,
+                                                                points = tempInk.flatMap { listOf(it.x, it.y) }
+                                                            )
+                                                        )
+                                                    }
+                                                    tempInk = emptyList()
+                                                },
+                                                onDragCancel = { tempInk = emptyList() }
+                                            )
+                                        }
+                                    ) { }
                             }
                         } else {
                             Text(

@@ -521,7 +521,8 @@ internal fun LazyListScope.CourseNotesTab(
     note: com.learnsyncai.domain.model.CourseNote?,
     onSaveNote: (String) -> Unit,
     onConvertNotes: (String) -> Unit,
-    onOpenConcept: (String) -> Unit = {}
+    onOpenConcept: (String) -> Unit = {},
+    onConvertSingleLine: (String) -> Unit = {}
 ) {
     item {
         Text(
@@ -620,6 +621,46 @@ internal fun LazyListScope.CourseNotesTab(
                                 label = { Text(concept) },
                                 leadingIcon = { Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp)) }
                             )
+                        }
+                    }
+                }
+                // Blocs détectés : 1 tap = 1 carte (éditeur à blocs style RemNote).
+                val cardLines = remember(content) {
+                    content.lines().map { it.trim() }.filter { it.length >= 4 }
+                        .mapNotNull { line ->
+                            com.learnsyncai.domain.usecase.NoteCards.parseLine(line)?.let { line to it }
+                        }.take(20)
+                }
+                if (cardLines.isNotEmpty()) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = LearnSyncSpacing.small))
+                    Text(
+                        text = "Blocs détectés (1 tap = 1 carte) :",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    cardLines.forEach { (line, parsed) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(LearnSyncSpacing.small)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = parsed.question,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 2
+                                )
+                                Text(
+                                    text = parsed.answer,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2
+                                )
+                            }
+                            IconButton(onClick = { onConvertSingleLine(line) }) {
+                                Icon(Icons.Default.Add, contentDescription = "Créer la carte")
+                            }
                         }
                     }
                 }

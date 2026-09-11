@@ -288,6 +288,7 @@ fun LearnSyncNavigation(
                                         onStartQuiz = { navController.navigate("course_quiz/${course.id}") },
                                         onRegenerate = { libraryViewModel.generateMaterial(course) },
                                         onGenerateMore = { libraryViewModel.generateMoreMaterial(course) },
+                                        onCancelGeneration = { libraryViewModel.cancelGeneration(course.id) },
                                         onCourseLanguageChange = { lang -> libraryViewModel.updateCourseLanguage(course, lang) },
                                         onDeleteCourse = {
                                             libraryViewModel.deleteCourse(course.id)
@@ -309,6 +310,7 @@ fun LearnSyncNavigation(
                                         courseNote = courseNote,
                                         onSaveNote = { content -> libraryViewModel.saveNote(course.id, content) },
                                         onConvertNotes = { content -> libraryViewModel.convertNotesToCards(course.id, content) },
+                                        onConvertSingleLine = { line -> libraryViewModel.convertSingleNoteLine(course.id, line) },
                                         courseMedia = courseMedia,
                                         onAddAudio = { path -> libraryViewModel.addAudioMedia(course.id, path) },
                                         onUpdateTranscript = { media, text -> libraryViewModel.updateMediaTranscript(media, text) },
@@ -619,6 +621,7 @@ fun LearnSyncNavigation(
                                 val course = courses.find { it.id == courseId }
                                 val pdfAnnotations by libraryViewModel.getAnnotationsForCourse(courseId).collectAsState(initial = emptyList())
                                 val pdfOutline by libraryViewModel.getOutlineForCourse(courseId).collectAsState(initial = emptyList())
+                                val inkVersion by libraryViewModel.inkVersion.collectAsState()
                                 val loadPageText: suspend (Int) -> String = { page ->
                                     try { libraryViewModel.getPageText(courseId, page) } catch (_: Exception) { "" }
                                 }
@@ -636,6 +639,10 @@ fun LearnSyncNavigation(
                                     onLoadHighlightRects = { page, text ->
                                         try { libraryViewModel.getHighlightRects(courseId, page, text) } catch (_: Exception) { emptyList() }
                                     },
+                                    inkVersion = inkVersion,
+                                    onLoadInkStrokes = { try { libraryViewModel.getInkStrokes(courseId) } catch (_: Exception) { emptyList() } },
+                                    onSaveInkStroke = { page, stroke -> libraryViewModel.saveInkStroke(courseId, stroke) },
+                                    onClearInkPage = { page -> libraryViewModel.clearInkPage(courseId, page) },
                                     onDeleteAnnotation = { id -> libraryViewModel.deleteAnnotation(id) },
                                     onCardsFromAnnotation = { annotation ->
                                         if (course != null) libraryViewModel.cardsFromAnnotation(course, annotation)

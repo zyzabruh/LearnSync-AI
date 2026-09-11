@@ -2,6 +2,7 @@ package com.learnsyncai.data.storage
 
 import android.content.Context
 import com.learnsyncai.data.parser.OutlineEntry
+import com.learnsyncai.domain.model.InkStroke
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -165,6 +166,69 @@ class CourseContentStorage(private val context: Context) {
             )
         }
         return result
+    }
+
+    // ==================== ENCRE LIBRE (surlignage au doigt) ====================
+
+    suspend fun saveInkStrokes(courseId: String, strokes: List<InkStroke>) {
+        withContext(Dispatchers.IO) {
+            val file = File(coursesDir, "${sanitizeCourseId(courseId)}.ink.json")
+            val array = JSONArray()
+            for (s in strokes) {
+                val pts = JSONArray()
+                for (p in s.points) pts.put(p.toDouble())
+                array.put(
+                    JSONObject().apply {
+                        put("page", s.page)
+                        put("color", s.color)
+                        put("points", pts)
+                    }
+                )
+            }
+            file.writeText(array.toString(), Charsets.UTF_8)
+        }
+    }
+
+    suspend fun getInkStrokes(courseId: String): List<InkStroke> {
+        return withContext(Dispatchers.IO) {
+            val file = File(coursesDir, "${sanitizeCourseId(courseId)}.ink.json")
+            if (!file.exists()) return@withContext emptyList()
+            try {
+                val array = JSONArray(file.readText(Charsets.UTF_8))
+                List(array.length()) { i ->
+                    val obj = array.getJSONObject(i)
+                    val pts = obj.optJSONArray("points")
+                    InkStroke(
+                        page = obj.optInt("page", 0),
+                        color = obj.optLong("color", -256L),
+                        points = if (pts != null) List(pts.length()) { j -> pts.optDouble(j, 0.0).toFloat() } else emptyList()
+                    )
+                }.filter { it.points.size >= 4 }
+            } catch (e: Exception) {
+                android.util.Log.w("LearnSyncAI", "Encre illisible pour le cours $courseId : ${e.message}")
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun deleteInkStrokes(courseId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                File(coursesDir, "${sanitizeCourseId(courseId)}.ink.json").delete()
+            } catch (e: Exception) {
+                android.util.Log.w("LearnSyncAI", "Nettoyage de l'encre impossible : ${e.message}")
+            }
+        }
+    }
+
+    suspend fun deleteOutlineForCourse(courseId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                File(coursesDir, "${sanitizeCourseId(courseId)}.outline.json").delete()
+            } catch (e: Exception) {
+                android.util.Log.w("LearnSyncAI", "Nettoyage du sommaire impossible : ${e.message}")
+            }
+        }
     }
 
     private fun sanitizeCourseId(courseId: String): String {

@@ -54,6 +54,7 @@ fun CourseDetailScreen(
     onStartQuiz: () -> Unit,
     onRegenerate: () -> Unit,
     onGenerateMore: () -> Unit = {},
+    onCancelGeneration: () -> Unit = {},
     onCourseLanguageChange: (String) -> Unit = {},
     onDeleteCourse: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
@@ -72,6 +73,7 @@ fun CourseDetailScreen(
     courseNote: com.learnsyncai.domain.model.CourseNote? = null,
     onSaveNote: (String) -> Unit = {},
     onConvertNotes: (String) -> Unit = {},
+    onConvertSingleLine: (String) -> Unit = {},
     onOpenConcept: (String) -> Unit = {},
     courseMedia: List<com.learnsyncai.domain.model.CourseMedia> = emptyList(),
     onAddAudio: (String) -> Unit = {},
@@ -456,6 +458,9 @@ fun CourseDetailScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                            TextButton(onClick = onCancelGeneration) {
+                                Text("Annuler")
+                            }
                         }
                     }
                 }
@@ -590,6 +595,7 @@ fun CourseDetailScreen(
                     note = courseNote,
                     onSaveNote = onSaveNote,
                     onConvertNotes = onConvertNotes,
+                    onConvertSingleLine = onConvertSingleLine,
                     onOpenConcept = onOpenConcept
                 )
 

@@ -127,6 +127,13 @@ data class SharedConcept(
     val cardCount: Int
 )
 
+/** Trait d'encre libre sur une page PDF : couleur ARGB + points normalisés 0..1 (x0,y0,x1,y1…). */
+data class InkStroke(
+    val page: Int,
+    val color: Long,
+    val points: List<Float> = emptyList()
+)
+
 /** Média attaché à un cours : enregistrement audio + transcription. */
 data class CourseMedia(
     val id: String,

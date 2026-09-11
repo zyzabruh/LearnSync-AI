@@ -389,8 +389,31 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun generateMaterial(course: Course) {
+    /** Générations IA suivies par cours : anti-double-clic + annulation. */
+    private val generationJobs = mutableMapOf<String, Job>()
+
+    /** Annule la génération en cours d'un cours (la fiche reste utilisable). */
+    fun cancelGeneration(courseId: String) {
+        generationJobs[courseId]?.cancel()
+        generationJobs.remove(courseId)
         viewModelScope.launch {
+            try {
+                val course = courseRepo.getCourseById(courseId) ?: return@launch
+                if (course.generationStatus == "GENERATING") {
+                    courseRepo.insertCourse(course.copy(generationStatus = "NONE", updatedAt = System.currentTimeMillis()))
+                }
+                _generationProgress.value = ""
+                _uiState.value = UiState.Success("Génération annulée.")
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun generateMaterial(course: Course) {
+        if (generationJobs[course.id]?.isActive == true) {
+            _uiState.value = UiState.Success("Génération déjà en cours : tu peux naviguer, tu seras notifié.")
+            return
+        }
+        val job = viewModelScope.launch {
             val activeProfile = aiProfileRepo.getActiveProfile()
             val apiKey = activeProfile?.apiKey ?: prefsRepo.getPreferencesSync().aiApiKey
             val baseUrl = activeProfile?.baseUrl ?: prefsRepo.getPreferencesSync().aiBaseUrl
@@ -402,7 +425,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            _uiState.value = UiState.Loading("Génération pédagogique en cours...")
             _generationProgress.value = "Démarrage de l'analyse IA..."
 
             // Mark course as GENERATING
@@ -425,6 +447,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             result.fold(
                 onSuccess = { genResult ->
                     val message = persistGenerationResult(course, genResult, "IA")
+                    GenerationNotifier.notifyDone(
+                        context = getApplication(),
+                        courseTitle = course.title,
+                        success = true,
+                        detail = message
+                    )
                     _uiState.value = UiState.Success(message)
                     CloudSyncWorker.enqueueNow(getApplication())
                     _generationProgress.value = ""
@@ -447,6 +475,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }
             )
         }
+        generationJobs[course.id] = job
+        job.invokeOnCompletion { generationJobs.remove(course.id) }
     }
 
     /**
@@ -456,7 +486,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
      * insertion (les anciennes flashcards/QCM sont conservées).
      */
     fun generateMoreMaterial(course: Course) {
-        viewModelScope.launch {
+        if (generationJobs[course.id]?.isActive == true) {
+            _uiState.value = UiState.Success("Génération déjà en cours : tu peux naviguer, tu seras notifié.")
+            return
+        }
+        val job = viewModelScope.launch {
             val activeProfile = aiProfileRepo.getActiveProfile()
             val apiKey = activeProfile?.apiKey ?: prefsRepo.getPreferencesSync().aiApiKey
             val baseUrl = activeProfile?.baseUrl ?: prefsRepo.getPreferencesSync().aiBaseUrl
@@ -467,7 +501,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            _uiState.value = UiState.Loading("Génération de contenu supplémentaire...")
             _generationProgress.value = "Analyse des questions existantes..."
             courseRepo.insertCourse(
                 course.copy(generationStatus = "GENERATING", updatedAt = System.currentTimeMillis())
@@ -557,6 +590,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _generationProgress.value = ""
             }
         }
+        generationJobs[course.id] = job
+        job.invokeOnCompletion { generationJobs.remove(course.id) }
     }
 
     /**
@@ -711,6 +746,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 // 1. Delete local extracted text file
                 courseContentStorage.deleteExtractedText(courseId)
                 courseContentStorage.deleteOriginalFiles(courseId)
+                courseContentStorage.deleteInkStrokes(courseId)
+                courseContentStorage.deleteOutlineForCourse(courseId)
                 // 2. Cascading delete + tombstones (cours et contenus enfants)
                 courseRepo.deleteCourse(courseId)
                 // 3. Propage les suppressions vers le cloud en marqueurs deletedAt
@@ -899,6 +936,39 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Convertit UNE ligne de note en flashcard (1-tap depuis l'éditeur à blocs).
+     */
+    fun convertSingleNoteLine(courseId: String, line: String) {
+        viewModelScope.launch {
+            try {
+                val parsed = com.learnsyncai.domain.usecase.NoteCards.parseLine(line)
+                    ?: return@launch.also {
+                        _uiState.value = UiState.Error("Cette ligne ne contient aucune carte (>> , <<, <>, ;;, :: ou {{}}).")
+                    }
+                val existingKeys = flashcardRepo.getFlashcardsForCourse(courseId)
+                    .firstOrNull()?.map { it.question.trim().lowercase() }
+                    ?.toMutableSet() ?: mutableSetOf()
+                if (!existingKeys.add(parsed.question.trim().lowercase())) {
+                    _uiState.value = UiState.Success("Cette carte existe déjà.")
+                    return@launch
+                }
+                flashcardRepo.insertFlashcard(
+                    newFlashcard(
+                        courseId, parsed.question, parsed.answer, "",
+                        direction = parsed.direction,
+                        typeAnswer = parsed.typeAnswer,
+                        sourceExcerpt = "Note personnelle"
+                    )
+                )
+                _uiState.value = UiState.Success("Carte créée depuis le bloc !")
+                addXp(5)
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Conversion impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
     /** Convertit les lignes marquées des notes en flashcards (anti-doublons). */
     fun convertNotesToCards(courseId: String, content: String) {
         viewModelScope.launch {
@@ -984,6 +1054,42 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotation>> =
         annotationRepo.getAnnotationsForCourse(courseId)
+
+    /** Encre libre (surlignage au doigt) : cache + version pour rafraîchir le lecteur. */
+    private val inkCache = mutableMapOf<String, List<InkStroke>>()
+    private val _inkVersion = MutableStateFlow(0)
+    val inkVersion: StateFlow<Int> = _inkVersion.asStateFlow()
+
+    suspend fun getInkStrokes(courseId: String): List<InkStroke> = withContext(Dispatchers.IO) {
+        inkCache[courseId] ?: courseContentStorage.getInkStrokes(courseId).also { inkCache[courseId] = it }
+    }
+
+    fun saveInkStroke(courseId: String, stroke: InkStroke) {
+        if (stroke.points.size < 4) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val updated = getInkStrokes(courseId) + stroke
+                courseContentStorage.saveInkStrokes(courseId, updated)
+                inkCache[courseId] = updated
+                _inkVersion.value++
+            } catch (e: Exception) {
+                android.util.Log.w("LearnSyncAI", "Sauvegarde d'encre impossible : ${e.message}")
+            }
+        }
+    }
+
+    fun clearInkPage(courseId: String, page: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val updated = getInkStrokes(courseId).filter { it.page != page }
+                courseContentStorage.saveInkStrokes(courseId, updated)
+                inkCache[courseId] = updated
+                _inkVersion.value++
+            } catch (e: Exception) {
+                android.util.Log.w("LearnSyncAI", "Effacement d'encre impossible : ${e.message}")
+            }
+        }
+    }
 
     /** Sommaire (outline) du PDF, extrait au moment de l'import et stocké localement. */
     fun getOutlineForCourse(courseId: String): Flow<List<OutlineEntry>> =
