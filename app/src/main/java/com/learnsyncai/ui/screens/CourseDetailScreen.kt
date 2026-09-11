@@ -63,6 +63,7 @@ fun CourseDetailScreen(
     onNavigateToLearn: () -> Unit = {},
     onNavigateToExam: () -> Unit = {},
     onNavigateToPdf: () -> Unit = {},
+    onNavigateToMindMap: () -> Unit = {},
     onAddFlashcard: (question: String, answer: String, explanation: String, direction: String, typeAnswer: Boolean) -> Unit = { _, _, _, _, _ -> },
     onAddImageCard: (uri: android.net.Uri, answer: String, maskX: Float, maskY: Float, maskW: Float, maskH: Float) -> Unit = { _, _, _, _, _, _ -> },
     onQuickAddFlashcard: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
@@ -223,6 +224,14 @@ fun CourseDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigateToPdf()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Carte mentale") },
+                            leadingIcon = { Icon(Icons.Default.AccountTree, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToMindMap()
                             }
                         )
                         DropdownMenuItem(

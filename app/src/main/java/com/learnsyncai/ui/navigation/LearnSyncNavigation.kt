@@ -291,6 +291,7 @@ fun LearnSyncNavigation(
                                         onNavigateToLearn = { navController.navigate("course_learn/${course.id}") },
                                         onNavigateToExam = { navController.navigate("course_exam/${course.id}") },
                                         onNavigateToPdf = { navController.navigate("course_pdf/${course.id}") },
+                                        onNavigateToMindMap = { navController.navigate("course_mindmap/${course.id}") },
                                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
                                         onAddFlashcard = { q, a, exp, dir, typeAns -> libraryViewModel.addCustomFlashcard(course.id, q, a, exp, dir, typeAns) },
                                         onAddImageCard = { uri, answer, mx, my, mw, mh -> libraryViewModel.createImageCard(course.id, uri, answer, mx, my, mw, mh) },
@@ -498,6 +499,38 @@ fun LearnSyncNavigation(
                                         reviewViewModel.startReviewSession(conceptCards, null)
                                         navController.navigate(Screen.Review.route)
                                     }
+                                )
+                            }
+
+                            composable(
+                                route = "course_mindmap/{courseId}",
+                                arguments = listOf(navArgument("courseId") { type = NavType.StringType })
+                            ) { backStackEntry ->
+                                val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val course = courses.find { it.id == courseId }
+                                val mindNote by libraryViewModel.getNoteForCourse(courseId).collectAsState(initial = null)
+                                val mindMaterials by libraryViewModel.getMaterialsForCourse(courseId).collectAsState(initial = emptyList())
+                                val mindConcepts = remember(allFlashcards, mindNote, mindMaterials) {
+                                    val corpus = ((mindNote?.content ?: "") + "\n" +
+                                        mindMaterials.firstOrNull()?.summary.orEmpty())
+                                    val names = com.learnsyncai.domain.usecase.Concepts.extract(corpus)
+                                    val cardsByCourse = allFlashcards.filter { it.courseId == courseId }
+                                    names.map { name ->
+                                        name to cardsByCourse.count {
+                                            com.learnsyncai.domain.usecase.Concepts.cardMentions(it, name)
+                                        }
+                                    }.sortedByDescending { it.second }
+                                }
+                                CourseMindMapScreen(
+                                    courseTitle = course?.title ?: "Cours",
+                                    concepts = mindConcepts,
+                                    onOpenConcept = { name ->
+                                        val encoded = try {
+                                            java.net.URLEncoder.encode(name, "UTF-8")
+                                        } catch (_: Exception) { name }
+                                        navController.navigate("concept/$courseId/$encoded")
+                                    },
+                                    onBackClick = { navController.popBackStack() }
                                 )
                             }
 
