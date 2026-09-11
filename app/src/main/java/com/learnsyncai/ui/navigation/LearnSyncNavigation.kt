@@ -392,6 +392,7 @@ fun LearnSyncNavigation(
                                 arguments = listOf(navArgument("courseId") { type = NavType.StringType })
                             ) { backStackEntry ->
                                 val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val reviewCourse = courses.find { it.id == courseId }
                                 val courseDueFlashcards by reviewViewModel.getDueFlashcardsForCourse(courseId).collectAsState(initial = emptyList())
                                 val courseAheadCards = allFlashcards.filter { it.courseId == courseId && it.dueDate > System.currentTimeMillis() }
                                 val canUndoCourse by reviewViewModel.canUndo.collectAsState()
@@ -400,10 +401,10 @@ fun LearnSyncNavigation(
                                 }
                                 val courseExplanation by reviewViewModel.explanation.collectAsState()
                                 val courseExplaining by reviewViewModel.explaining.collectAsState()
-                                val courseExamCards = remember(courseId, allFlashcards, course?.examDate) {
+                                val courseExamCards = remember(courseId, allFlashcards, reviewCourse?.examDate) {
                                     reviewViewModel.examEligible(
                                         allFlashcards.filter { it.courseId == courseId },
-                                        course?.examDate ?: 0L
+                                        reviewCourse?.examDate ?: 0L
                                     )
                                 }
 
