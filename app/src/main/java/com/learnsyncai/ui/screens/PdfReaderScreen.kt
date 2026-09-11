@@ -133,8 +133,10 @@ fun PdfReaderScreen(
         try {
             val renderer = rendererState?.second ?: return@remember null
             renderer.openPage(safeIndex).use { page ->
-                // Échelle 2.5x : net sur écran haute densité sans bitmap démesuré.
-                val scale = 2.5f
+                // Échelle adaptative : nette sur écran dense, mais plafonnée pour
+                // les scans très haute résolution (sinon bitmap géant = OOM).
+                val longestSide = maxOf(page.width, page.height).coerceAtLeast(1)
+                val scale = minOf(2.5f, 2048f / longestSide.toFloat())
                 val bmp = Bitmap.createBitmap(
                     (page.width * scale).toInt(),
                     (page.height * scale).toInt(),
