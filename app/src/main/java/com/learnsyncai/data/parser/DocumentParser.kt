@@ -12,6 +12,7 @@ import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.P
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageDestination
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineNode
+import com.tom_roush.pdfbox.text.TextPosition
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.BufferedReader
 import java.io.InputStream
@@ -237,6 +238,129 @@ class DocumentParser(private val context: Context) {
         } catch (_: Exception) {
             ""
         }
+    }
+
+    /**
+     * Boîtes de surlignage (coordonnées 0..1, origine en haut à gauche) pour
+     * un passage sur une page : positions réelles du texte via PdfBox
+     * (TextPosition), appariées par mots significatifs pour tolérer les
+     * différences d'espacement. Max 8 boîtes (regroupées par ligne).
+     */
+    fun findTextRects(file: java.io.File, pageIndex: Int, query: String): List<android.graphics.RectF> {
+        if (!file.exists() || query.isBlank()) return emptyList()
+        return try {
+            PDDocument.load(file).use { document ->
+                if (pageIndex < 0 || pageIndex >= document.numberOfPages) return emptyList()
+                val page = document.getPage(pageIndex)
+                val pageW = page.cropBox.width
+                val pageH = page.cropBox.height
+                if (pageW <= 0f || pageH <= 0f) return emptyList()
+                val chars = mutableListOf<TextChar>()
+                val stripper = object : PDFTextStripper() {
+                    override fun processTextPosition(text: TextPosition) {
+                        super.processTextPosition(text)
+                        val glyph = text.unicode
+                        if (!glyph.isBlank()) {
+                            chars.add(TextChar(glyph, text.xDirAdj, text.yDirAdj, text.widthDirAdj, text.heightDir))
+                        }
+                    }
+                }
+                stripper.sortByPosition = true
+                stripper.startPage = pageIndex + 1
+                stripper.endPage = pageIndex + 1
+                stripper.getText(document)
+                matchTextSpan(chars, query, pageW, pageH)
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private data class TextChar(val ch: String, val x: Float, val y: Float, val w: Float, val h: Float)
+
+    private fun matchTextSpan(
+        chars: List<TextChar>,
+        query: String,
+        pageW: Float,
+        pageH: Float
+    ): List<android.graphics.RectF> {
+        if (chars.isEmpty()) return emptyList()
+        // Texte normalisé (espaces repliés) + index d'origine de chaque caractère.
+        val norm = StringBuilder()
+        val origin = mutableListOf<Int>()
+        chars.forEachIndexed { i, c ->
+            if (c.ch.isBlank()) {
+                if (norm.isNotEmpty() && norm.last() != ' ') {
+                    norm.append(' ')
+                    origin.add(i)
+                }
+            } else {
+                norm.append(c.ch)
+                origin.add(i)
+            }
+        }
+        val hay = norm.toString()
+        if (hay.length < 4) return emptyList()
+        val words = query.replace(Regex("\\s+"), " ").trim()
+            .split(" ").filter { it.length >= 4 }.take(8)
+        if (words.isEmpty()) return emptyList()
+        // Occurrences (max 10/mot) de chaque mot significatif.
+        val occs = words.map { w ->
+            val list = mutableListOf<Int>()
+            var i = hay.indexOf(w, 0, ignoreCase = true)
+            while (i >= 0 && list.size < 10) {
+                list.add(i)
+                i = hay.indexOf(w, i + 1, ignoreCase = true)
+            }
+            list
+        }
+        // Meilleure grappe : autour de chaque occurrence du 1er mot, compte
+        // les autres mots dans une fenêtre proportionnelle à la requête.
+        val span = (query.length * 2).coerceIn(60, 600)
+        var bestStart = -1
+        var bestEnd = -1
+        var bestScore = if (words.size == 1) 1 else 2
+        for (anchor in occs[0]) {
+            var end = anchor + words[0].length
+            var score = 1
+            for (k in 1 until words.size) {
+                val near = occs[k].firstOrNull { it in anchor - 20..anchor + span }
+                if (near != null) {
+                    score++
+                    end = maxOf(end, near + words[k].length)
+                }
+            }
+            if (score > bestScore || (score == bestScore && bestStart < 0)) {
+                bestScore = score
+                bestStart = anchor
+                bestEnd = end.coerceAtMost(hay.length)
+            }
+        }
+        if (bestStart < 0) return emptyList()
+        // Boîtes par ligne (regroupement vertical), origine convertie en haut-gauche.
+        val spanChars = origin.subList(bestStart, bestEnd).map { chars[it] }
+        val lines = mutableListOf<MutableList<TextChar>>()
+        for (c in spanChars.sortedWith(compareBy({ it.y }, { it.x }))) {
+            val line = lines.lastOrNull()
+            val refY = line?.map { it.y + it.h / 2f }?.average() ?: Double.NaN
+            if (line == null || kotlin.math.abs(c.y + c.h / 2f - refY) > c.h.coerceAtLeast(4f)) {
+                lines.add(mutableListOf(c))
+            } else {
+                line.add(c)
+            }
+        }
+        return lines.take(8).mapNotNull { line ->
+            val x0 = line.minOf { it.x }.coerceAtLeast(0f)
+            val x1 = line.maxOf { it.x + it.w }
+            val yTopPdf = line.minOf { it.y }
+            val yBotPdf = line.maxOf { it.y + it.h }
+            android.graphics.RectF(
+                x0 / pageW,
+                1f - yBotPdf / pageH,
+                (x1 / pageW).coerceAtMost(1f),
+                (1f - yTopPdf / pageH).coerceAtMost(1f)
+            )
+        }.filter { it.width() > 0.005f && it.height() > 0.002f }
     }
 
     private fun extractOutline(document: PDDocument, pageCount: Int): List<OutlineEntry> {

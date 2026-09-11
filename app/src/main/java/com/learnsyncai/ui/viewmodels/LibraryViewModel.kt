@@ -960,6 +960,28 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Boîtes de surlignage d'un passage « à retenir », mémorisées en session. */
+    private val highlightCache = mutableMapOf<String, List<android.graphics.RectF>>()
+
+    suspend fun getHighlightRects(courseId: String, page: Int, text: String): List<android.graphics.RectF> =
+        withContext(Dispatchers.IO) {
+            val key = "$courseId#$page#${text.trim().take(80).hashCode()}"
+            highlightCache[key] ?: run {
+                val file = courseContentStorage.getOriginalFile(courseId)
+                val rects = if (file != null && file.exists() && file.extension.lowercase() == "pdf" && text.trim().length >= 4) {
+                    try {
+                        documentParser.findTextRects(file, page, text)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                } else {
+                    emptyList()
+                }
+                highlightCache[key] = rects
+                rects
+            }
+        }
+
     fun getAnnotationsForCourse(courseId: String): Flow<List<PdfAnnotation>> =
         annotationRepo.getAnnotationsForCourse(courseId)
 

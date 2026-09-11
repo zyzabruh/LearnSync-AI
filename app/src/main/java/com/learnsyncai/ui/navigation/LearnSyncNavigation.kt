@@ -633,6 +633,9 @@ fun LearnSyncNavigation(
                                     onQuickAddCard = { page, q, a ->
                                         libraryViewModel.quickAddFlashcard(courseId, q, a, "PDF p. ${page + 1}")
                                     },
+                                    onLoadHighlightRects = { page, text ->
+                                        try { libraryViewModel.getHighlightRects(courseId, page, text) } catch (_: Exception) { emptyList() }
+                                    },
                                     onDeleteAnnotation = { id -> libraryViewModel.deleteAnnotation(id) },
                                     onCardsFromAnnotation = { annotation ->
                                         if (course != null) libraryViewModel.cardsFromAnnotation(course, annotation)

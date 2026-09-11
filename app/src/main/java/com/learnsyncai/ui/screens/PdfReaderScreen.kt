@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -20,6 +21,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -46,6 +50,7 @@ fun PdfReaderScreen(
     annotations: List<PdfAnnotation>,
     onAddAnnotation: (page: Int, text: String, kind: String) -> Unit,
     onQuickAddCard: (page: Int, question: String, answer: String) -> Unit = { _, _, _ -> },
+    onLoadHighlightRects: (suspend (page: Int, text: String) -> List<android.graphics.RectF>)? = null,
     onDeleteAnnotation: (String) -> Unit,
     onCardsFromAnnotation: (PdfAnnotation) -> Unit,
     onBackClick: () -> Unit
@@ -356,13 +361,45 @@ fun PdfReaderScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Page ${safeIndex + 1}",
-                                // Fit : la page entière reste visible (Crop rognait haut/bas).
-                                contentScale = ContentScale.Fit,
+                            var highlightRects by remember(pdfFile, safeIndex) {
+                                mutableStateOf<List<android.graphics.RectF>>(emptyList())
+                            }
+                            LaunchedEffect(pdfFile, safeIndex, annotations) {
+                                val keys = annotations.filter {
+                                    it.page == safeIndex && it.kind == PdfAnnotation.KIND_KEY && it.text.trim().length >= 4
+                                }.take(3)
+                                highlightRects = keys.flatMap { ann ->
+                                    try {
+                                        onLoadHighlightRects?.invoke(safeIndex, ann.text)
+                                    } catch (_: Exception) {
+                                        null
+                                    } ?: emptyList()
+                                }.take(24)
+                            }
+                            Box(
                                 modifier = Modifier.fillMaxWidth()
-                            )
+                                    .aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
+                            ) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "Page ${safeIndex + 1}",
+                                    // FillBounds dans une boîte au ratio exact : pas de
+                                    // distorsion, et correspondance exacte pour l'overlay.
+                                    contentScale = ContentScale.FillBounds,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                if (highlightRects.isNotEmpty()) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        for (r in highlightRects) {
+                                            drawRect(
+                                                color = Color.Yellow.copy(alpha = 0.35f),
+                                                topLeft = Offset(r.left * size.width, r.top * size.height),
+                                                size = Size(r.width() * size.width, r.height() * size.height)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             Text(
                                 "Page illisible.",
