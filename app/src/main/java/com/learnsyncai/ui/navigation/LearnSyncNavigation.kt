@@ -295,6 +295,12 @@ fun LearnSyncNavigation(
                                         courseNote = courseNote,
                                         onSaveNote = { content -> libraryViewModel.saveNote(course.id, content) },
                                         onConvertNotes = { content -> libraryViewModel.convertNotesToCards(course.id, content) },
+                                        onOpenConcept = { name ->
+                                            val encoded = try {
+                                                java.net.URLEncoder.encode(name, "UTF-8")
+                                            } catch (_: Exception) { name }
+                                            navController.navigate("concept/${course.id}/$encoded")
+                                        },
                                         onDeleteFlashcard = { cardId -> libraryViewModel.deleteFlashcard(cardId) },
                                         onAddQuizQuestion = { q, opts, ans, exp -> libraryViewModel.addCustomQuizQuestion(course.id, q, opts, ans, exp) },
                                         onDeleteQuizQuestion = { qId -> libraryViewModel.deleteQuizQuestion(qId) },
@@ -435,6 +441,59 @@ fun LearnSyncNavigation(
                                         navController.navigate("course_review/$courseId")
                                     },
                                     onGoTutor = { navController.navigate("course_tutor/$courseId") }
+                                )
+                            }
+
+                            composable(
+                                route = "concept/{courseId}/{name}",
+                                arguments = listOf(
+                                    navArgument("courseId") { type = NavType.StringType },
+                                    navArgument("name") { type = NavType.StringType }
+                                )
+                            ) { backStackEntry ->
+                                val courseId = backStackEntry.arguments?.getString("courseId") ?: ""
+                                val rawName = backStackEntry.arguments?.getString("name") ?: ""
+                                val conceptName = try {
+                                    java.net.URLDecoder.decode(rawName, "UTF-8")
+                                } catch (_: Exception) { rawName }
+                                val course = courses.find { it.id == courseId }
+                                val conceptNote by libraryViewModel.getNoteForCourse(courseId).collectAsState(initial = null)
+                                val conceptMaterials by libraryViewModel.getMaterialsForCourse(courseId).collectAsState(initial = emptyList())
+                                val conceptCards = remember(allFlashcards, conceptName) {
+                                    allFlashcards.filter {
+                                        it.courseId == courseId &&
+                                            com.learnsyncai.domain.usecase.Concepts.cardMentions(it, conceptName)
+                                    }
+                                }
+                                val conceptSnippets = remember(conceptNote, conceptMaterials, conceptName) {
+                                    val corpus = ((conceptNote?.content ?: "") + "\n" +
+                                        conceptMaterials.firstOrNull()?.summary.orEmpty())
+                                    com.learnsyncai.domain.usecase.Concepts.snippets(corpus, conceptName)
+                                }
+                                val conceptMastery = remember(conceptCards) {
+                                    if (conceptCards.isEmpty()) 0 else {
+                                        val now = System.currentTimeMillis()
+                                        val total = conceptCards.sumOf { card ->
+                                            val elapsed = card.lastReviewedAt?.let {
+                                                ((now - it) / (1000f * 3600 * 24)).coerceAtLeast(0f)
+                                            } ?: 0f
+                                            com.learnsyncai.domain.usecase.SpacedRepetition
+                                                .calculateRetrievability(elapsed, card.easeFactor).toDouble()
+                                        }
+                                        ((total / conceptCards.size) * 100).toInt()
+                                    }
+                                }
+                                ConceptScreen(
+                                    conceptName = conceptName.ifBlank { "Concept" },
+                                    courseTitle = course?.title ?: "Cours",
+                                    snippets = conceptSnippets,
+                                    cards = conceptCards,
+                                    masteryPercent = conceptMastery,
+                                    onBackClick = { navController.popBackStack() },
+                                    onReviewCards = {
+                                        reviewViewModel.startReviewSession(conceptCards, null)
+                                        navController.navigate(Screen.Review.route)
+                                    }
                                 )
                             }
 

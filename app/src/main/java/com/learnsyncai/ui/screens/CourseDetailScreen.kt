@@ -67,6 +67,7 @@ fun CourseDetailScreen(
     courseNote: com.learnsyncai.domain.model.CourseNote? = null,
     onSaveNote: (String) -> Unit = {},
     onConvertNotes: (String) -> Unit = {},
+    onOpenConcept: (String) -> Unit = {},
     onDeleteFlashcard: (flashcardId: String) -> Unit = {},
     onAddQuizQuestion: (question: String, options: List<String>, correctAnswer: String, explanation: String) -> Unit = { _, _, _, _ -> },
     onDeleteQuizQuestion: (quizQuestionId: String) -> Unit = {},
@@ -516,7 +517,8 @@ fun CourseDetailScreen(
                     onEditSummary = { showEditSummaryDialog = true },
                     onRegenerate = onRegenerate,
                     onQuickCloze = onQuickAddFlashcard,
-                    onGenerateFromExcerpt = onGenerateFromExcerpt
+                    onGenerateFromExcerpt = onGenerateFromExcerpt,
+                    onOpenConcept = onOpenConcept
                 )
 
                 1 -> CourseKeyPointsTab(
@@ -543,7 +545,8 @@ fun CourseDetailScreen(
                 4 -> CourseNotesTab(
                     note = courseNote,
                     onSaveNote = onSaveNote,
-                    onConvertNotes = onConvertNotes
+                    onConvertNotes = onConvertNotes,
+                    onOpenConcept = onOpenConcept
                 )
             }
         }

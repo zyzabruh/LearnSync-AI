@@ -30,7 +30,8 @@ internal fun LazyListScope.CourseSummaryTab(
     onEditSummary: () -> Unit,
     onRegenerate: () -> Unit,
     onQuickCloze: (question: String, answer: String, excerpt: String) -> Unit = { _, _, _ -> },
-    onGenerateFromExcerpt: (String) -> Unit = {}
+    onGenerateFromExcerpt: (String) -> Unit = {},
+    onOpenConcept: (String) -> Unit = {}
 ) {
     item {
         Row(
@@ -84,7 +85,8 @@ internal fun LazyListScope.CourseSummaryTab(
                     SelectableSummary(
                         summary = latestMaterial.summary,
                         onQuickCloze = onQuickCloze,
-                        onGenerateFromExcerpt = onGenerateFromExcerpt
+                        onGenerateFromExcerpt = onGenerateFromExcerpt,
+                        onOpenConcept = onOpenConcept
                     )
                 }
             }
@@ -411,7 +413,8 @@ internal fun LazyListScope.CourseQuizTab(
 private fun SelectableSummary(
     summary: String,
     onQuickCloze: (question: String, answer: String, excerpt: String) -> Unit,
-    onGenerateFromExcerpt: (String) -> Unit
+    onGenerateFromExcerpt: (String) -> Unit,
+    onOpenConcept: (String) -> Unit = {}
 ) {
     var fieldValue by remember(summary) {
         mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(summary))
@@ -466,6 +469,23 @@ private fun SelectableSummary(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        val summaryConcepts = remember(summary) {
+            com.learnsyncai.domain.usecase.Concepts.extract(summary)
+        }
+        if (summaryConcepts.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                summaryConcepts.forEach { concept ->
+                    AssistChip(
+                        onClick = { onOpenConcept(concept) },
+                        label = { Text(concept) },
+                        leadingIcon = { Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -485,7 +505,8 @@ private fun sentenceAround(text: String, selStart: Int, selEnd: Int): String {
 internal fun LazyListScope.CourseNotesTab(
     note: com.learnsyncai.domain.model.CourseNote?,
     onSaveNote: (String) -> Unit,
-    onConvertNotes: (String) -> Unit
+    onConvertNotes: (String) -> Unit,
+    onOpenConcept: (String) -> Unit = {}
 ) {
     item {
         Text(
@@ -545,6 +566,28 @@ internal fun LazyListScope.CourseNotesTab(
                         enabled = detectedCount > 0
                     ) {
                         Text("Créer les cartes ($detectedCount)")
+                    }
+                }
+                val noteConcepts = remember(content) {
+                    com.learnsyncai.domain.usecase.Concepts.extract(content)
+                }
+                if (noteConcepts.isNotEmpty()) {
+                    Text(
+                        text = "Concepts liés :",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        noteConcepts.forEach { concept ->
+                            AssistChip(
+                                onClick = { onOpenConcept(concept) },
+                                label = { Text(concept) },
+                                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            )
+                        }
                     }
                 }
             }

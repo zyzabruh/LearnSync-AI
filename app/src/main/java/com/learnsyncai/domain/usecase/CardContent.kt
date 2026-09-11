@@ -150,3 +150,34 @@ object NoteCards {
         return null
     }
 }
+
+/**
+ * Liens internes [[Concept]] (style knowledge base) : détection, extraits
+ * d'occurrences et rattachement aux cartes par mention textuelle.
+ */
+object Concepts {
+    private val LINK_PATTERN = Regex("\\[\\[([^\\[\\]]+)\\]\\]")
+
+    /** Noms de concepts liés dans un texte, ordre stable, dédupliqués. */
+    fun extract(text: String): List<String> =
+        LINK_PATTERN.findAll(text)
+            .map { it.groupValues[1].trim() }
+            .filter { it.length >= 2 }
+            .distinct()
+            .toList()
+
+    /** Phrases contenant le concept (sans les crochets), max [limit]. */
+    fun snippets(text: String, name: String, limit: Int = 5): List<String> {
+        val plain = text.replace("[[", "").replace("]]", "")
+        return plain.lines()
+            .map { it.trim() }
+            .filter { it.contains(name, ignoreCase = true) && it.length > name.length + 2 }
+            .take(limit)
+    }
+
+    /** Vrai si la carte mentionne le concept (question, réponse ou contexte). */
+    fun cardMentions(card: com.learnsyncai.domain.model.Flashcard, name: String): Boolean =
+        card.question.contains(name, ignoreCase = true) ||
+            card.answer.contains(name, ignoreCase = true) ||
+            card.sourceExcerpt.contains(name, ignoreCase = true)
+}
