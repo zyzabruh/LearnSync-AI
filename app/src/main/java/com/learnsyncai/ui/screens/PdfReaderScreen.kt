@@ -826,16 +826,14 @@ fun PdfReaderScreen(
                 }
             }
             }
-            val selectedText = remember(wordSel, pageWords) {
-                wordSel?.let { r ->
-                    if (pageWords.isEmpty()) ""
-                    else {
-                        val a = r.first.coerceIn(0, pageWords.size - 1)
-                        val b = r.last.coerceIn(0, pageWords.size - 1)
-                        if (a > b) "" else pageWords.subList(a, b + 1).joinToString(" ") { it.text }
-                    }
-                }.orEmpty()
-            }
+            val selectedText: String = wordSel?.let { r ->
+                if (pageWords.isEmpty()) ""
+                else {
+                    val a = r.first.coerceIn(0, pageWords.size - 1)
+                    val b = r.last.coerceIn(0, pageWords.size - 1)
+                    if (a > b) "" else pageWords.subList(a, b + 1).joinToString(" ") { it.text }
+                }
+            }.orEmpty()
             if (selectedText.isNotBlank()) {
                 item {
                     Card(
