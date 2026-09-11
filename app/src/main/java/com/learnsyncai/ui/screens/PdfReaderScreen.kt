@@ -75,7 +75,7 @@ fun PdfReaderScreen(
     var noteKind by remember { mutableStateOf(PdfAnnotation.KIND_NOTE) }
     var textMode by remember { mutableStateOf(false) }
     var drawMode by remember { mutableStateOf(false) }
-    var inkColor by remember { mutableLongStateOf(Color.Yellow.toArgb().toLong()) }
+    var inkColor by remember { mutableLongStateOf(0xFFFFFF00L) }
     var tempInk by remember { mutableStateOf(emptyList<Offset>()) }
     var inkStrokes by remember { mutableStateOf(emptyList<InkStroke>()) }
     LaunchedEffect(pdfFile, inkVersion) {
@@ -530,6 +530,7 @@ fun PdfReaderScreen(
                                             )
                                         }
                                     ) { }
+                                }
                             }
                         } else {
                             Text(
